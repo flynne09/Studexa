@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "669223676992",
+    "project_id": "studexa-b5e55",
+    "storage_bucket": "studexa-b5e55.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:669223676992:android:20358f050015e2a8ec03a5",
+        "android_client_info": {
+          "package_name": "com.example.studexa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDGq6dzJJyHLnzpvR_X6hji5p9H0wIvO6w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
