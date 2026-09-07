@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
+import '../../models/class_model.dart';
+import '../../services/class_service.dart';
 
 /// Teacher Results Screen showing per-class, per-quiz student completion
-/// statuses and scores with at least 5 enrolled students.
+/// statuses and scores bound to real enrolled class members.
 class TeacherResultsScreen extends StatefulWidget {
   const TeacherResultsScreen({
     super.key,
-    this.className = 'Biology 101 - Cell Biology',
-    this.quizTitle = 'Cellular Respiration Practice',
+    this.classId,
+    this.className = 'Class Results',
+    this.quizTitle = 'Quiz Overview',
   });
 
+  final String? classId;
   final String className;
   final String quizTitle;
 
@@ -26,83 +30,10 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
   static const _textPrimary = Color(0xFF1B1C1C);
   static const _textSecondary = Color(0xFF454652);
 
+  final ClassService _classService = ClassService();
   String _selectedFilter = 'All';
 
-  // ── Dummy data: 6 enrolled students ─────────────────────────
-  final List<Map<String, dynamic>> _students = [
-    {
-      'id': 'stu_01',
-      'name': 'Alex Morgan',
-      'email': 'alex.m@university.edu',
-      'attempted': true,
-      'score': 9,
-      'maxScore': 10,
-      'percentage': 90,
-      'submittedAt': '2 hours ago',
-    },
-    {
-      'id': 'stu_02',
-      'name': 'Samantha Smith',
-      'email': 's.smith@university.edu',
-      'attempted': true,
-      'score': 10,
-      'maxScore': 10,
-      'percentage': 100,
-      'submittedAt': '3 hours ago',
-    },
-    {
-      'id': 'stu_03',
-      'name': 'Jordan Lee',
-      'email': 'jordan.l@university.edu',
-      'attempted': true,
-      'score': 8,
-      'maxScore': 10,
-      'percentage': 80,
-      'submittedAt': '5 hours ago',
-    },
-    {
-      'id': 'stu_04',
-      'name': 'Marcus Vance',
-      'email': 'm.vance@university.edu',
-      'attempted': true,
-      'score': 7,
-      'maxScore': 10,
-      'percentage': 70,
-      'submittedAt': 'Yesterday',
-    },
-    {
-      'id': 'stu_05',
-      'name': 'Elena Rostova',
-      'email': 'e.rostova@university.edu',
-      'attempted': false,
-      'score': null,
-      'maxScore': 10,
-      'percentage': null,
-      'submittedAt': 'Not submitted',
-    },
-    {
-      'id': 'stu_06',
-      'name': 'David Kim',
-      'email': 'd.kim@university.edu',
-      'attempted': false,
-      'score': null,
-      'maxScore': 10,
-      'percentage': null,
-      'submittedAt': 'Not submitted',
-    },
-  ];
-
-  List<Map<String, dynamic>> get _filteredStudents {
-    if (_selectedFilter == 'Completed') {
-      return _students.where((s) => s['attempted'] == true).toList();
-    }
-    if (_selectedFilter == 'Pending') {
-      return _students.where((s) => s['attempted'] == false).toList();
-    }
-    return _students;
-  }
-
-  void _showStudentDetail(Map<String, dynamic> student) {
+  void _showStudentDetail(ClassMember student) {
     showModalBottomSheet(
       context: context,
       backgroundColor: _surfaceWhite,
@@ -110,7 +41,6 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        final attempted = student['attempted'] as bool;
         return Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -120,12 +50,16 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    student['name'] as String,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: _textPrimary,
+                  Expanded(
+                    child: Text(
+                      student.displayName.isNotEmpty
+                          ? student.displayName
+                          : 'Student',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _textPrimary,
+                      ),
                     ),
                   ),
                   Container(
@@ -134,17 +68,15 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                       vertical: 4,
                     ),
                     decoration: BoxDecoration(
-                      color: attempted
-                          ? Colors.green.withValues(alpha: 0.1)
-                          : Colors.orange.withValues(alpha: 0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(
-                      attempted ? 'Attempted' : 'Not Attempted',
+                    child: const Text(
+                      'Enrolled',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: attempted ? Colors.green[800] : Colors.orange[800],
+                        color: _primaryNavy,
                       ),
                     ),
                   ),
@@ -152,47 +84,24 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                student['email'] as String,
+                student.email.isNotEmpty
+                    ? student.email
+                    : 'Enrolled via join code',
                 style: const TextStyle(fontSize: 13, color: _textSecondary),
               ),
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 16),
-              if (attempted) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _DetailStat(
-                      label: 'Raw Score',
-                      value: '${student['score']}/${student['maxScore']}',
-                    ),
-                    _DetailStat(
-                      label: 'Percentage',
-                      value: '${student['percentage']}%',
-                    ),
-                    _DetailStat(
-                      label: 'Submitted',
-                      value: student['submittedAt'] as String,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const Text(
-                  'Per-question attempt details will be synced from Firestore quizAttempts.',
-                  style: TextStyle(fontSize: 12, color: _textSecondary),
-                ),
-              ] else ...[
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Text(
-                      'This student has not yet submitted an attempt for this quiz.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: _textSecondary),
-                    ),
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'Quiz attempt records will sync here once student completes the quiz.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: _textSecondary, fontSize: 13),
                   ),
                 ),
-              ],
+              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -217,17 +126,6 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final completedCount = _students.where((s) => s['attempted'] == true).length;
-    final totalCount = _students.length;
-    final avgScore = (completedCount > 0)
-        ? (_students
-                    .where((s) => s['attempted'] == true)
-                    .map((s) => s['percentage'] as int)
-                    .reduce((a, b) => a + b) /
-                completedCount)
-            .round()
-        : 0;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -256,193 +154,249 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Header Information ─────────────────────────
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.className,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: _primaryNavy,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.quizTitle,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: _textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+          child: widget.classId == null
+              ? _buildEmptyResultsView(
+                  'No class selected',
+                  'Select a class from your dashboard to view its student results.',
+                )
+              : StreamBuilder<List<ClassMember>>(
+                  stream: _classService.getClassMembersStream(widget.classId!),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting &&
+                        !snapshot.hasData) {
+                      return const Center(
+                        child: CircularProgressIndicator(strokeWidth: 2.5),
+                      );
+                    }
 
-              // ── Overview Summary Cards ─────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _MetricCard(
-                        label: 'Completion',
-                        value: '$completedCount / $totalCount',
-                        icon: Icons.assignment_turned_in_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _MetricCard(
-                        label: 'Average Score',
-                        value: '$avgScore%',
-                        icon: Icons.insights,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                    final allMembers = snapshot.data ?? [];
+                    final students = allMembers
+                        .where((m) => m.role == 'student')
+                        .toList();
 
-              const SizedBox(height: 16),
-
-              // ── Filter Chips ───────────────────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                child: Row(
-                  children: [
-                    _FilterChip(
-                      label: 'All ($totalCount)',
-                      isSelected: _selectedFilter == 'All',
-                      onSelected: () => setState(() => _selectedFilter = 'All'),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: 'Completed ($completedCount)',
-                      isSelected: _selectedFilter == 'Completed',
-                      onSelected: () =>
-                          setState(() => _selectedFilter = 'Completed'),
-                    ),
-                    const SizedBox(width: 8),
-                    _FilterChip(
-                      label: 'Pending (${totalCount - completedCount})',
-                      isSelected: _selectedFilter == 'Pending',
-                      onSelected: () =>
-                          setState(() => _selectedFilter = 'Pending'),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // ── Student List ───────────────────────────────
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                  itemCount: _filteredStudents.length,
-                  itemBuilder: (context, index) {
-                    final student = _filteredStudents[index];
-                    final attempted = student['attempted'] as bool;
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 10),
-                      decoration: BoxDecoration(
-                        color: _surfaceWhite,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _outlineVariant),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 4,
-                        ),
-                        leading: CircleAvatar(
-                          backgroundColor: _primaryNavy.withValues(alpha: 0.1),
-                          child: Text(
-                            (student['name'] as String).substring(0, 1),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: _primaryNavy,
-                            ),
-                          ),
-                        ),
-                        title: Text(
-                          student['name'] as String,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: _textPrimary,
-                          ),
-                        ),
-                        subtitle: Text(
-                          attempted
-                              ? 'Submitted ${student['submittedAt']}'
-                              : 'Not attempted yet',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: _textSecondary,
-                          ),
-                        ),
-                        trailing: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (attempted) ...[
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // ── Header Information ─────────────────────────
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                               Text(
-                                '${student['score']} / ${student['maxScore']}',
+                                widget.className,
                                 style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
                                   color: _primaryNavy,
                                 ),
                               ),
+                              const SizedBox(height: 4),
                               Text(
-                                '${student['percentage']}%',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: (student['percentage'] as int) >= 75
-                                      ? Colors.green[700]
-                                      : Colors.orange[800],
-                                ),
-                              ),
-                            ] else ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: const Text(
-                                  'Not Attempted',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: _textSecondary,
-                                  ),
+                                widget.quizTitle,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: _textPrimary,
                                 ),
                               ),
                             ],
-                          ],
+                          ),
                         ),
-                        onTap: () => _showStudentDetail(student),
-                      ),
+
+                        // ── Overview Summary Cards ─────────────────────
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 20.0),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _MetricCard(
+                                  label: 'Enrolled Students',
+                                  value: '${students.length}',
+                                  icon: Icons.people_outline,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: _MetricCard(
+                                  label: 'Submissions',
+                                  value: '0',
+                                  icon: Icons.assignment_turned_in_outlined,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Filter Chips ───────────────────────────────
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 20.0),
+                          child: Row(
+                            children: [
+                              _FilterChip(
+                                label: 'All (${students.length})',
+                                isSelected: _selectedFilter == 'All',
+                                onSelected: () =>
+                                    setState(() => _selectedFilter = 'All'),
+                              ),
+                              const SizedBox(width: 8),
+                              _FilterChip(
+                                label: 'Submitted (0)',
+                                isSelected: _selectedFilter == 'Submitted',
+                                onSelected: () => setState(
+                                    () => _selectedFilter = 'Submitted'),
+                              ),
+                              const SizedBox(width: 8),
+                              _FilterChip(
+                                label: 'Pending (${students.length})',
+                                isSelected: _selectedFilter == 'Pending',
+                                onSelected: () => setState(
+                                    () => _selectedFilter = 'Pending'),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // ── Student List ───────────────────────────────
+                        Expanded(
+                          child: students.isEmpty
+                              ? _buildEmptyResultsView(
+                                  'No students enrolled yet',
+                                  'Share your class join code to enroll students in this class.',
+                                )
+                              : ListView.builder(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                                  itemCount: students.length,
+                                  itemBuilder: (context, index) {
+                                    final student = students[index];
+                                    final initial = student.displayName.isNotEmpty
+                                        ? student.displayName[0].toUpperCase()
+                                        : 'S';
+
+                                    return Container(
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      decoration: BoxDecoration(
+                                        color: _surfaceWhite,
+                                        borderRadius:
+                                            BorderRadius.circular(12),
+                                        border:
+                                            Border.all(color: _outlineVariant),
+                                      ),
+                                      child: ListTile(
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 4,
+                                        ),
+                                        leading: CircleAvatar(
+                                          backgroundColor: _primaryNavy
+                                              .withValues(alpha: 0.1),
+                                          child: Text(
+                                            initial,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              color: _primaryNavy,
+                                            ),
+                                          ),
+                                        ),
+                                        title: Text(
+                                          student.displayName.isNotEmpty
+                                              ? student.displayName
+                                              : 'Student',
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                            color: _textPrimary,
+                                          ),
+                                        ),
+                                        subtitle: Text(
+                                          student.email.isNotEmpty
+                                              ? student.email
+                                              : 'Enrolled member',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: _textSecondary,
+                                          ),
+                                        ),
+                                        trailing: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.grey
+                                                .withValues(alpha: 0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                          ),
+                                          child: const Text(
+                                            'Awaiting Attempt',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: _textSecondary,
+                                            ),
+                                          ),
+                                        ),
+                                        onTap: () =>
+                                            _showStudentDetail(student),
+                                      ),
+                                    );
+                                  },
+                                ),
+                        ),
+                      ],
                     );
                   },
                 ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyResultsView(String title, String subtitle) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: _primaryNavy.withValues(alpha: 0.08),
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
+              child: const Icon(
+                Icons.people_outline,
+                size: 32,
+                color: _primaryNavy,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+                color: _textPrimary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: _textSecondary),
+            ),
+          ],
         ),
       ),
     );
@@ -548,37 +502,6 @@ class _FilterChip extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _DetailStat extends StatelessWidget {
-  const _DetailStat({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF1A237E),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Color(0xFF454652),
-          ),
-        ),
-      ],
     );
   }
 }

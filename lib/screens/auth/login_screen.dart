@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
 import 'register_screen.dart';
 import '../teacher/teacher_home_screen.dart';
 import '../student/student_home_screen.dart';
@@ -8,8 +9,9 @@ import '../student/student_home_screen.dart';
 /// Features:
 /// - Lavender-to-blue gradient background
 /// - Centered logo, app title, and role indicator
-/// - Email & password input fields
-/// - "Log In" and "Sign in with Google" buttons with equal visual weight
+/// - Email & password input fields with real-time validation
+/// - "Log In" with loading state and real Firebase Authentication
+/// - Role mismatch detection and informative error feedback
 /// - Link/toggle to the matching register screen
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.role = 'Student'});
@@ -23,7 +25,11 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _authService = AuthService();
+
   bool _obscurePassword = true;
+  bool _isLoading = false;
+  String? _errorMessage;
 
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = Color(0xFF1A237E);
@@ -42,19 +48,71 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _navigateToHome() {
-    // TODO: Wire backend auth in future phase
-    if (widget.role == 'Teacher') {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
-      );
+  Future<void> _handleLogin() async {
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (email.isEmpty) {
+      _showErrorSnackBar('Please enter your email address.');
+      return;
     }
+
+    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email)) {
+      _showErrorSnackBar('Please enter a valid email address.');
+      return;
+    }
+
+    if (password.isEmpty) {
+      _showErrorSnackBar('Please enter your password.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final profile = await _authService.signInWithEmail(
+        email: email,
+        password: password,
+        expectedRole: widget.role,
+      );
+
+      if (!mounted) return;
+
+      if (profile.isTeacher) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          (route) => false,
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = AuthService.getErrorMessage(e);
+      setState(() {
+        _errorMessage = msg;
+        _isLoading = false;
+      });
+      _showErrorSnackBar(msg);
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -176,7 +234,39 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
+
+                      // ── Error Message Banner if any ─────────
+                      if (_errorMessage != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  color: Colors.redAccent, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
 
                       // ── Email label ─────────────────────────
                       const Align(
@@ -198,6 +288,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
+                        enabled: !_isLoading,
                         style: const TextStyle(
                           fontSize: 15,
                           color: _textPrimary,
@@ -264,6 +355,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       TextField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
+                        enabled: !_isLoading,
                         style: const TextStyle(
                           fontSize: 15,
                           color: _textPrimary,
@@ -319,10 +411,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                         ),
+                        onSubmitted: (_) => _handleLogin(),
                       ),
                       const SizedBox(height: 24),
 
-                      // ── Log In button (Equal visual weight) ──
+                      // ── Log In button ──────────────────────
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -335,90 +428,32 @@ class _LoginScreenState extends State<LoginScreen> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          onPressed: _navigateToHome,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Log In',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
+                          onPressed: _isLoading ? null : _handleLogin,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Log In',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Icon(Icons.arrow_forward, size: 18),
+                                  ],
                                 ),
-                              ),
-                              SizedBox(width: 6),
-                              Icon(Icons.arrow_forward, size: 18),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── OR divider ──────────────────────────
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Divider(
-                              color: _outlineVariant.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'or',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: _textOutline,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Divider(
-                              color: _outlineVariant.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── Google sign-in button (Equal visual weight) ──
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _surfaceWhite,
-                            foregroundColor: _textPrimary,
-                            elevation: 1,
-                            side: const BorderSide(color: _outlineVariant),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: _navigateToHome,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'G',
-                                style: TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF4285F4),
-                                ),
-                              ),
-                              SizedBox(width: 10),
-                              Text(
-                                'Sign in with Google',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: _textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                       ),
                       const SizedBox(height: 32),

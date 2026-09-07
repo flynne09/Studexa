@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
+import '../../services/class_service.dart';
 
 /// Screen where students enter a class join code, submit, and see
 /// a confirmation state displaying the joined class details.
@@ -22,6 +24,8 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
   static const _textSecondary = Color(0xFF454652);
 
   // ── Local confirmation state ────────────────────────────────
+  bool _isLoading = false;
+  String? _errorMessage;
   bool _isJoined = false;
   String? _joinedClassName;
   String? _joinedTeacherName;
@@ -33,7 +37,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
     super.dispose();
   }
 
-  void _handleJoin() {
+  Future<void> _handleJoin() async {
     final code = _codeController.text.trim();
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -45,13 +49,58 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
       return;
     }
 
-    // TODO: Wire to Firestore classMemberships query/creation
     setState(() {
-      _isJoined = true;
-      _joinedCode = code.toUpperCase();
-      _joinedClassName = 'Biology 101 - Cell Biology';
-      _joinedTeacherName = 'Prof. Davis';
+      _isLoading = true;
+      _errorMessage = null;
     });
+
+    try {
+      final user = AuthService().currentUser;
+      if (user == null) {
+        throw const ClassJoinException(
+          'You are not currently logged in. Please sign in with your student account first.',
+        );
+      }
+      final studentId = user.uid;
+      final studentName = user.displayName?.trim().isNotEmpty == true
+          ? user.displayName!.trim()
+          : (user.email != null && user.email!.contains('@')
+              ? user.email!.split('@').first
+              : 'Student');
+      final studentEmail = user.email?.trim() ?? '';
+
+      final joinedClass = await ClassService().joinClassByCode(
+        joinCode: code,
+        studentId: studentId,
+        studentName: studentName,
+        studentEmail: studentEmail,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _isJoined = true;
+        _joinedCode = joinedClass.joinCode;
+        _joinedClassName = joinedClass.name;
+        _joinedTeacherName = joinedClass.teacherName.isNotEmpty
+            ? joinedClass.teacherName
+            : 'Instructor';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e is ClassJoinException ? e.message : e.toString();
+      setState(() {
+        _isLoading = false;
+        _errorMessage = msg;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   void _resetForm() {
@@ -60,6 +109,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
       _joinedClassName = null;
       _joinedTeacherName = null;
       _joinedCode = null;
+      _errorMessage = null;
       _codeController.clear();
     });
   }
@@ -147,7 +197,36 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 36),
+        const SizedBox(height: 32),
+
+        // Error message banner
+        if (_errorMessage != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _errorMessage!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // Single text field for entering join code
         const Text(
@@ -161,6 +240,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
         const SizedBox(height: 6),
         TextField(
           controller: _codeController,
+          enabled: !_isLoading,
           textCapitalization: TextCapitalization.characters,
           style: const TextStyle(
             fontSize: 18,
@@ -220,21 +300,30 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            onPressed: _handleJoin,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Join Class',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
+            onPressed: _isLoading ? null : _handleJoin,
+            child: _isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Join Class',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward, size: 18),
+                    ],
                   ),
-                ),
-                SizedBox(width: 8),
-                Icon(Icons.arrow_forward, size: 18),
-              ],
-            ),
           ),
         ),
       ],
@@ -351,7 +440,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
                   Icon(Icons.quiz_outlined, size: 16, color: _primaryNavy),
                   SizedBox(width: 8),
                   Text(
-                    '3 Practice Quizzes currently active',
+                    'Class materials and practice quizzes are ready.',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,

@@ -1,0 +1,1084 @@
+import 'package:flutter/material.dart';
+import '../../models/class_model.dart';
+import '../../models/material_model.dart';
+import '../../models/quiz_assignment_model.dart';
+import '../../models/quiz_attempt_model.dart';
+import '../../models/quiz_model.dart';
+import '../../services/assignment_service.dart';
+import '../../services/auth_service.dart';
+import '../../services/class_service.dart';
+import '../../services/material_service.dart';
+import '../../services/quiz_service.dart';
+import 'answer_quiz_screen.dart';
+
+/// Class Details Screen for Students (Google Classroom style).
+///
+/// Displays:
+/// - Class header with class name, instructor, and join code.
+/// - Materials tab with lecture notes, slides, and study documents for this class.
+/// - Practice Quizzes tab with available practice quizzes for this class.
+/// - People tab with instructor info and classmates.
+class StudentClassDetailsScreen extends StatefulWidget {
+  final ClassModel classModel;
+
+  const StudentClassDetailsScreen({super.key, required this.classModel});
+
+  @override
+  State<StudentClassDetailsScreen> createState() =>
+      _StudentClassDetailsScreenState();
+}
+
+class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
+    with SingleTickerProviderStateMixin {
+  static const _primaryNavy = Color(0xFF1A237E);
+  static const _darkNavy = Color(0xFF000666);
+  static const _gradientStart = Color(0xFFF3F0FF);
+  static const _gradientEnd = Color(0xFFEFF6FF);
+  static const _surfaceWhite = Color(0xFFFBF9F8);
+  static const _outlineVariant = Color(0xFFC6C5D4);
+  static const _textPrimary = Color(0xFF1B1C1C);
+  static const _textSecondary = Color(0xFF454652);
+
+  late TabController _tabController;
+  final MaterialService _materialService = MaterialService();
+  final ClassService _classService = ClassService();
+  final QuizService _quizService = QuizService();
+  final AssignmentService _assignmentService = AssignmentService();
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _showStudentMaterialDetails(MaterialModel material) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _buildFileTypeBadge(material.fileType),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        material.fileName,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _textPrimary,
+                        ),
+                      ),
+                      Text(
+                        ' • Posted ',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+            if (material.isReady &&
+                material.extractedText.isNotEmpty) ...[
+              const Text(
+                'Study Content & Notes',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: _primaryNavy,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 250),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _surfaceWhite,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _outlineVariant),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    material.extractedText,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: _textPrimary,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            ] else ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surfaceWhite,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: _outlineVariant),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, color: _primaryNavy, size: 20),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'This study material is being processed by your instructor.',
+                        style: TextStyle(fontSize: 13, color: _textSecondary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFileTypeBadge(String ext) {
+    Color bg = Colors.blue;
+    String label = ext.toUpperCase();
+
+    if (ext.toLowerCase() == 'pdf') {
+      bg = Colors.redAccent;
+    } else if (ext.toLowerCase() == 'pptx') {
+      bg = Colors.orange;
+    } else if (ext.toLowerCase() == 'docx') {
+      bg = Colors.blueAccent;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: bg.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: bg,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<ClassModel?>(
+      stream: _classService.streamClass(widget.classModel.id),
+      initialData: widget.classModel,
+      builder: (context, classSnapshot) {
+        final liveClass = classSnapshot.data ?? widget.classModel;
+
+        return Scaffold(
+          body: Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_gradientStart, _gradientEnd],
+              ),
+            ),
+            child: SafeArea(
+              child: Column(
+                children: [
+                  // ── Top Navigation Bar ────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.arrow_back,
+                              color: _textPrimary),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            liveClass.name,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: _textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ── Google Classroom Header Banner ────────────
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [_primaryNavy, _darkNavy],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _primaryNavy.withValues(alpha: 0.25),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          liveClass.name,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        if (liveClass.teacherName.isNotEmpty)
+                          Text(
+                            'Instructor: ',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            'Class Code: ',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Segmented Tabs ───────────────────────────
+                  TabBar(
+                    controller: _tabController,
+                    labelColor: _primaryNavy,
+                    unselectedLabelColor: _textSecondary,
+                    indicatorColor: _primaryNavy,
+                    indicatorWeight: 3,
+                    tabs: const [
+                      Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
+                      Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
+                      Tab(icon: Icon(Icons.people_outline), text: 'Class Info'),
+                    ],
+                  ),
+
+                  // ── Tab Views ────────────────────────────────
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        // 1. Materials Tab
+                        _buildMaterialsTab(liveClass),
+
+                        // 2. Practice Quizzes Tab
+                        _buildQuizzesTab(liveClass),
+
+                        // 3. Class Info & People Tab
+                        _buildPeopleTab(liveClass),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Materials Tab View ─────────────────────────────────────────
+  Widget _buildMaterialsTab(ClassModel liveClass) {
+    return StreamBuilder<List<MaterialModel>>(
+      stream: _materialService.streamClassMaterials(liveClass.id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          );
+        }
+
+        final materials = snapshot.data ?? [];
+
+        if (materials.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.menu_book_outlined,
+                    size: 60,
+                    color: _primaryNavy.withValues(alpha: 0.35),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No Materials Shared Yet',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'When your instructor uploads lecture slides, PDFs, or study notes for this class, they will appear here.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: _textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: materials.length,
+          itemBuilder: (context, index) {
+            final mat = materials[index];
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: _surfaceWhite,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _outlineVariant),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ListTile(
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                leading: _buildFileTypeBadge(mat.fileType),
+                title: Text(
+                  mat.fileName,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: _textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  ' • Posted ',
+                  style: const TextStyle(fontSize: 12, color: _textSecondary),
+                ),
+                trailing: const Icon(Icons.chevron_right, color: _textSecondary),
+                onTap: () => _showStudentMaterialDetails(mat),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ── Practice Quizzes Tab View ──────────────────────────────────
+  Widget _buildQuizzesTab(ClassModel liveClass) {
+    final currentUserId = AuthService().currentUser?.uid ?? '';
+
+    return StreamBuilder<List<QuizModel>>(
+      stream: _quizService.streamClassQuizzes(liveClass.id, type: 'practice'),
+      builder: (context, quizSnapshot) {
+        if (quizSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          );
+        }
+
+        final allQuizzes = quizSnapshot.data ?? [];
+        final publishedQuizzes =
+            allQuizzes.where((q) => q.isPublished).toList();
+
+        if (publishedQuizzes.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.quiz_outlined,
+                    size: 60,
+                    color: _primaryNavy.withValues(alpha: 0.35),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No Practice Quizzes Assigned',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: _textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Practice quizzes published by your teacher for this class will appear here so you can practice smarter.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: _textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return StreamBuilder<List<QuizAssignmentModel>>(
+          stream: _assignmentService.streamClassAssignments(liveClass.id),
+          builder: (context, assignmentSnapshot) {
+            final assignments = assignmentSnapshot.data ?? [];
+
+            return StreamBuilder<List<QuizAttemptModel>>(
+              stream: currentUserId.isNotEmpty
+                  ? _assignmentService.streamStudentClassAttempts(liveClass.id, currentUserId)
+                  : Stream.value(<QuizAttemptModel>[]),
+              builder: (context, attemptSnapshot) {
+                final attempts = attemptSnapshot.data ?? [];
+
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: publishedQuizzes.length,
+                  itemBuilder: (context, index) {
+                    final quiz = publishedQuizzes[index];
+
+                    final assignment = assignments
+                        .where((a) => a.quizId == quiz.id)
+                        .firstOrNull;
+
+                    final studentAttempts = attempts
+                        .where((a) => a.quizId == quiz.id)
+                        .toList();
+                    final attempt =
+                        studentAttempts.isNotEmpty ? studentAttempts.first : null;
+
+                    final isClosed = assignment?.isClosed == true;
+                    final isExpired = assignment?.isExpired == true;
+                    final isCompleted = attempt != null;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _outlineVariant),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: isCompleted
+                                        ? (attempt.isPassed
+                                            ? Colors.green.withValues(alpha: 0.1)
+                                            : Colors.orange.withValues(alpha: 0.1))
+                                        : _primaryNavy.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    isCompleted
+                                        ? (attempt.isPassed
+                                            ? Icons.check_circle
+                                            : Icons.refresh)
+                                        : Icons.quiz_outlined,
+                                    color: isCompleted
+                                        ? (attempt.isPassed
+                                            ? Colors.green
+                                            : Colors.orange)
+                                        : _primaryNavy,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        quiz.title,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: _textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${quiz.questionCount} Questions • ${quiz.totalPoints.toStringAsFixed(0)} Points',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: _textSecondary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                if (isCompleted) ...[
+                                  _buildQuizStatusChip(
+                                    label:
+                                        'Score: ${attempt.formattedScore} (${attempt.formattedPercentage})',
+                                    color: attempt.isPassed
+                                        ? Colors.green
+                                        : Colors.orange,
+                                  ),
+                                  _buildQuizStatusChip(
+                                    label: attempt.isPassed
+                                        ? 'Passed'
+                                        : 'Needs Practice',
+                                    color: attempt.isPassed
+                                        ? Colors.green
+                                        : Colors.orange,
+                                  ),
+                                ] else if (isClosed) ...[
+                                  _buildQuizStatusChip(
+                                    label: 'Submissions Closed',
+                                    color: Colors.redAccent,
+                                  ),
+                                ] else if (isExpired) ...[
+                                  _buildQuizStatusChip(
+                                    label: 'Deadline Passed',
+                                    color: Colors.redAccent,
+                                  ),
+                                ] else ...[
+                                  _buildQuizStatusChip(
+                                    label: 'Available',
+                                    color: Colors.teal,
+                                  ),
+                                ],
+                                if (assignment?.deadline != null)
+                                  _buildQuizStatusChip(
+                                    label:
+                                        'Due: ${_formatDeadline(assignment!.deadline!)}',
+                                    color: isExpired
+                                        ? Colors.redAccent
+                                        : Colors.indigo,
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            SizedBox(
+                              width: double.infinity,
+                              child: isCompleted
+                                  ? OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: _primaryNavy,
+                                        side: const BorderSide(
+                                            color: _primaryNavy),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 10),
+                                      ),
+                                      onPressed: () =>
+                                          _showAttemptReview(attempt, quiz),
+                                      icon: const Icon(
+                                          Icons.assessment_outlined,
+                                          size: 18),
+                                      label: const Text(
+                                        'Review Results & Feedback',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    )
+                                  : (isClosed || isExpired)
+                                      ? ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.grey[300],
+                                            foregroundColor: Colors.grey[700],
+                                            elevation: 0,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 10),
+                                          ),
+                                          onPressed: () {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(isClosed
+                                                    ? 'This quiz has been closed by your teacher.'
+                                                    : 'The deadline for this quiz has passed.'),
+                                                backgroundColor:
+                                                    Colors.redAccent,
+                                              ),
+                                            );
+                                          },
+                                          icon: const Icon(
+                                              Icons.lock_outline,
+                                              size: 18),
+                                          label: Text(
+                                            isClosed
+                                                ? 'Closed by Instructor'
+                                                : 'Deadline Passed',
+                                            style: const TextStyle(
+                                                fontWeight: FontWeight.w600),
+                                          ),
+                                        )
+                                      : ElevatedButton.icon(
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: _primaryNavy,
+                                            foregroundColor: Colors.white,
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 10),
+                                          ),
+                                          onPressed: () {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) =>
+                                                    AnswerQuizScreen(
+                                                        quiz: quiz),
+                                              ),
+                                            );
+                                          },
+                                          icon: const Icon(
+                                              Icons.play_arrow_rounded,
+                                              size: 18),
+                                          label: const Text(
+                                            'Start Practice Quiz',
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w600),
+                                          ),
+                                        ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showAttemptReview(QuizAttemptModel attempt, QuizModel quiz) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: const BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          quiz.title,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: _textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Score: ${attempt.formattedScore} • ${attempt.formattedPercentage}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: attempt.isPassed
+                                ? Colors.green[800]
+                                : Colors.orange[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: attempt.breakdown.length,
+                itemBuilder: (context, index) {
+                  final item = attempt.breakdown[index];
+                  final isCorrect = item['isCorrect'] == true;
+                  final questionText =
+                      item['question']?.toString() ?? 'Question ${index + 1}';
+                  final userAns = item['userAnswer']?.toString() ?? '';
+                  final correctAns =
+                      item['correctAnswer']?.toString() ?? '';
+                  final earned =
+                      (item['earned'] as num?)?.toDouble() ?? 0.0;
+                  final points =
+                      (item['points'] as num?)?.toDouble() ?? 1.0;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isCorrect
+                            ? Colors.green.withValues(alpha: 0.3)
+                            : Colors.red.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${index + 1}. ',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            Expanded(
+                              child: Text(
+                                questionText,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isCorrect
+                                    ? Colors.green.withValues(alpha: 0.1)
+                                    : Colors.red.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                '${earned.toStringAsFixed(earned.truncateToDouble() == earned ? 0 : 1)}/${points.toStringAsFixed(0)} pt',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isCorrect
+                                      ? Colors.green[800]
+                                      : Colors.red[800],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Your Answer: ${userAns.isNotEmpty ? userAns : "(no answer)"}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isCorrect
+                                ? Colors.green[800]
+                                : Colors.red[800],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        if (!isCorrect) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Correct Answer: $correctAns',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: _primaryNavy,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuizStatusChip({required String label, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  String _formatDeadline(DateTime dt) {
+    final months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
+    final ampm = dt.hour >= 12 ? 'PM' : 'AM';
+    final minute = dt.minute.toString().padLeft(2, '0');
+    return '${months[dt.month - 1]} ${dt.day}, $hour:$minute $ampm';
+  }
+
+  // ── People & Class Info Tab View ───────────────────────────────
+  Widget _buildPeopleTab(ClassModel liveClass) {
+    return StreamBuilder<List<ClassMember>>(
+      stream: _classService.getClassMembersStream(liveClass.id),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(strokeWidth: 2.5),
+          );
+        }
+
+        final members = snapshot.data ?? [];
+        final teachers = members.where((m) => m.role == 'teacher').toList();
+        final classmates = members.where((m) => m.role == 'student').toList();
+
+        return ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            // Teacher section
+            const Text(
+              'Instructor',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: _primaryNavy,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: _surfaceWhite,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _outlineVariant),
+              ),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _primaryNavy.withValues(alpha: 0.1),
+                  child: const Icon(Icons.school, color: _primaryNavy),
+                ),
+                title: Text(
+                  liveClass.teacherName.isNotEmpty
+                      ? liveClass.teacherName
+                      : (teachers.isNotEmpty
+                          ? teachers.first.displayName
+                          : 'Instructor'),
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: _textPrimary,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Class Owner',
+                  style: TextStyle(fontSize: 12, color: _textSecondary),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Classmates section
+            Text(
+              'Classmates ()',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: _primaryNavy,
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            if (classmates.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surfaceWhite,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _outlineVariant),
+                ),
+                child: const Text(
+                  'You are the first student in this class!',
+                  style: TextStyle(fontSize: 13, color: _textSecondary),
+                ),
+              )
+            else
+              ...classmates.map((student) {
+                final initial = student.displayName.isNotEmpty
+                    ? student.displayName[0].toUpperCase()
+                    : 'S';
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: _surfaceWhite,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _outlineVariant),
+                  ),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: _primaryNavy.withValues(alpha: 0.08),
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _primaryNavy,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      student.displayName.isNotEmpty
+                          ? student.displayName
+                          : 'Student',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: _textPrimary,
+                      ),
+                    ),
+                  ),
+                );
+              }),
+          ],
+        );
+      },
+    );
+  }
+}

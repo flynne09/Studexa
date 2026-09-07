@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import 'auth/role_selection_screen.dart';
+import 'teacher/teacher_home_screen.dart';
+import 'student/student_home_screen.dart';
 
 /// Animated Splash Screen displaying the Studexa logo with smooth
 /// scale, fade, and glow entrance animations before transitioning
@@ -75,13 +78,28 @@ class _SplashScreenState extends State<SplashScreen>
     Timer(const Duration(milliseconds: 2800), _navigateToApp);
   }
 
-  void _navigateToApp() {
+  Future<void> _navigateToApp() async {
+    if (!mounted) return;
+
+    Widget targetScreen = const RoleSelectionScreen();
+    try {
+      final profile = await AuthService().getCurrentUserProfile();
+      if (profile != null) {
+        if (profile.isTeacher) {
+          targetScreen = const TeacherHomeScreen();
+        } else if (profile.isStudent) {
+          targetScreen = const StudentHomeScreen();
+        }
+      }
+    } catch (_) {
+      targetScreen = const RoleSelectionScreen();
+    }
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 700),
-        pageBuilder: (_, animation, secondaryAnimation) =>
-            const RoleSelectionScreen(),
+        pageBuilder: (_, animation, secondaryAnimation) => targetScreen,
         transitionsBuilder: (_, animation, secondaryAnimation, child) {
           return FadeTransition(
             opacity: CurvedAnimation(

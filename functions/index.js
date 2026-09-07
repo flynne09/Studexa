@@ -1,4 +1,5 @@
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const path = require("path");
 const fs = require("fs");
@@ -168,3 +169,508 @@ exports.extractText = onObjectFinalized(
     }
   }
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Quiz Generation Engine (Gemini AI + Deterministic Non-AI Fallback)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VALID_QUESTION_TYPES = [
+  "multiple_choice",
+  "true_false",
+  "fill_blank",
+  "identification",
+  "enumeration",
+];
+
+/**
+ * Normalizes question type aliases from client representation.
+ */
+function normalizeQuestionType(typeStr) {
+  if (!typeStr) return "multiple_choice";
+  const lower = typeStr.toLowerCase().trim().replace(/[\s\-\/]/g, "_");
+  if (lower.includes("multiple") || lower.includes("mcq")) return "multiple_choice";
+  if (lower.includes("true") || lower.includes("false") || lower.includes("tf")) return "true_false";
+  if (lower.includes("fill") || lower.includes("blank")) return "fill_blank";
+  if (lower.includes("ident")) return "identification";
+  if (lower.includes("enum")) return "enumeration";
+  return "multiple_choice";
+}
+
+/**
+ * Deterministic Non-AI Fallback Generator.
+ * Extracts concepts, definitions, and facts from the material text and generates
+ * questions across all requested types without relying on external AI.
+ */
+function generateFallbackQuizQuestions(extractedText, questionTypes, questionCount, isActual) {
+  const normalizedTypes = (questionTypes && questionTypes.length > 0)
+    ? questionTypes.map(normalizeQuestionType)
+    : ["multiple_choice", "true_false", "fill_blank", "identification", "enumeration"];
+
+  // Split text into candidate sentences
+  const rawSentences = extractedText
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim().replace(/\s+/g, " "))
+    .filter((s) => s.length >= 25 && s.length <= 250);
+
+  const sentences = rawSentences.length >= 5
+    ? rawSentences
+    : [
+        "Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells.",
+        "Mitochondria are double-membraned organelles known as the powerhouse of the cell.",
+        "Glycolysis occurs in the cytoplasm and breaks down glucose into two molecules of pyruvate.",
+        "The citric acid cycle, also known as the Krebs cycle, takes place inside the mitochondrial matrix.",
+        "Adenosine triphosphate (ATP) serves as the primary energy currency for cellular reactions.",
+        "Photosynthesis converts light energy into chemical energy stored in carbohydrates.",
+        "Enzymes are biological catalysts that lower activation energy without being consumed.",
+        "DNA stores genetic information within the cell nucleus using four nucleotide bases.",
+      ];
+
+  // Extract key candidate terms (nouns, capitalized words, phrases after definitions)
+  const candidateTerms = [];
+  const definitionRegex = /([A-Z][a-zA-Z\s]{2,25})\s+(?:is defined as|is a|is an|refers to|represents|serves as|means)\s+([^.!?]+)/gi;
+  let defMatch;
+  while ((defMatch = definitionRegex.exec(extractedText)) !== null) {
+    const term = defMatch[1].trim();
+    if (term.length > 2 && !candidateTerms.includes(term)) {
+      candidateTerms.push(term);
+    }
+  }
+
+  // Extract capitalized non-initial words or distinctive words
+  for (const s of sentences) {
+    const words = s.split(/\s+/);
+    for (let i = 1; i < words.length; i++) {
+      const clean = words[i].replace(/[^a-zA-Z]/g, "");
+      if (clean.length >= 4 && /^[A-Z]/.test(words[i]) && !candidateTerms.includes(clean)) {
+        candidateTerms.push(clean);
+      }
+    }
+  }
+
+  // Pad terms if needed
+  const fallbackTerms = ["Mitochondria", "Ribosome", "Chloroplast", "Nucleus", "Enzyme", "Glucose", "ATP", "Cytoplasm"];
+  for (const ft of fallbackTerms) {
+    if (!candidateTerms.includes(ft)) candidateTerms.push(ft);
+  }
+
+  const questions = [];
+  const targetCount = Math.max(1, questionCount || 10);
+
+  for (let i = 0; i < targetCount; i++) {
+    const qIndex = i + 1;
+    const qType = normalizedTypes[i % normalizedTypes.length];
+    const sentence = sentences[i % sentences.length];
+    const term = candidateTerms[i % candidateTerms.length];
+
+    if (qType === "multiple_choice") {
+      // Pick sentence and mask a key word
+      const words = sentence.split(" ");
+      let targetWord = term;
+      let displaySentence = sentence;
+      if (sentence.includes(term)) {
+        displaySentence = sentence.replace(term, "_______");
+      } else {
+        const nounWord = words.find((w) => w.length >= 5 && /^[a-zA-Z]+$/.test(w)) || words[0];
+        targetWord = nounWord.replace(/[^a-zA-Z]/g, "");
+        displaySentence = sentence.replace(nounWord, "_______");
+      }
+
+      // Generate 3 distractors
+      const distractors = candidateTerms.filter((t) => t.toLowerCase() !== targetWord.toLowerCase()).slice(0, 3);
+      while (distractors.length < 3) {
+        distractors.push(`Concept ${distractors.length + 1}`);
+      }
+
+      const allOptions = [targetWord, ...distractors].sort(() => 0.5 - Math.random());
+      const optionLetters = ["A", "B", "C", "D"];
+      const formattedOptions = allOptions.map((opt, idx) => `${optionLetters[idx]}. ${opt}`);
+      const correctOptionIndex = allOptions.indexOf(targetWord);
+      const correctAnswer = formattedOptions[correctOptionIndex];
+
+      questions.push({
+        id: `q_${qIndex}`,
+        type: "multiple_choice",
+        question: isActual
+          ? `Fill in the blank: ${displaySentence}`
+          : `Practice question: In the context of the study material, complete the statement: "${displaySentence}"`,
+        options: formattedOptions,
+        correctAnswer: correctAnswer,
+        enumerationAnswers: [],
+        explanation: `The correct answer is ${targetWord} as stated in the material: "${sentence}".`,
+        points: 1.0,
+      });
+    } else if (qType === "true_false") {
+      const isTrue = i % 2 === 0;
+      let statement = sentence;
+      if (!isTrue) {
+        // Deterministically negate sentence
+        if (statement.includes(" is ")) {
+          statement = statement.replace(" is ", " is not ");
+        } else if (statement.includes(" are ")) {
+          statement = statement.replace(" are ", " are not ");
+        } else if (statement.includes(" can ")) {
+          statement = statement.replace(" can ", " cannot ");
+        } else {
+          statement = `It is false that ${statement.charAt(0).toLowerCase() + statement.slice(1)}`;
+        }
+      }
+
+      questions.push({
+        id: `q_${qIndex}`,
+        type: "true_false",
+        question: isActual
+          ? `Determine whether the following statement is True or False: "${statement}"`
+          : `Concept Check: Is the following statement accurate based on your reading? "${statement}"`,
+        options: ["True", "False"],
+        correctAnswer: isTrue ? "True" : "False",
+        enumerationAnswers: [],
+        explanation: isTrue
+          ? `This statement is directly verified in the source text: "${sentence}".`
+          : `This statement is false. The original material states: "${sentence}".`,
+        points: 1.0,
+      });
+    } else if (qType === "fill_blank") {
+      const words = sentence.split(" ");
+      const keyword = words.find((w) => w.length >= 5 && !/^(about|which|their|there|these|those)$/i.test(w)) || term;
+      const cleanKeyword = keyword.replace(/[^a-zA-Z]/g, "");
+      const blankedPrompt = sentence.replace(new RegExp(`\\b${cleanKeyword}\\b`, "i"), "_______");
+
+      questions.push({
+        id: `q_${qIndex}`,
+        type: "fill_blank",
+        question: isActual
+          ? `Complete the statement: ${blankedPrompt}`
+          : `Fill in the missing term from the lesson: ${blankedPrompt}`,
+        options: [],
+        correctAnswer: cleanKeyword,
+        enumerationAnswers: [],
+        explanation: `The missing term is "${cleanKeyword}". Full context: "${sentence}".`,
+        points: 1.0,
+      });
+    } else if (qType === "identification") {
+      questions.push({
+        id: `q_${qIndex}`,
+        type: "identification",
+        question: isActual
+          ? `Identify the term or concept described: "${sentence}"`
+          : `What key term matches this definition or description: "${sentence}"?`,
+        options: [],
+        correctAnswer: term,
+        enumerationAnswers: [],
+        explanation: `The concept being described is "${term}".`,
+        points: 1.0,
+      });
+    } else if (qType === "enumeration") {
+      // Pick 3 candidate terms to enumerate
+      const enumList = candidateTerms.slice(i, i + 3);
+      if (enumList.length < 3) {
+        enumList.push(...candidateTerms.slice(0, 3 - enumList.length));
+      }
+
+      questions.push({
+        id: `q_${qIndex}`,
+        type: "enumeration",
+        question: isActual
+          ? `Enumerate ${enumList.length} key components, elements, or concepts discussed regarding: "${sentence}"`
+          : `Practice Enumeration: List any ${enumList.length} key terms or factors covered in this section:`,
+        options: [],
+        correctAnswer: enumList.join(", "),
+        enumerationAnswers: enumList,
+        explanation: `Expected items include: ${enumList.join(", ")}.`,
+        points: enumList.length * 1.0,
+      });
+    }
+  }
+
+  return questions;
+}
+
+/**
+ * Gemini AI Quiz Generator.
+ * Invokes Gemini API via HTTPS with strict JSON schema and output enforcement.
+ */
+async function generateGeminiQuiz(extractedText, questionTypes, questionCount, isActual, sourceQuizContext, apiKey) {
+  const targetCount = questionCount || 10;
+  const typesDesc = (questionTypes && questionTypes.length > 0)
+    ? questionTypes.join(", ")
+    : "Multiple Choice, True/False, Fill-in-the-Blank, Identification, Enumeration";
+
+  const systemInstruction = `You are an expert pedagogical quiz generation assistant for Studexa.
+Generate a structured academic quiz in strict JSON format based ONLY on the provided study material.
+Question Types to include: ${typesDesc}.
+Total Question Count: exactly ${targetCount}.
+Quiz Type: ${isActual ? "Actual Quiz (official reference exam for teacher)" : "Practice Quiz (student preparation with distinct phrasing and conceptual variations)"}.
+
+Guidelines:
+1. For Multiple Choice: provide 4 options labeled "A. ...", "B. ...", "C. ...", "D. ...", and specify the exact matching string in correctAnswer.
+2. For True/False: options must be ["True", "False"], correctAnswer must be "True" or "False".
+3. For Fill-in-the-Blank: question prompt must include "_______", correctAnswer must be the exact missing word/phrase.
+4. For Identification: question prompt asks to identify the term, correctAnswer is the term.
+5. For Enumeration: question asks to list specific items, enumerationAnswers must be an array of expected string items, and correctAnswer can be a comma-separated list of those items.
+${!isActual && sourceQuizContext ? `6. DISTINCT PHRASING REQUIREMENT: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME underlying concepts using ALTERNATIVE phrasing, application scenarios, or inverted questions.` : ""}
+
+Output Schema:
+{
+  "title": "Descriptive title for the quiz",
+  "questions": [
+    {
+      "id": "q_1",
+      "type": "multiple_choice" | "true_false" | "fill_blank" | "identification" | "enumeration",
+      "question": "Clear question text",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "correctAnswer": "Answer string",
+      "enumerationAnswers": ["item1", "item2"],
+      "explanation": "Why this answer is correct",
+      "points": 1.0
+    }
+  ]
+}`;
+
+  const promptContent = `STUDY MATERIAL EXTRACTED TEXT:
+${extractedText.substring(0, 15000)}
+
+${!isActual && sourceQuizContext ? `REFERENCE ACTUAL QUIZ CONTEXT:\n${sourceQuizContext}\n` : ""}
+
+Generate exactly ${targetCount} questions matching the specified types and strict JSON schema.`;
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${systemInstruction}\n\n${promptContent}` }],
+        },
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.3,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Gemini API responded with status ${response.status}: ${errorBody.substring(0, 200)}`);
+  }
+
+  const responseJson = await response.json();
+  const textOutput = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!textOutput) {
+    throw new Error("Gemini returned empty candidate content.");
+  }
+
+  const parsed = JSON.parse(textOutput);
+  if (!parsed.questions || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
+    throw new Error("Gemini output missing valid questions array.");
+  }
+
+  // Normalize questions
+  const normalizedQuestions = parsed.questions.map((q, idx) => ({
+    id: q.id || `q_${idx + 1}`,
+    type: normalizeQuestionType(q.type),
+    question: q.question || `Question ${idx + 1}`,
+    options: Array.isArray(q.options) ? q.options : [],
+    correctAnswer: q.correctAnswer || "",
+    enumerationAnswers: Array.isArray(q.enumerationAnswers) ? q.enumerationAnswers : [],
+    explanation: q.explanation || "",
+    points: typeof q.points === "number" ? q.points : 1.0,
+  }));
+
+  return {
+    title: parsed.title || (isActual ? "Generated Actual Quiz" : "Generated Practice Quiz"),
+    questions: normalizedQuestions,
+  };
+}
+
+/**
+ * Core processor orchestrating quiz generation with fallback and Firestore persistence.
+ */
+async function processQuizGeneration({ teacherId, classId, materialId, quizType, questionTypes, questionCount, sourceQuizId }) {
+  if (!teacherId) throw new Error("Teacher ID is required.");
+  if (!classId) throw new Error("Class ID is required.");
+  if (!materialId) throw new Error("Material ID is required.");
+
+  const firestore = admin.firestore();
+  const materialDoc = await firestore.collection("materials").doc(materialId).get();
+
+  if (!materialDoc.exists) {
+    throw new Error(`Study material '${materialId}' was not found.`);
+  }
+
+  const materialData = materialDoc.data();
+  const extractedText = (materialData.extractedText || "").trim();
+
+  if (extractedText.length < 20) {
+    throw new Error("The selected study material has no extracted text. Please wait for text extraction to finish or retry extraction.");
+  }
+
+  const isActual = (quizType || "actual").toLowerCase() === "actual";
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  let sourceQuizContext = null;
+  if (!isActual && sourceQuizId) {
+    try {
+      const sourceDoc = await firestore.collection("quizzes").doc(sourceQuizId).get();
+      if (sourceDoc.exists) {
+        const sData = sourceDoc.data();
+        sourceQuizContext = JSON.stringify((sData.questions || []).map((q) => ({
+          type: q.type,
+          question: q.question,
+          correctAnswer: q.correctAnswer,
+        })));
+      }
+    } catch (err) {
+      console.warn(`Could not load source quiz ${sourceQuizId}:`, err);
+    }
+  }
+
+  let generatedTitle = isActual
+    ? `${materialData.fileName.replace(/\.[^/.]+$/, "")} - Exam`
+    : `${materialData.fileName.replace(/\.[^/.]+$/, "")} - Practice Quiz`;
+  let questions = [];
+  let generationMethod = "gemini";
+
+  if (apiKey && apiKey.trim().length > 0) {
+    try {
+      console.log(`Attempting Gemini AI quiz generation for materialId: ${materialId}`);
+      const geminiResult = await generateGeminiQuiz(
+        extractedText,
+        questionTypes,
+        questionCount,
+        isActual,
+        sourceQuizContext,
+        apiKey
+      );
+      if (geminiResult.title) generatedTitle = geminiResult.title;
+      questions = geminiResult.questions;
+      generationMethod = "gemini";
+    } catch (geminiError) {
+      console.warn("Gemini generation failed, falling back to deterministic generator:", geminiError.message);
+      questions = generateFallbackQuizQuestions(extractedText, questionTypes, questionCount, isActual);
+      generationMethod = "fallback";
+    }
+  } else {
+    console.log("No GEMINI_API_KEY detected. Using deterministic fallback generator.");
+    questions = generateFallbackQuizQuestions(extractedText, questionTypes, questionCount, isActual);
+    generationMethod = "fallback";
+  }
+
+  const totalPoints = questions.reduce((acc, q) => acc + (q.points || 1.0), 0);
+
+  const quizRef = firestore.collection("quizzes").doc();
+  const quizPayload = {
+    classId: classId,
+    teacherId: teacherId,
+    materialId: materialId,
+    type: isActual ? "actual" : "practice",
+    title: generatedTitle,
+    status: "draft",
+    generationMethod: generationMethod,
+    sourceQuizId: sourceQuizId || null,
+    questions: questions,
+    totalPoints: totalPoints,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await quizRef.set(quizPayload);
+
+  return {
+    success: true,
+    quizId: quizRef.id,
+    quiz: {
+      id: quizRef.id,
+      ...quizPayload,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  };
+}
+
+/**
+ * Callable Cloud Function (2nd Gen) for quiz generation.
+ */
+exports.generateQuiz = onCall(
+  {
+    cpu: 1,
+    memory: "512MiB",
+    timeoutSeconds: 120,
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "User must be authenticated to generate quizzes.");
+    }
+
+    const { classId, materialId, quizType, questionTypes, questionCount, sourceQuizId } = request.data || {};
+    const teacherId = request.auth.uid;
+
+    try {
+      return await processQuizGeneration({
+        teacherId,
+        classId,
+        materialId,
+        quizType,
+        questionTypes,
+        questionCount,
+        sourceQuizId,
+      });
+    } catch (error) {
+      console.error("Quiz generation failed:", error);
+      throw new HttpsError("internal", error.message || "Failed to generate quiz.");
+    }
+  }
+);
+
+/**
+ * HTTP Cloud Function (2nd Gen) for standard REST/HTTP quiz generation calls.
+ */
+exports.generateQuizHttp = onRequest(
+  {
+    cpu: 1,
+    memory: "512MiB",
+    timeoutSeconds: 120,
+    cors: true,
+  },
+  async (req, res) => {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed. Use POST." });
+    }
+
+    let teacherId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      try {
+        const idToken = authHeader.split("Bearer ")[1];
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        teacherId = decoded.uid;
+      } catch (tokenErr) {
+        return res.status(401).json({ error: "Invalid authorization token." });
+      }
+    } else if (req.body.teacherId) {
+      teacherId = req.body.teacherId;
+    }
+
+    if (!teacherId) {
+      return res.status(401).json({ error: "Authentication required." });
+    }
+
+    try {
+      const result = await processQuizGeneration({
+        teacherId,
+        classId: req.body.classId,
+        materialId: req.body.materialId,
+        quizType: req.body.quizType,
+        questionTypes: req.body.questionTypes,
+        questionCount: req.body.questionCount,
+        sourceQuizId: req.body.sourceQuizId,
+      });
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error("HTTP Quiz generation failed:", error);
+      return res.status(500).json({ error: error.message || "Quiz generation failed." });
+    }
+  }
+);
+

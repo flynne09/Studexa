@@ -1,16 +1,28 @@
 import 'dart:async';
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../models/class_model.dart';
+import '../../models/material_model.dart';
+import '../../services/class_service.dart';
+import '../../services/material_service.dart';
+import '../../services/quiz_service.dart';
+import 'quiz_detail_screen.dart';
 
 /// Screen allowing a teacher to upload a study material (PDF/PPTX/DOCX)
 /// to Firebase Storage, monitor text extraction status in Firestore in real time,
 /// and configure quiz parameters.
 class UploadGenerateQuizScreen extends StatefulWidget {
-  const UploadGenerateQuizScreen({super.key});
+  final String? initialClassId;
+  final ClassModel? preselectedClass;
+  final bool isClassLocked;
+
+  const UploadGenerateQuizScreen({
+    super.key,
+    this.initialClassId,
+    this.preselectedClass,
+    this.isClassLocked = false,
+  });
 
   @override
   State<UploadGenerateQuizScreen> createState() =>
@@ -28,6 +40,10 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   static const _textPrimary = Color(0xFF1B1C1C);
   static const _textSecondary = Color(0xFF454652);
 
+  final MaterialService _materialService = MaterialService();
+  final ClassService _classService = ClassService();
+  final QuizService _quizService = QuizService();
+
   // ── Upload & Firestore Material State ───────────────────────
   String? _materialId;
   String? _selectedFileName;
@@ -36,17 +52,18 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   bool _isUploading = false;
   double _uploadProgress = 0.0;
 
-  // Status: null (idle) | 'uploading' | 'processing' | 'ready' | 'failed'
-  String? _materialStatus;
-  String? _errorReason;
-  String? _extractedText;
+  // Real-time Material Model
+  MaterialModel? _material;
+  StreamSubscription<MaterialModel?>? _materialSubscription;
 
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
-      _materialSubscription;
+  // ── Class Dropdown State ────────────────────────────────────
+  String? _selectedClassId;
+  List<ClassModel> _classes = [];
+  StreamSubscription<List<ClassModel>>? _classesSubscription;
+  bool _isLoadingClasses = true;
 
   // ── Quiz Configuration State ────────────────────────────────
   double _questionCount = 10;
-  String _selectedClass = 'Biology 101 - Cell Biology';
 
   final Map<String, bool> _questionTypes = {
     'Multiple Choice': true,
@@ -59,28 +76,53 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    _selectedClassId = widget.initialClassId ?? widget.preselectedClass?.id;
+    if (widget.isClassLocked && widget.preselectedClass != null) {
+      _classes = [widget.preselectedClass!];
+      _isLoadingClasses = false;
+    }
+    _initClasses();
+  }
+
+  void _initClasses() {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId != null) {
+      _classesSubscription = _classService
+          .getTeacherClassesStream(currentUserId)
+          .listen((classList) {
+        if (!mounted) return;
+        setState(() {
+          _classes = classList;
+          _isLoadingClasses = false;
+
+          if (widget.isClassLocked && widget.preselectedClass != null) {
+            _selectedClassId = widget.preselectedClass!.id;
+          } else if (_selectedClassId == null && classList.isNotEmpty) {
+            final match = classList.firstWhere(
+              (c) => c.id == widget.initialClassId,
+              orElse: () => classList.first,
+            );
+            _selectedClassId = match.id;
+          }
+        });
+      });
+    } else {
+      _isLoadingClasses = false;
+    }
+  }
+
+  @override
   void dispose() {
+    _classesSubscription?.cancel();
     _materialSubscription?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
 
-  /// Format human-readable error reasons matching the Firestore schema
-  String _formatErrorReason(String? reason) {
-    switch (reason) {
-      case 'no_extractable_text':
-        return 'No extractable text found in this file. Please ensure the document contains readable text and is not a scanned image.';
-      case 'unsupported_format':
-        return 'Unsupported format. Please select a valid PDF, PPTX, or DOCX document.';
-      case 'parse_error':
-        return 'Parse error encountered while reading the document. The file may be corrupt or encrypted.';
-      default:
-        return reason ?? 'Unknown error occurred while processing the document.';
-    }
-  }
-
   String _formatFileSize(int? bytes) {
-    if (bytes == null) return '';
+    if (bytes == null || bytes <= 0) return '';
     if (bytes < 1024) return '$bytes B';
     if (bytes < 1024 * 1024) {
       return '${(bytes / 1024).toStringAsFixed(1)} KB';
@@ -90,6 +132,29 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
 
   /// Real file picker and upload workflow
   Future<void> _pickAndUploadFile() async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please sign in as a teacher to upload study materials.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedClassId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Please select or create a class first before uploading materials.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     try {
       final pickedFile = await FilePicker.pickFile(
         type: FileType.custom,
@@ -101,157 +166,142 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       }
 
       final fileName = pickedFile.name;
-      final fileExtension = pickedFile.extension?.toLowerCase();
+      final fileExtension = pickedFile.extension ?? '';
+      final byteLength = pickedFile.lengthSync() ?? await pickedFile.length();
 
-      if (fileExtension != 'pdf' &&
-          fileExtension != 'pptx' &&
-          fileExtension != 'docx') {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select a PDF, PPTX, or DOCX file.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
-        return;
-      }
-
-      // Generate a new Firestore materialId
-      final materialDocRef =
-          FirebaseFirestore.instance.collection('materials').doc();
-      final newMaterialId = materialDocRef.id;
-      const teacherId = 'teacher_demo'; // In later auth phase: currentUser.uid
-      final storagePath = 'uploads/$teacherId/$newMaterialId/$fileName';
-
-      final fileLength =
-          pickedFile.lengthSync() ?? await pickedFile.length();
+      // Validate file before initiating upload
+      MaterialService.validateFile(
+        fileName: fileName,
+        extension: fileExtension,
+        byteLength: byteLength,
+      );
 
       setState(() {
-        _materialId = newMaterialId;
         _selectedFileName = fileName;
-        _selectedFileType = fileExtension;
-        _selectedFileBytesLength = fileLength;
+        _selectedFileType = fileExtension.toLowerCase();
+        _selectedFileBytesLength = byteLength;
         _isUploading = true;
         _uploadProgress = 0.0;
-        _materialStatus = 'processing';
-        _errorReason = null;
-        _extractedText = null;
+        _material = null;
       });
 
-      // 1. Create corresponding materials/{materialId} document in Firestore with status: "processing"
-      await materialDocRef.set({
-        'teacherId': teacherId,
-        'classId': _selectedClass,
-        'fileRef': storagePath,
-        'fileType': fileExtension,
-        'status': 'processing',
-        'extractedText': '',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+      final fileBytes = await pickedFile.readAsBytes();
 
-      // 2. Start real-time Firestore stream listener on materials/{materialId}
-      _listenToMaterial(newMaterialId);
-
-      // 3. Upload file to Firebase Storage
-      final storageRef = FirebaseStorage.instance.ref().child(storagePath);
-      UploadTask uploadTask;
-
-      if (kIsWeb) {
-        final bytes = await pickedFile.readAsBytes();
-        uploadTask = storageRef.putData(
-          bytes,
-          SettableMetadata(contentType: _getContentType(fileExtension)),
-        );
-      } else if (pickedFile.path != null) {
-        uploadTask = storageRef.putFile(
-          File(pickedFile.path!),
-          SettableMetadata(contentType: _getContentType(fileExtension)),
-        );
-      } else {
-        final bytes = await pickedFile.readAsBytes();
-        uploadTask = storageRef.putData(
-          bytes,
-          SettableMetadata(contentType: _getContentType(fileExtension)),
-        );
-      }
-
-      // Monitor upload progress
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        if (snapshot.totalBytes > 0) {
-          setState(() {
-            _uploadProgress = snapshot.bytesTransferred / snapshot.totalBytes;
-          });
-        }
-      });
-
-      await uploadTask;
+      final createdMaterial = await _materialService.uploadStudyMaterial(
+        teacherId: currentUserId,
+        classId: _selectedClassId!,
+        fileName: fileName,
+        fileExtension: fileExtension,
+        byteLength: byteLength,
+        fileBytes: fileBytes,
+        localFilePath: pickedFile.path,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = progress;
+            });
+          }
+        },
+      );
 
       setState(() {
+        _materialId = createdMaterial.id;
+        _material = createdMaterial;
         _isUploading = false;
       });
-    } catch (e) {
-      setState(() {
-        _isUploading = false;
-        _materialStatus = 'failed';
-        _errorReason = e.toString();
-      });
+
+      // Listen to real-time status updates from Cloud Function
+      _listenToMaterial(createdMaterial.id);
+    } on MaterialValidationException catch (e) {
+      setState(() => _isUploading = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Upload error: $e'),
+          content: Text(e.message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isUploading = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Upload failed: $e'),
           backgroundColor: Colors.redAccent,
         ),
       );
     }
   }
 
-  String _getContentType(String? ext) {
-    switch (ext?.toLowerCase()) {
-      case 'pdf':
-        return 'application/pdf';
-      case 'docx':
-        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      case 'pptx':
-        return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
-      default:
-        return 'application/octet-stream';
-    }
-  }
-
   /// Listen in real time to the materials/{materialId} Firestore document
   void _listenToMaterial(String materialId) {
     _materialSubscription?.cancel();
-    _materialSubscription = FirebaseFirestore.instance
-        .collection('materials')
-        .doc(materialId)
-        .snapshots()
-        .listen(
-      (snapshot) {
-        if (!snapshot.exists || snapshot.data() == null) return;
-
-        final data = snapshot.data()!;
-        final status = data['status'] as String? ?? 'processing';
-        final errorReason = data['errorReason'] as String?;
-        final extractedText = data['extractedText'] as String?;
-
+    _materialSubscription =
+        _materialService.streamMaterial(materialId).listen(
+      (material) {
+        if (!mounted || material == null) return;
         setState(() {
-          _materialStatus = status;
-          _errorReason = errorReason;
-          _extractedText = extractedText;
+          _material = material;
         });
       },
       onError: (error) {
-        setState(() {
-          _materialStatus = 'failed';
-          _errorReason = error.toString();
-        });
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error monitoring extraction: $error'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
       },
     );
   }
 
-  void _generateQuiz({required bool isActual}) {
+  Future<void> _retryExtraction() async {
+    if (_materialId == null) return;
+    try {
+      await _materialService.retryMaterialExtraction(_materialId!);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Retrying text extraction...'),
+          backgroundColor: _primaryNavy,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Retry failed: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  Future<void> _generateQuiz({required bool isActual}) async {
     // Disabled until material status is "ready"
-    if (_materialStatus != 'ready') {
+    if (_material == null || !_material!.isReady) {
+      return;
+    }
+
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please log in as a teacher to generate quizzes.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedClassId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a target class first.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
 
@@ -270,21 +320,80 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       return;
     }
 
-    // TODO: Wire Gemini API quiz synthesis in upcoming phase
-    final quizKind = isActual ? 'Actual Quiz' : 'Practice Quiz';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Stub: Generating $quizKind (${_questionCount.toInt()} questions) from $_selectedFileName...',
+    final quizKind = isActual ? 'Actual Quiz (Exam)' : 'Practice Quiz';
+
+    // Show persistent generation dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surfaceWhite,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(
+                color: _primaryNavy,
+                strokeWidth: 3,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Synthesizing $quizKind...',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: _textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Generating ${_questionCount.toInt()} questions from "$_selectedFileName"...',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 13, color: _textSecondary),
+              ),
+            ],
+          ),
         ),
-        backgroundColor: _primaryNavy,
       ),
     );
+
+    try {
+      final createdQuiz = await _quizService.generateQuiz(
+        teacherId: currentUserId,
+        classId: _selectedClassId!,
+        materialId: _materialId!,
+        isActual: isActual,
+        questionTypes: activeTypes,
+        questionCount: _questionCount.toInt(),
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      // Navigate to QuizDetailScreen for teacher review and editing
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => QuizDetailScreen(quiz: createdQuiz),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Quiz generation failed: $e'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isMaterialReady = _materialStatus == 'ready';
+    final isMaterialReady = _material?.isReady ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -320,7 +429,27 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Section 1: Study Material Upload ─────────
+                // ── Section 1: Target Class ──────────────────
+                const Text(
+                  'Assign to Class',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: _textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Select which of your classes this material belongs to.',
+                  style: TextStyle(fontSize: 13, color: _textSecondary),
+                ),
+                const SizedBox(height: 8),
+
+                _buildClassSelector(),
+
+                const SizedBox(height: 24),
+
+                // ── Section 2: Study Material Upload ─────────
                 const Text(
                   'Upload Study Material',
                   style: TextStyle(
@@ -331,7 +460,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Upload lecture slides, book chapters, or notes (PDF, PPTX, DOCX).',
+                  'Upload lecture slides, book chapters, or notes (PDF, PPTX, DOCX, up to 50MB).',
                   style: TextStyle(fontSize: 13, color: _textSecondary),
                 ),
                 const SizedBox(height: 12),
@@ -382,7 +511,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                         ),
                         const SizedBox(height: 4),
                         const Text(
-                          'Uploads to Firebase Storage & extracts text',
+                          'Uploads to Firebase Storage & extracts text server-side',
                           style: TextStyle(
                             fontSize: 12,
                             color: _textSecondary,
@@ -394,57 +523,10 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                 ),
 
                 // ── Real-time Status Area ────────────────────
-                if (_materialStatus != null) ...[
+                if (_isUploading || _material != null) ...[
                   const SizedBox(height: 16),
                   _buildRealtimeStatusCard(),
                 ],
-
-                const SizedBox(height: 24),
-
-                // ── Section 2: Target Class ──────────────────
-                const Text(
-                  'Assign to Class',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _outlineVariant),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _selectedClass,
-                      isExpanded: true,
-                      icon: const Icon(Icons.keyboard_arrow_down),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Biology 101 - Cell Biology',
-                          child: Text('Biology 101 - Cell Biology'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'CS 201 - Data Structures',
-                          child: Text('CS 201 - Data Structures'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'AP Chemistry - Period 3',
-                          child: Text('AP Chemistry - Period 3'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _selectedClass = val);
-                        }
-                      },
-                    ),
-                  ),
-                ),
 
                 const SizedBox(height: 24),
 
@@ -495,8 +577,10 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                 const Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('5 questions', style: TextStyle(fontSize: 12, color: _textSecondary)),
-                    Text('50 questions', style: TextStyle(fontSize: 12, color: _textSecondary)),
+                    Text('5 questions',
+                        style: TextStyle(fontSize: 12, color: _textSecondary)),
+                    Text('50 questions',
+                        style: TextStyle(fontSize: 12, color: _textSecondary)),
                   ],
                 ),
 
@@ -551,27 +635,30 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                 const SizedBox(height: 32),
 
                 // ── Section 5: Quiz Generation Buttons ───────
-                // Disabled until material status is "ready"
                 if (!isMaterialReady) ...[
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.amber.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                      border:
+                          Border.all(color: Colors.amber.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.info_outline, size: 16, color: Colors.amber[900]),
+                        Icon(Icons.info_outline,
+                            size: 16, color: Colors.amber[900]),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            _materialStatus == 'processing'
+                            _material?.isProcessing == true
                                 ? 'Generation buttons will unlock once text extraction completes.'
-                                : 'Please upload a study material first to generate quizzes.',
-                            style: TextStyle(fontSize: 12, color: Colors.amber[900]),
+                                : 'Please upload and extract a study material first to generate quizzes.',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.amber[900]),
                           ),
                         ),
                       ],
@@ -588,13 +675,16 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                       backgroundColor: _darkNavy,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: _darkNavy.withValues(alpha: 0.3),
-                      disabledForegroundColor: Colors.white.withValues(alpha: 0.6),
+                      disabledForegroundColor:
+                          Colors.white.withValues(alpha: 0.6),
                       elevation: isMaterialReady ? 1 : 0,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    onPressed: isMaterialReady ? () => _generateQuiz(isActual: true) : null,
+                    onPressed: isMaterialReady
+                        ? () => _generateQuiz(isActual: true)
+                        : null,
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -632,7 +722,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                     ),
-                    onPressed: isMaterialReady ? () => _generateQuiz(isActual: false) : null,
+                    onPressed: isMaterialReady
+                        ? () => _generateQuiz(isActual: false)
+                        : null,
                     child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -658,9 +750,176 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     );
   }
 
+  /// Class selection dropdown or empty state
+  Widget _buildClassSelector() {
+    if (widget.isClassLocked) {
+      final className = widget.preselectedClass?.name ??
+          _classes
+              .where((c) => c.id == _selectedClassId)
+              .map((c) => c.name)
+              .firstOrNull ??
+          'Selected Class';
+
+      final sectionText = widget.preselectedClass?.section.isNotEmpty == true
+          ? ' • Section ${widget.preselectedClass!.section}'
+          : '';
+
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: _primaryNavy.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _primaryNavy.withValues(alpha: 0.25)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: _primaryNavy.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.class_, size: 18, color: _primaryNavy),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    className,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: _primaryNavy,
+                    ),
+                  ),
+                  Text(
+                    'Locked to class$sectionText',
+                    style: const TextStyle(fontSize: 11, color: _textSecondary),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock, size: 12, color: Colors.green),
+                  SizedBox(width: 4),
+                  Text(
+                    'Assigned',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_isLoadingClasses) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _outlineVariant),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 12),
+            Text('Loading your classes...',
+                style: TextStyle(fontSize: 13, color: _textSecondary)),
+          ],
+        ),
+      );
+    }
+
+    if (_classes.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.amber.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                size: 20, color: Colors.amber[900]),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'No classes found. Please return to the dashboard and create a class first.',
+                style: TextStyle(fontSize: 13, color: Colors.amber[900]),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _outlineVariant),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedClassId,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down),
+          items: _classes.map((cls) {
+            return DropdownMenuItem(
+              value: cls.id,
+              child: Text(
+                cls.name,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: _textPrimary,
+                ),
+              ),
+            );
+          }).toList(),
+          onChanged: (val) {
+            if (val != null) {
+              setState(() {
+                _selectedClassId = val;
+              });
+            }
+          },
+        ),
+      ),
+    );
+  }
+
   /// Real-time Material Status Card reflecting Firestore document updates
   Widget _buildRealtimeStatusCard() {
-    final status = _materialStatus;
+    final material = _material;
     final fileTypeBadge = (_selectedFileType ?? '').toUpperCase();
     final fileSizeText = _formatFileSize(_selectedFileBytesLength);
 
@@ -715,7 +974,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       );
     }
 
-    if (status == 'processing') {
+    if (material == null) return const SizedBox.shrink();
+
+    if (material.isProcessing) {
       // Cloud Function Text Extraction in progress
       return Container(
         padding: const EdgeInsets.all(16),
@@ -788,9 +1049,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       );
     }
 
-    if (status == 'ready') {
+    if (material.isReady) {
       // Success State with Continue Action
-      final previewLen = _extractedText?.length ?? 0;
+      final previewLen = material.extractedText.length;
 
       return Container(
         padding: const EdgeInsets.all(16),
@@ -852,7 +1113,6 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
                 onPressed: () {
-                  // "Continue" action scrolls down to quiz options
                   _scrollController.animateTo(
                     300,
                     duration: const Duration(milliseconds: 400),
@@ -868,7 +1128,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       );
     }
 
-    if (status == 'failed') {
+    if (material.hasFailed) {
       // Error State showing exact errorReason
       return Container(
         padding: const EdgeInsets.all(16),
@@ -893,15 +1153,16 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                   ),
                 ),
                 const Spacer(),
-                if (_errorReason != null)
+                if (material.errorReason != null)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.red.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      _errorReason!,
+                      material.errorReason!,
                       style: const TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
@@ -913,21 +1174,41 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              _formatErrorReason(_errorReason),
+              material.formattedError,
               style: const TextStyle(fontSize: 13, color: _textPrimary),
             ),
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red[800],
-                side: BorderSide(color: Colors.red.withValues(alpha: 0.5)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red[800],
+                      side:
+                          BorderSide(color: Colors.red.withValues(alpha: 0.5)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: _pickAndUploadFile,
+                    icon: const Icon(Icons.folder_open, size: 16),
+                    label: const Text('Choose Another'),
+                  ),
                 ),
-              ),
-              onPressed: _pickAndUploadFile,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Try Another File'),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _primaryNavy,
+                    side: const BorderSide(color: _primaryNavy),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  onPressed: _retryExtraction,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                ),
+              ],
             ),
           ],
         ),

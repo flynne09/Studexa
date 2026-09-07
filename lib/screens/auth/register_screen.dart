@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/auth_service.dart';
 import 'login_screen.dart';
 import '../teacher/teacher_home_screen.dart';
 import '../student/student_home_screen.dart';
@@ -8,8 +9,8 @@ import '../student/student_home_screen.dart';
 /// Features:
 /// - Lavender-to-blue gradient background
 /// - Centered logo, app title, and role indicator
-/// - Name, email, password, and confirm-password fields
-/// - "Register" and "Sign up with Google" buttons with equal visual weight
+/// - Name, email, password, and confirm-password fields with validation
+/// - "Register" with loading state and real Firebase Auth & Firestore creation
 /// - Link/toggle back to the login screen
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key, this.role = 'Student'});
@@ -25,8 +26,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
+  final _authService = AuthService();
+
+  late String _selectedRole;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedRole = widget.role;
+  }
 
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = Color(0xFF1A237E);
@@ -47,19 +59,90 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _navigateToHome() {
-    // TODO: Wire backend auth in future phase
-    if (widget.role == 'Teacher') {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
-      );
+  Future<void> _handleRegister() async {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+
+    if (name.isEmpty) {
+      _showErrorSnackBar('Please enter your full name.');
+      return;
     }
+
+    if (email.isEmpty) {
+      _showErrorSnackBar('Please enter your email address.');
+      return;
+    }
+
+    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    if (!emailRegex.hasMatch(email)) {
+      _showErrorSnackBar('Please enter a valid email address.');
+      return;
+    }
+
+    if (password.isEmpty) {
+      _showErrorSnackBar('Please enter a password.');
+      return;
+    }
+
+    if (password.length < 6) {
+      _showErrorSnackBar('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (password != confirmPassword) {
+      _showErrorSnackBar('Passwords do not match. Please verify and try again.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final profile = await _authService.registerWithEmail(
+        email: email,
+        password: password,
+        displayName: name,
+        role: _selectedRole,
+      );
+
+      if (!mounted) return;
+
+      if (profile.isTeacher) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          (route) => false,
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = AuthService.getErrorMessage(e);
+      setState(() {
+        _errorMessage = msg;
+        _isLoading = false;
+      });
+      _showErrorSnackBar(msg);
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -162,26 +245,145 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                       const SizedBox(height: 8),
 
-                      // ── Role badge ──────────────────────────
+                      // ── Role selector ──────────────────────────
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 4,
-                        ),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: _primaryNavy.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Registering as ${widget.role}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: _primaryNavy,
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _outlineVariant.withValues(alpha: 0.5),
                           ),
                         ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _isLoading
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedRole = 'Student';
+                                        });
+                                      },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _selectedRole.toLowerCase() == 'student'
+                                        ? _primaryNavy
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.school_outlined,
+                                          size: 16,
+                                          color: _selectedRole.toLowerCase() == 'student'
+                                              ? Colors.white
+                                              : _textSecondary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Student',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: _selectedRole.toLowerCase() == 'student'
+                                                ? Colors.white
+                                                : _textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _isLoading
+                                    ? null
+                                    : () {
+                                        setState(() {
+                                          _selectedRole = 'Teacher';
+                                        });
+                                      },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: _selectedRole.toLowerCase() == 'teacher'
+                                        ? _primaryNavy
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Center(
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.laptop_chromebook_outlined,
+                                          size: 16,
+                                          color: _selectedRole.toLowerCase() == 'teacher'
+                                              ? Colors.white
+                                              : _textSecondary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Teacher',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: _selectedRole.toLowerCase() == 'teacher'
+                                                ? Colors.white
+                                                : _textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
+
+                      // ── Error Message Banner if any ─────────
+                      if (_errorMessage != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Colors.red.withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.error_outline,
+                                  color: Colors.redAccent, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage!,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                      ],
 
                       // ── Full Name label ─────────────────────
                       const Align(
@@ -203,6 +405,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextField(
                         controller: _nameController,
                         textCapitalization: TextCapitalization.words,
+                        enabled: !_isLoading,
                         style: const TextStyle(
                           fontSize: 15,
                           color: _textPrimary,
@@ -234,12 +437,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextField(
                         controller: _emailController,
                         keyboardType: TextInputType.emailAddress,
+                        enabled: !_isLoading,
                         style: const TextStyle(
                           fontSize: 15,
                           color: _textPrimary,
                         ),
                         decoration: _buildInputDecoration(
-                          hintText: widget.role == 'Teacher'
+                          hintText: _selectedRole.toLowerCase() == 'teacher'
                               ? 'teacher@school.edu'
                               : 'student@university.edu',
                           prefixIcon: Icons.mail_outlined,
@@ -267,12 +471,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextField(
                         controller: _passwordController,
                         obscureText: _obscurePassword,
+                        enabled: !_isLoading,
                         style: const TextStyle(
                           fontSize: 15,
                           color: _textPrimary,
                         ),
                         decoration: _buildInputDecoration(
-                          hintText: '••••••••',
+                          hintText: '•••••••• (min 6 characters)',
                           prefixIcon: Icons.lock_outlined,
                           suffixIcon: IconButton(
                             icon: Icon(
@@ -312,6 +517,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       TextField(
                         controller: _confirmPasswordController,
                         obscureText: _obscureConfirmPassword,
+                        enabled: !_isLoading,
                         style: const TextStyle(
                           fontSize: 15,
                           color: _textPrimary,
@@ -335,10 +541,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             },
                           ),
                         ),
+                        onSubmitted: (_) => _handleRegister(),
                       ),
                       const SizedBox(height: 24),
 
-                      // ── Register button (Equal visual weight) ──
+                      // ── Register button ────────────────────
                       SizedBox(
                         width: double.infinity,
                         height: 48,
@@ -351,90 +558,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               borderRadius: BorderRadius.circular(10),
                             ),
                           ),
-                          onPressed: _navigateToHome,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Register',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
+                          onPressed: _isLoading ? null : _handleRegister,
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                              : const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Register',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Icon(Icons.arrow_forward, size: 18),
+                                  ],
                                 ),
-                              ),
-                              SizedBox(width: 6),
-                              Icon(Icons.arrow_forward, size: 18),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── OR divider ──────────────────────────
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Divider(
-                              color: _outlineVariant.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'or',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: _textOutline,
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            child: Divider(
-                              color: _outlineVariant.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // ── Google sign-up button (Equal visual weight) ──
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _surfaceWhite,
-                            foregroundColor: _textPrimary,
-                            elevation: 1,
-                            side: const BorderSide(color: _outlineVariant),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          onPressed: _navigateToHome,
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'G',
-                                style: TextStyle(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF4285F4),
-                                ),
-                              ),
-                              SizedBox(width: 10),
-                              Text(
-                                'Sign up with Google',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: _textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                       ),
                       const SizedBox(height: 32),
@@ -465,7 +614,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (_) =>
-                                  LoginScreen(role: widget.role),
+                                  LoginScreen(role: _selectedRole),
                             ),
                           );
                         }
