@@ -8,6 +8,7 @@ const os = require("os");
 const pdfParse = require("pdf-parse");
 const mammoth = require("mammoth");
 const officeParser = require("officeparser");
+const { google } = require("googleapis");
 
 admin.initializeApp();
 
@@ -34,6 +35,121 @@ async function parsePptx(filePathOrBuffer) {
 }
 
 /**
+ * Converts a PPTX or DOCX file to PDF using Google Drive API v3 and stores it in Firebase Storage.
+ */
+async function convertOfficeToPdf(bucket, teacherId, materialId, localFilePath, fileType) {
+  const auth = new google.auth.GoogleAuth({
+    scopes: [
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/drive.file",
+    ],
+  });
+  const drive = google.drive({ version: "v3", auth });
+
+  const targetMimeType =
+    fileType === "pptx"
+      ? "application/vnd.google-apps.presentation"
+      : "application/vnd.google-apps.document";
+
+  const sourceMimeType =
+    fileType === "pptx"
+      ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+  let driveFileId = null;
+  const tempPdfPath = path.join(os.tmpdir(), `${materialId}_preview.pdf`);
+
+  try {
+    console.log(`Uploading ${fileType} to Google Drive for preview conversion: ${localFilePath}`);
+    const fileMetadata = {
+      name: `studexa_preview_${materialId}`,
+      mimeType: targetMimeType,
+    };
+    const media = {
+      mimeType: sourceMimeType,
+      body: fs.createReadStream(localFilePath),
+    };
+
+    const driveFile = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id",
+    });
+
+    driveFileId = driveFile.data.id;
+    console.log(`Uploaded to Drive with ID: ${driveFileId}. Exporting as application/pdf...`);
+
+    const dest = fs.createWriteStream(tempPdfPath);
+    const exportRes = await drive.files.export(
+      {
+        fileId: driveFileId,
+        mimeType: "application/pdf",
+      },
+      { responseType: "stream" }
+    );
+
+    await new Promise((resolve, reject) => {
+      exportRes.data
+        .on("error", reject)
+        .pipe(dest)
+        .on("finish", resolve)
+        .on("error", reject);
+    });
+
+    console.log(`Drive export complete. Uploading preview.pdf to Firebase Storage...`);
+    const destinationStoragePath = `uploads/${teacherId}/${materialId}/preview.pdf`;
+
+    await bucket.upload(tempPdfPath, {
+      destination: destinationStoragePath,
+      metadata: {
+        contentType: "application/pdf",
+        customMetadata: {
+          teacherId: teacherId,
+          materialId: materialId,
+          isConvertedPreview: "true",
+        },
+      },
+    });
+
+    console.log(`Successfully stored preview PDF at ${destinationStoragePath}`);
+
+    // Try to obtain a download URL or signed URL if supported
+    let downloadUrl = null;
+    try {
+      const fileRef = bucket.file(destinationStoragePath);
+      const [signedUrl] = await fileRef.getSignedUrl({
+        action: "read",
+        expires: "03-01-2030",
+      });
+      downloadUrl = signedUrl;
+    } catch (urlErr) {
+      console.warn("Could not generate signed URL for preview PDF:", urlErr.message);
+    }
+
+    return {
+      convertedPdfRef: destinationStoragePath,
+      convertedPdfUrl: downloadUrl,
+    };
+  } finally {
+    if (driveFileId) {
+      try {
+        console.log(`Deleting temporary Drive file ${driveFileId}`);
+        await drive.files.delete({ fileId: driveFileId });
+      } catch (delErr) {
+        console.warn(`Failed to delete temporary Drive file ${driveFileId}:`, delErr.message);
+      }
+    }
+    if (fs.existsSync(tempPdfPath)) {
+      try {
+        fs.unlinkSync(tempPdfPath);
+      } catch (cleanupErr) {
+        console.warn(`Failed to remove temp PDF ${tempPdfPath}:`, cleanupErr.message);
+      }
+    }
+  }
+}
+
+/**
  * Storage-triggered Cloud Function (2nd gen) that triggers on upload to
  * uploads/{teacherId}/{materialId}/{filename}.
  * Extracts text from PDF, DOCX, and PPTX files and updates Firestore materials/{materialId}.
@@ -41,7 +157,7 @@ async function parsePptx(filePathOrBuffer) {
 exports.extractText = onObjectFinalized(
   {
     cpu: 1,
-    memory: "512MiB",
+    memory: "1GiB",
     timeoutSeconds: 300,
   },
   async (event) => {
@@ -64,6 +180,12 @@ exports.extractText = onObjectFinalized(
     const materialId = pathSegments[2];
     const fileName = pathSegments.slice(3).join("/");
     const extension = path.extname(fileName).toLowerCase().replace(".", "");
+
+    // Ignore generated preview files to prevent recursive trigger execution
+    if (fileName === "preview.pdf" || fileName.endsWith("/preview.pdf") || fileName.includes("_preview.pdf")) {
+      console.log(`Ignoring preview PDF file: ${filePath}`);
+      return;
+    }
 
     console.log(`Processing file: ${fileName} (materialId: ${materialId}, teacherId: ${teacherId})`);
 
@@ -89,6 +211,7 @@ exports.extractText = onObjectFinalized(
           errorReason: "unsupported_format",
           fileRef: filePath,
           fileType: extension || "unknown",
+          conversionStatus: "failed",
         },
         { merge: true }
       );
@@ -127,6 +250,7 @@ exports.extractText = onObjectFinalized(
             errorReason: "no_extractable_text",
             fileRef: filePath,
             fileType: fileType,
+            conversionStatus: "failed",
           },
           { merge: true }
         );
@@ -146,6 +270,45 @@ exports.extractText = onObjectFinalized(
       );
 
       console.log(`Successfully extracted ${trimmedText.length} characters for materialId: ${materialId}`);
+
+      // Perform office-to-PDF conversion for PPTX / DOCX preview rendering
+      if (fileType === "pdf") {
+        await materialRef.set(
+          {
+            conversionStatus: "completed",
+          },
+          { merge: true }
+        );
+      } else if (fileType === "pptx" || fileType === "docx") {
+        try {
+          console.log(`Starting preview conversion for ${fileType} material: ${materialId}`);
+          const conversionResult = await convertOfficeToPdf(
+            bucket,
+            teacherId,
+            materialId,
+            tempFilePath,
+            fileType
+          );
+          await materialRef.set(
+            {
+              conversionStatus: "completed",
+              convertedPdfRef: conversionResult.convertedPdfRef,
+              convertedPdfUrl: conversionResult.convertedPdfUrl || null,
+              convertedAt: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+          console.log(`Successfully completed preview conversion for materialId: ${materialId}`);
+        } catch (convError) {
+          console.warn(`Office preview conversion failed for ${materialId}:`, convError.message);
+          await materialRef.set(
+            {
+              conversionStatus: "failed",
+            },
+            { merge: true }
+          );
+        }
+      }
     } catch (parseError) {
       console.error(`Parse error encountered while processing ${filePath}:`, parseError);
       await materialRef.set(
@@ -154,6 +317,7 @@ exports.extractText = onObjectFinalized(
           errorReason: "parse_error",
           fileRef: filePath,
           fileType: fileType,
+          conversionStatus: "failed",
         },
         { merge: true }
       );
@@ -247,8 +411,21 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
     }
   }
 
-  // Pad terms if needed
-  const fallbackTerms = ["Mitochondria", "Ribosome", "Chloroplast", "Nucleus", "Enzyme", "Glucose", "ATP", "Cytoplasm"];
+  // Pad terms if needed with plausible academic domain concepts
+  const fallbackTerms = [
+    "Mitochondria",
+    "Ribosome",
+    "Chloroplast",
+    "Nucleus",
+    "Enzyme",
+    "Glucose",
+    "ATP",
+    "Cytoplasm",
+    "Endoplasmic Reticulum",
+    "Golgi Apparatus",
+    "Glycolysis",
+    "Phosphorylation"
+  ];
   for (const ft of fallbackTerms) {
     if (!candidateTerms.includes(ft)) candidateTerms.push(ft);
   }
@@ -275,11 +452,8 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
         displaySentence = sentence.replace(nounWord, "_______");
       }
 
-      // Generate 3 distractors
+      // Generate 3 distractors from candidate academic concepts
       const distractors = candidateTerms.filter((t) => t.toLowerCase() !== targetWord.toLowerCase()).slice(0, 3);
-      while (distractors.length < 3) {
-        distractors.push(`Concept ${distractors.length + 1}`);
-      }
 
       const allOptions = [targetWord, ...distractors].sort(() => 0.5 - Math.random());
       const optionLetters = ["A", "B", "C", "D"];
@@ -395,19 +569,30 @@ async function generateGeminiQuiz(extractedText, questionTypes, questionCount, i
     ? questionTypes.join(", ")
     : "Multiple Choice, True/False, Fill-in-the-Blank, Identification, Enumeration";
 
-  const systemInstruction = `You are an expert pedagogical quiz generation assistant for Studexa.
-Generate a structured academic quiz in strict JSON format based ONLY on the provided study material.
-Question Types to include: ${typesDesc}.
-Total Question Count: exactly ${targetCount}.
-Quiz Type: ${isActual ? "Actual Quiz (official reference exam for teacher)" : "Practice Quiz (student preparation with distinct phrasing and conceptual variations)"}.
+  const systemInstruction = `You are an expert pedagogical assessment designer for Studexa.
+Your primary objective is to evaluate student mastery of CORE CONCEPTS, KEY DEFINITIONS, and FUNDAMENTAL MECHANISMS from the provided study material.
 
-Guidelines:
-1. For Multiple Choice: provide 4 options labeled "A. ...", "B. ...", "C. ...", "D. ...", and specify the exact matching string in correctAnswer.
-2. For True/False: options must be ["True", "False"], correctAnswer must be "True" or "False".
-3. For Fill-in-the-Blank: question prompt must include "_______", correctAnswer must be the exact missing word/phrase.
-4. For Identification: question prompt asks to identify the term, correctAnswer is the term.
-5. For Enumeration: question asks to list specific items, enumerationAnswers must be an array of expected string items, and correctAnswer can be a comma-separated list of those items.
-${!isActual && sourceQuizContext ? `6. DISTINCT PHRASING REQUIREMENT: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME underlying concepts using ALTERNATIVE phrasing, application scenarios, or inverted questions.` : ""}
+MANDATORY ASSESSMENT DIRECTIVES:
+1. CORE CONCEPTS & DEFINITIONS FIRST:
+   - Identify the central principles, key definitions, primary mechanisms, and functional relationships in the material.
+   - Every question must assess a core concept that an instructor would legitimately evaluate on a comprehensive final exam.
+2. STRICTLY FORBID TRIVIA & DOCUMENT METADATA:
+   - NEVER ask about: dates of publication, author names, page numbers, chapter/slide numbers, figure or table numbers, course codes, syllabus announcements, file names, or incidental, isolated trivia.
+3. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
+   - For multiple_choice questions, all 3 incorrect distractors MUST be plausible, academically meaningful terms in the EXACT SAME conceptual category/domain as the correct answer.
+   - NEVER produce joke, nonsensical, or obviously absurd options.
+4. FACTUAL GROUNDING:
+   - Every question, answer option, and explanation must be 100% grounded in and verifiable against the provided text.
+5. ANTI-REDUNDANCY:
+   - Every question MUST test a DIFFERENT concept, definition, or mechanism.
+   - NEVER generate duplicate questions, rephrased copies of another question, or questions with identical stems or answers.
+6. QUESTION FORMAT CONSTRAINTS:
+   - multiple_choice: exactly 4 options labeled "A. ...", "B. ...", "C. ...", "D. ...", and correctAnswer must match the full option string.
+   - true_false: options must be ["True", "False"], correctAnswer must be "True" or "False". Test a core concept, not a tricky technicality.
+   - fill_blank: question prompt must include "_______", correctAnswer must be the exact missing term.
+   - identification: question provides a precise description WITHOUT giving away the term, correctAnswer is the term.
+   - enumeration: question asks to enumerate 2 to 5 specific items, enumerationAnswers must be an array of expected string items, and correctAnswer can be a comma-separated list of those items.
+${!isActual && sourceQuizContext ? `7. DISTINCT PHRASING REQUIREMENT: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME underlying concepts using ALTERNATIVE phrasing, application scenarios, or inverted questions.` : ""}
 
 Output Schema:
 {
@@ -416,7 +601,7 @@ Output Schema:
     {
       "id": "q_1",
       "type": "multiple_choice" | "true_false" | "fill_blank" | "identification" | "enumeration",
-      "question": "Clear question text",
+      "question": "Clear question testing a core concept",
       "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
       "correctAnswer": "Answer string",
       "enumerationAnswers": ["item1", "item2"],

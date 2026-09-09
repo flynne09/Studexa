@@ -10,6 +10,7 @@ import '../../services/class_service.dart';
 import '../../services/material_service.dart';
 import '../../services/quiz_service.dart';
 import 'answer_quiz_screen.dart';
+import '../materials/material_viewer_screen.dart';
 
 /// Class Details Screen for Students (Google Classroom style).
 ///
@@ -107,8 +108,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 12),
-            if (material.isReady &&
-                material.extractedText.isNotEmpty) ...[
+            if (material.isReady && material.extractedText.isNotEmpty) ...[
               const Text(
                 'Study Content & Notes',
                 style: TextStyle(
@@ -159,6 +159,40 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                 ),
               ),
             ],
+            if (material.isReady) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryNavy,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    MaterialViewerScreen.open(
+                      context: context,
+                      material: material,
+                      materialService: _materialService,
+                    );
+                  },
+                  icon: Icon(
+                    material.fileType.toLowerCase() == 'pdf'
+                        ? Icons.picture_as_pdf
+                        : Icons.open_in_new,
+                    size: 18,
+                  ),
+                  label: Text(
+                    'View Material (${material.fileType.toUpperCase()})',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 24),
           ],
         ),
@@ -187,11 +221,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-          color: bg,
-        ),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: bg),
       ),
     );
   }
@@ -221,12 +251,16 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                   // ── Top Navigation Bar ────────────────────────
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
                     child: Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back,
-                              color: _textPrimary),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: _textPrimary,
+                          ),
                           onPressed: () => Navigator.pop(context),
                         ),
                         const SizedBox(width: 8),
@@ -279,7 +313,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                         const SizedBox(height: 6),
                         if (liveClass.teacherName.isNotEmpty)
                           Text(
-                            'Instructor: ',
+                            'Instructor: ${liveClass.teacherName}',
                             style: TextStyle(
                               fontSize: 13,
                               color: Colors.white.withValues(alpha: 0.8),
@@ -288,13 +322,15 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                         const SizedBox(height: 12),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            'Class Code: ',
+                            'Class Code: ${liveClass.joinCode}',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -402,36 +438,46 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: _surfaceWhite,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _outlineVariant),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
+                    color: Colors.black.withValues(alpha: 0.03),
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: ListTile(
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                leading: _buildFileTypeBadge(mat.fileType),
-                title: Text(
-                  mat.fileName,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  leading: _buildFileTypeBadge(mat.fileType),
+                  title: Text(
+                    mat.fileName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: _textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    ' • Posted ',
+                    style: const TextStyle(fontSize: 12, color: _textSecondary),
+                  ),
+                  trailing: const Icon(
+                    Icons.chevron_right,
+                    color: _textSecondary,
+                  ),
+                  onTap: () => _showStudentMaterialDetails(mat),
                 ),
-                subtitle: Text(
-                  ' • Posted ',
-                  style: const TextStyle(fontSize: 12, color: _textSecondary),
-                ),
-                trailing: const Icon(Icons.chevron_right, color: _textSecondary),
-                onTap: () => _showStudentMaterialDetails(mat),
               ),
             );
           },
@@ -454,8 +500,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
         }
 
         final allQuizzes = quizSnapshot.data ?? [];
-        final publishedQuizzes =
-            allQuizzes.where((q) => q.isPublished).toList();
+        final publishedQuizzes = allQuizzes
+            .where((q) => q.isPublished)
+            .toList();
 
         if (publishedQuizzes.isEmpty) {
           return Center(
@@ -497,7 +544,10 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
 
             return StreamBuilder<List<QuizAttemptModel>>(
               stream: currentUserId.isNotEmpty
-                  ? _assignmentService.streamStudentClassAttempts(liveClass.id, currentUserId)
+                  ? _assignmentService.streamStudentClassAttempts(
+                      liveClass.id,
+                      currentUserId,
+                    )
                   : Stream.value(<QuizAttemptModel>[]),
               builder: (context, attemptSnapshot) {
                 final attempts = attemptSnapshot.data ?? [];
@@ -515,22 +565,23 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                     final studentAttempts = attempts
                         .where((a) => a.quizId == quiz.id)
                         .toList();
-                    final attempt =
-                        studentAttempts.isNotEmpty ? studentAttempts.first : null;
+                    final attemptCount = studentAttempts.length;
+                    final attempt = studentAttempts.isNotEmpty
+                        ? studentAttempts.first
+                        : null;
 
                     final isClosed = assignment?.isClosed == true;
                     final isExpired = assignment?.isExpired == true;
-                    final isCompleted = attempt != null;
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
                         color: _surfaceWhite,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: _outlineVariant),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.02),
+                            color: Colors.black.withValues(alpha: 0.03),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -548,23 +599,19 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   width: 44,
                                   height: 44,
                                   decoration: BoxDecoration(
-                                    color: isCompleted
-                                        ? (attempt.isPassed
-                                            ? Colors.green.withValues(alpha: 0.1)
-                                            : Colors.orange.withValues(alpha: 0.1))
+                                    color: attemptCount > 0
+                                        ? (attempt!.isPassed
+                                              ? Colors.green.withValues(alpha: 0.1)
+                                              : Colors.orange.withValues(alpha: 0.1))
                                         : _primaryNavy.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(
-                                    isCompleted
-                                        ? (attempt.isPassed
-                                            ? Icons.check_circle
-                                            : Icons.refresh)
+                                    attemptCount > 0
+                                        ? (attempt!.isPassed ? Icons.check_circle : Icons.refresh)
                                         : Icons.quiz_outlined,
-                                    color: isCompleted
-                                        ? (attempt.isPassed
-                                            ? Colors.green
-                                            : Colors.orange)
+                                    color: attemptCount > 0
+                                        ? (attempt!.isPassed ? Colors.green : Colors.orange)
                                         : _primaryNavy,
                                   ),
                                 ),
@@ -599,21 +646,25 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                               spacing: 8,
                               runSpacing: 4,
                               children: [
-                                if (isCompleted) ...[
+                                if (attemptCount >= 2) ...[
                                   _buildQuizStatusChip(
                                     label:
-                                        'Score: ${attempt.formattedScore} (${attempt.formattedPercentage})',
-                                    color: attempt.isPassed
-                                        ? Colors.green
-                                        : Colors.orange,
+                                        'Score: ${attempt!.formattedScore} (${attempt.formattedPercentage})',
+                                    color: attempt.isPassed ? Colors.green : Colors.orange,
                                   ),
                                   _buildQuizStatusChip(
-                                    label: attempt.isPassed
-                                        ? 'Passed'
-                                        : 'Needs Practice',
-                                    color: attempt.isPassed
-                                        ? Colors.green
-                                        : Colors.orange,
+                                    label: 'Attempts: 2/2 (Max Reached)',
+                                    color: Colors.redAccent,
+                                  ),
+                                ] else if (attemptCount == 1) ...[
+                                  _buildQuizStatusChip(
+                                    label:
+                                        'Attempt 1: ${attempt!.formattedScore} (${attempt.formattedPercentage})',
+                                    color: attempt.isPassed ? Colors.green : Colors.orange,
+                                  ),
+                                  _buildQuizStatusChip(
+                                    label: '1 Attempt Remaining',
+                                    color: Colors.indigo,
                                   ),
                                 ] else if (isClosed) ...[
                                   _buildQuizStatusChip(
@@ -627,7 +678,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   ),
                                 ] else ...[
                                   _buildQuizStatusChip(
-                                    label: 'Available',
+                                    label: 'Available (2 attempts max)',
                                     color: Colors.teal,
                                   ),
                                 ],
@@ -635,107 +686,137 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   _buildQuizStatusChip(
                                     label:
                                         'Due: ${_formatDeadline(assignment!.deadline!)}',
-                                    color: isExpired
-                                        ? Colors.redAccent
-                                        : Colors.indigo,
+                                    color: isExpired ? Colors.redAccent : Colors.indigo,
                                   ),
                               ],
                             ),
                             const SizedBox(height: 14),
                             SizedBox(
                               width: double.infinity,
-                              child: isCompleted
+                              child: (isClosed || isExpired)
+                                  ? ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey[300],
+                                        foregroundColor: Colors.grey[700],
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                      ),
+                                      onPressed: () {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              isClosed
+                                                  ? 'This quiz has been closed by your teacher.'
+                                                  : 'The deadline for this quiz has passed.',
+                                            ),
+                                            backgroundColor: Colors.redAccent,
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.lock_outline, size: 18),
+                                      label: Text(
+                                        isClosed ? 'Closed by Instructor' : 'Deadline Passed',
+                                        style: const TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                    )
+                                  : attemptCount >= 2
                                   ? OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: _primaryNavy,
-                                        side: const BorderSide(
-                                            color: _primaryNavy),
+                                        side: const BorderSide(color: _primaryNavy),
                                         shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 10),
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
                                       ),
-                                      onPressed: () =>
-                                          _showAttemptReview(attempt, quiz),
-                                      icon: const Icon(
-                                          Icons.assessment_outlined,
-                                          size: 18),
+                                      onPressed: () => _showAttemptReview(attempt!, quiz),
+                                      icon: const Icon(Icons.assessment_outlined, size: 18),
                                       label: const Text(
-                                        'Review Results & Feedback',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.w600),
+                                        'Review Results & Feedback (2/2 Used)',
+                                        style: TextStyle(fontWeight: FontWeight.w600),
                                       ),
                                     )
-                                  : (isClosed || isExpired)
-                                      ? ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.grey[300],
-                                            foregroundColor: Colors.grey[700],
-                                            elevation: 0,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                    vertical: 10),
-                                          ),
-                                          onPressed: () {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(isClosed
-                                                    ? 'This quiz has been closed by your teacher.'
-                                                    : 'The deadline for this quiz has passed.'),
-                                                backgroundColor:
-                                                    Colors.redAccent,
+                                  : attemptCount == 1
+                                  ? Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: _primaryNavy,
+                                              side: const BorderSide(color: _primaryNavy),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(8),
                                               ),
-                                            );
-                                          },
-                                          icon: const Icon(
-                                              Icons.lock_outline,
-                                              size: 18),
-                                          label: Text(
-                                            isClosed
-                                                ? 'Closed by Instructor'
-                                                : 'Deadline Passed',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.w600),
-                                          ),
-                                        )
-                                      : ElevatedButton.icon(
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: _primaryNavy,
-                                            foregroundColor: Colors.white,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
                                             ),
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                                    vertical: 10),
-                                          ),
-                                          onPressed: () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    AnswerQuizScreen(
-                                                        quiz: quiz),
-                                              ),
-                                            );
-                                          },
-                                          icon: const Icon(
-                                              Icons.play_arrow_rounded,
-                                              size: 18),
-                                          label: const Text(
-                                            'Start Practice Quiz',
-                                            style: TextStyle(
-                                                fontWeight: FontWeight.w600),
+                                            onPressed: () => _showAttemptReview(attempt!, quiz),
+                                            icon: const Icon(Icons.assessment_outlined, size: 16),
+                                            label: const Text(
+                                              'Review #1',
+                                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
                                           ),
                                         ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: _primaryNavy,
+                                              foregroundColor: Colors.white,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              padding: const EdgeInsets.symmetric(vertical: 10),
+                                            ),
+                                            onPressed: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) => AnswerQuizScreen(
+                                                    quiz: quiz,
+                                                    attemptNumber: 2,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            icon: const Icon(Icons.shuffle_rounded, size: 16),
+                                            label: const Text(
+                                              'Retake #2',
+                                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _primaryNavy,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => AnswerQuizScreen(
+                                              quiz: quiz,
+                                              attemptNumber: 1,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                                      label: const Text(
+                                        'Start Practice Quiz',
+                                        style: TextStyle(fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
                             ),
                           ],
                         ),
@@ -821,12 +902,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                   final questionText =
                       item['question']?.toString() ?? 'Question ${index + 1}';
                   final userAns = item['userAnswer']?.toString() ?? '';
-                  final correctAns =
-                      item['correctAnswer']?.toString() ?? '';
-                  final earned =
-                      (item['earned'] as num?)?.toDouble() ?? 0.0;
-                  final points =
-                      (item['points'] as num?)?.toDouble() ?? 1.0;
+                  final correctAns = item['correctAnswer']?.toString() ?? '';
+                  final earned = (item['earned'] as num?)?.toDouble() ?? 0.0;
+                  final points = (item['points'] as num?)?.toDouble() ?? 1.0;
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -848,8 +926,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                           children: [
                             Text(
                               '${index + 1}. ',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             Expanded(
                               child: Text(
@@ -862,7 +941,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                             ),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: isCorrect
                                     ? Colors.green.withValues(alpha: 0.1)
@@ -948,7 +1029,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
     final hour = dt.hour % 12 == 0 ? 12 : dt.hour % 12;
     final ampm = dt.hour >= 12 ? 'PM' : 'AM';
@@ -987,29 +1068,41 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
             Container(
               decoration: BoxDecoration(
                 color: _surfaceWhite,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: _outlineVariant),
-              ),
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: _primaryNavy.withValues(alpha: 0.1),
-                  child: const Icon(Icons.school, color: _primaryNavy),
-                ),
-                title: Text(
-                  liveClass.teacherName.isNotEmpty
-                      ? liveClass.teacherName
-                      : (teachers.isNotEmpty
-                          ? teachers.first.displayName
-                          : 'Instructor'),
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
-                ),
-                subtitle: const Text(
-                  'Class Owner',
-                  style: TextStyle(fontSize: 12, color: _textSecondary),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                clipBehavior: Clip.antiAlias,
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: _primaryNavy.withValues(alpha: 0.1),
+                    child: const Icon(Icons.school, color: _primaryNavy),
+                  ),
+                  title: Text(
+                    liveClass.teacherName.isNotEmpty
+                        ? liveClass.teacherName
+                        : (teachers.isNotEmpty
+                              ? teachers.first.displayName
+                              : 'Instructor'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: _textPrimary,
+                    ),
+                  ),
+                  subtitle: const Text(
+                    'Class Owner',
+                    style: TextStyle(fontSize: 12, color: _textSecondary),
+                  ),
                 ),
               ),
             ),
@@ -1018,7 +1111,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
 
             // Classmates section
             Text(
-              'Classmates ()',
+              'Classmates (${classmates.length})',
               style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
@@ -1032,7 +1125,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: _surfaceWhite,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: _outlineVariant),
                 ),
                 child: const Text(
@@ -1049,28 +1142,40 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: _outlineVariant),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: _primaryNavy.withValues(alpha: 0.08),
-                      child: Text(
-                        initial,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _primaryNavy,
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: _primaryNavy.withValues(alpha: 0.08),
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: _primaryNavy,
+                          ),
                         ),
                       ),
-                    ),
-                    title: Text(
-                      student.displayName.isNotEmpty
-                          ? student.displayName
-                          : 'Student',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: _textPrimary,
+                      title: Text(
+                        student.displayName.isNotEmpty
+                            ? student.displayName
+                            : 'Student',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: _textPrimary,
+                        ),
                       ),
                     ),
                   ),

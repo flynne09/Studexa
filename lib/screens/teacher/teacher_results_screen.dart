@@ -206,8 +206,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
 
                         // ── Overview Summary Cards ─────────────────────
                         Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 20.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 20.0),
                           child: Row(
                             children: [
                               Expanded(
@@ -233,8 +232,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
 
                         // ── Filter Chips ───────────────────────────────
                         Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 20.0),
+                          padding: const EdgeInsets.symmetric(horizontal: 20.0),
                           child: Row(
                             children: [
                               _FilterChip(
@@ -248,14 +246,15 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                                 label: 'Submitted (0)',
                                 isSelected: _selectedFilter == 'Submitted',
                                 onSelected: () => setState(
-                                    () => _selectedFilter = 'Submitted'),
+                                  () => _selectedFilter = 'Submitted',
+                                ),
                               ),
                               const SizedBox(width: 8),
                               _FilterChip(
                                 label: 'Pending (${students.length})',
                                 isSelected: _selectedFilter == 'Pending',
-                                onSelected: () => setState(
-                                    () => _selectedFilter = 'Pending'),
+                                onSelected: () =>
+                                    setState(() => _selectedFilter = 'Pending'),
                               ),
                             ],
                           ),
@@ -271,12 +270,17 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                                   'Share your class join code to enroll students in this class.',
                                 )
                               : ListView.builder(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    4,
+                                    20,
+                                    20,
+                                  ),
                                   itemCount: students.length,
                                   itemBuilder: (context, index) {
                                     final student = students[index];
-                                    final initial = student.displayName.isNotEmpty
+                                    final initial =
+                                        student.displayName.isNotEmpty
                                         ? student.displayName[0].toUpperCase()
                                         : 'S';
 
@@ -284,69 +288,75 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
                                       margin: const EdgeInsets.only(bottom: 10),
                                       decoration: BoxDecoration(
                                         color: _surfaceWhite,
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                        border:
-                                            Border.all(color: _outlineVariant),
-                                      ),
-                                      child: ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                          horizontal: 14,
-                                          vertical: 4,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: _outlineVariant,
                                         ),
-                                        leading: CircleAvatar(
-                                          backgroundColor: _primaryNavy
-                                              .withValues(alpha: 0.1),
-                                          child: Text(
-                                            initial,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              color: _primaryNavy,
+                                      ),
+                                      child: Material(
+                                        color: Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                        clipBehavior: Clip.antiAlias,
+                                        child: ListTile(
+                                          contentPadding:
+                                              const EdgeInsets.symmetric(
+                                                horizontal: 14,
+                                                vertical: 4,
+                                              ),
+                                          leading: CircleAvatar(
+                                            backgroundColor: _primaryNavy
+                                                .withValues(alpha: 0.1),
+                                            child: Text(
+                                              initial,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: _primaryNavy,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        title: Text(
-                                          student.displayName.isNotEmpty
-                                              ? student.displayName
-                                              : 'Student',
-                                          style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                            color: _textPrimary,
-                                          ),
-                                        ),
-                                        subtitle: Text(
-                                          student.email.isNotEmpty
-                                              ? student.email
-                                              : 'Enrolled member',
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: _textSecondary,
-                                          ),
-                                        ),
-                                        trailing: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 8,
-                                            vertical: 3,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey
-                                                .withValues(alpha: 0.15),
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                          ),
-                                          child: const Text(
-                                            'Awaiting Attempt',
-                                            style: TextStyle(
-                                              fontSize: 11,
+                                          title: Text(
+                                            student.displayName.isNotEmpty
+                                                ? student.displayName
+                                                : 'Student',
+                                            style: const TextStyle(
+                                              fontSize: 15,
                                               fontWeight: FontWeight.w600,
+                                              color: _textPrimary,
+                                            ),
+                                          ),
+                                          subtitle: Text(
+                                            student.email.isNotEmpty
+                                                ? student.email
+                                                : 'Enrolled member',
+                                            style: const TextStyle(
+                                              fontSize: 12,
                                               color: _textSecondary,
                                             ),
                                           ),
+                                          trailing: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.withValues(
+                                                alpha: 0.15,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              'Awaiting Attempt',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: _textSecondary,
+                                              ),
+                                            ),
+                                          ),
+                                          onTap: () =>
+                                              _showStudentDetail(student),
                                         ),
-                                        onTap: () =>
-                                            _showStudentDetail(student),
                                       ),
                                     );
                                   },
@@ -451,10 +461,7 @@ class _MetricCard extends StatelessWidget {
               ),
               Text(
                 label,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF454652),
-                ),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF454652)),
               ),
             ],
           ),
@@ -489,9 +496,7 @@ class _FilterChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected ? primaryNavy : surfaceWhite,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? primaryNavy : outlineVariant,
-          ),
+          border: Border.all(color: isSelected ? primaryNavy : outlineVariant),
         ),
         child: Text(
           label,

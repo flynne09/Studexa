@@ -1,9 +1,11 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/quiz_attempt_model.dart';
 import '../../models/quiz_model.dart';
 import '../../services/assignment_service.dart';
 import '../../utils/scoring_utils.dart';
+import 'student_home_screen.dart';
 
 /// Active quiz screen supporting all 5 Phase 1 question types:
 /// 1. Multiple Choice
@@ -15,11 +17,15 @@ import '../../utils/scoring_utils.dart';
 class AnswerQuizScreen extends StatefulWidget {
   final QuizModel? quiz;
   final String quizTitle;
+  final int attemptNumber;
+  final Random? random;
 
   const AnswerQuizScreen({
     super.key,
     this.quiz,
     this.quizTitle = 'Cellular Respiration & ATP Synthesis',
+    this.attemptNumber = 1,
+    this.random,
   });
 
   @override
@@ -37,19 +43,54 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   static const _textSecondary = Color(0xFF454652);
 
   int _currentIndex = 0;
-  final Set<int> _flaggedIndices = {};
-  final Map<int, dynamic> _userAnswers = {};
+  final Set<String> _flaggedQuestionIds = {};
+  final Map<String, dynamic> _userAnswers = {};
+  final Set<String> _pendingSkippedQuestionIds = {};
 
   final TextEditingController _textAnswerController = TextEditingController();
   final TextEditingController _enumInputController = TextEditingController();
 
   late List<QuizQuestion> _questions;
+  late List<QuizQuestion> _questionQueue;
+
+  QuizQuestion get _currentQuestion => _questionQueue.isNotEmpty
+      ? _questionQueue[_currentIndex]
+      : (_questions.isNotEmpty
+          ? _questions.first
+          : const QuizQuestion(
+              id: '',
+              type: QuizQuestionType.multipleChoice,
+              question: '',
+              points: 0,
+            ));
+
+  bool _isQuestionAnswered(QuizQuestion q) {
+    final ans = _userAnswers[q.id];
+    if (ans == null) return false;
+    if (ans is String) return ans.trim().isNotEmpty;
+    if (ans is List) return ans.isNotEmpty;
+    return false;
+  }
+
+  bool get _allQuestionsAnswered => _questions.every(_isQuestionAnswered);
+  int get _answeredCount => _questions.where(_isQuestionAnswered).length;
+  bool get _hasSkippedPending => _pendingSkippedQuestionIds.any(
+        (id) => !_isQuestionAnswered(
+          _questions.firstWhere((q) => q.id == id, orElse: () => _currentQuestion),
+        ),
+      );
 
   @override
   void initState() {
     super.initState();
+    if (widget.attemptNumber >= 3) {
+      _questions = const [];
+      _questionQueue = [];
+      return;
+    }
+
     if (widget.quiz != null && widget.quiz!.questions.isNotEmpty) {
-      _questions = widget.quiz!.questions;
+      _questions = List<QuizQuestion>.from(widget.quiz!.questions);
     } else {
       // Default fallback demo questions across all 5 types
       _questions = const [
@@ -107,6 +148,27 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       ];
     }
 
+    // On Attempt 2: shuffle question presentation order
+    if (widget.attemptNumber == 2 && _questions.length > 1) {
+      final originalIds = _questions.map((q) => q.id).toList();
+      final rnd = widget.random ?? Random();
+      _questions = List<QuizQuestion>.from(_questions)..shuffle(rnd);
+
+      // Ensure that shuffled order differs from original
+      final newIds = _questions.map((q) => q.id).toList();
+      bool isIdentical = true;
+      for (int i = 0; i < originalIds.length; i++) {
+        if (originalIds[i] != newIds[i]) {
+          isIdentical = false;
+          break;
+        }
+      }
+      if (isIdentical) {
+        _questions = [..._questions.sublist(1), _questions.first];
+      }
+    }
+
+    _questionQueue = List<QuizQuestion>.from(_questions);
     _loadCurrentAnswer();
   }
 
@@ -118,8 +180,8 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   }
 
   void _loadCurrentAnswer() {
-    final q = _questions[_currentIndex];
-    final currentAnswer = _userAnswers[_currentIndex];
+    final q = _currentQuestion;
+    final currentAnswer = _userAnswers[q.id];
 
     if (q.type == QuizQuestionType.fillInTheBlank ||
         q.type == QuizQuestionType.identification) {
@@ -131,23 +193,82 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   }
 
   void _saveCurrentAnswer() {
-    final q = _questions[_currentIndex];
+    final q = _currentQuestion;
     if (q.type == QuizQuestionType.fillInTheBlank ||
         q.type == QuizQuestionType.identification) {
-      _userAnswers[_currentIndex] = _textAnswerController.text.trim();
+      final text = _textAnswerController.text.trim();
+      if (text.isNotEmpty) {
+        _userAnswers[q.id] = text;
+        _pendingSkippedQuestionIds.remove(q.id);
+      }
     }
+  }
+
+  void _skipCurrentQuestion() {
+    _saveCurrentAnswer();
+    final currentQ = _currentQuestion;
+
+    // Skip does NOT count as answered
+    _userAnswers.remove(currentQ.id);
+    _pendingSkippedQuestionIds.add(currentQ.id);
+
+    // Requeue: remove from current position and append to end
+    final skipped = _questionQueue.removeAt(_currentIndex);
+    _questionQueue.add(skipped);
+
+    if (_currentIndex >= _questionQueue.length) {
+      _currentIndex = 0;
+    }
+
+    setState(() {
+      _loadCurrentAnswer();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Question skipped — moved to the end of the queue.'),
+        duration: Duration(milliseconds: 1200),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   void _goToNext() {
     _saveCurrentAnswer();
-    if (_currentIndex < _questions.length - 1) {
-      setState(() {
-        _currentIndex++;
-        _loadCurrentAnswer();
-      });
-    } else {
-      _showSubmitConfirmation();
+
+    // Check if on the last question of the queue
+    if (_currentIndex >= _questionQueue.length - 1) {
+      if (_allQuestionsAnswered) {
+        _showSubmitConfirmation();
+        return;
+      } else {
+        // Route straight into the first pending unanswered question!
+        final firstUnanswered =
+            _questionQueue.indexWhere((q) => !_isQuestionAnswered(q));
+        if (firstUnanswered != -1) {
+          setState(() {
+            _currentIndex = firstUnanswered;
+            _loadCurrentAnswer();
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Returning to unanswered question ($_answeredCount of ${_questions.length} answered).',
+              ),
+              duration: const Duration(milliseconds: 1500),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+      }
     }
+
+    // Normal advance in queue
+    setState(() {
+      _currentIndex++;
+      _loadCurrentAnswer();
+    });
   }
 
   void _goToPrevious() {
@@ -162,10 +283,11 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
 
   void _toggleFlag() {
     setState(() {
-      if (_flaggedIndices.contains(_currentIndex)) {
-        _flaggedIndices.remove(_currentIndex);
+      final id = _currentQuestion.id;
+      if (_flaggedQuestionIds.contains(id)) {
+        _flaggedQuestionIds.remove(id);
       } else {
-        _flaggedIndices.add(_currentIndex);
+        _flaggedQuestionIds.add(id);
       }
     });
   }
@@ -175,40 +297,53 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     if (text.isEmpty) return;
 
     final currentList = List<String>.from(
-      (_userAnswers[_currentIndex] as List<String>?) ?? [],
+      (_userAnswers[_currentQuestion.id] as List<String>?) ?? [],
     );
 
-    if (!currentList.contains(text)) {
+    final normText = text.toLowerCase();
+    final alreadyExists = currentList.any(
+      (item) => item.trim().toLowerCase() == normText,
+    );
+
+    if (!alreadyExists) {
       currentList.add(text);
       setState(() {
-        _userAnswers[_currentIndex] = currentList;
+        _userAnswers[_currentQuestion.id] = currentList;
+        _pendingSkippedQuestionIds.remove(_currentQuestion.id);
         _enumInputController.clear();
       });
+    } else {
+      _enumInputController.clear();
     }
   }
 
   void _removeEnumerationItem(String item) {
     final currentList = List<String>.from(
-      (_userAnswers[_currentIndex] as List<String>?) ?? [],
+      (_userAnswers[_currentQuestion.id] as List<String>?) ?? [],
     );
     currentList.remove(item);
     setState(() {
-      _userAnswers[_currentIndex] = currentList;
+      _userAnswers[_currentQuestion.id] = currentList;
     });
   }
 
   void _showSubmitConfirmation() {
     _saveCurrentAnswer();
 
-    int answeredCount = 0;
-    for (int i = 0; i < _questions.length; i++) {
-      final ans = _userAnswers[i];
-      if (ans is String && ans.isNotEmpty) answeredCount++;
-      if (ans is List && ans.isNotEmpty) answeredCount++;
+    if (!_allQuestionsAnswered) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot submit quiz: $_answeredCount of ${_questions.length} questions answered. Please answer all questions before submitting.',
+          ),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
     }
 
     final totalCount = _questions.length;
-    final flaggedCount = _flaggedIndices.length;
+    final flaggedCount = _flaggedQuestionIds.length;
 
     showDialog(
       context: context,
@@ -228,7 +363,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Answered $answeredCount of $totalCount questions.',
+              'Answered all $totalCount questions.',
               style: const TextStyle(fontSize: 14, color: _textPrimary),
             ),
             if (flaggedCount > 0) ...[
@@ -277,7 +412,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
 
     for (int i = 0; i < _questions.length; i++) {
       final q = _questions[i];
-      final userAns = _userAnswers[i];
+      final userAns = _userAnswers[q.id];
       totalPossible += q.points;
 
       double earned = 0.0;
@@ -306,9 +441,16 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           final studentItems = (userAns is List)
               ? userAns.map((e) => e.toString()).toList()
               : <String>[];
+          final expectedList = q.enumerationAnswers.isNotEmpty
+              ? q.enumerationAnswers
+              : q.correctAnswer
+                  .split(RegExp(r'[\n,]'))
+                  .map((s) => s.trim())
+                  .where((s) => s.isNotEmpty)
+                  .toList();
           final enumResult = ScoringUtils.scoreEnumeration(
             studentItems: studentItems,
-            expectedItems: q.enumerationAnswers,
+            expectedItems: expectedList,
             totalPoints: q.points,
           );
           earned = enumResult.earnedPoints;
@@ -340,7 +482,10 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         studentId: user.uid,
         studentName: user.displayName ??
             (user.email?.split('@').first ?? 'Student'),
-        answers: _userAnswers.map((k, v) => MapEntry('q_$k', v)),
+        answers: {
+          for (int i = 0; i < _questions.length; i++) 'q_$i': _userAnswers[_questions[i].id],
+          for (final q in _questions) q.id: _userAnswers[q.id],
+        },
         score: totalEarned,
         totalPoints: totalPossible,
         percentage: percentage,
@@ -518,7 +663,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                             ),
                           if (details.extra.isNotEmpty)
                             Text(
-                              'Extra (not penalized): ${details.extra.join(", ")}',
+                              'Extra / Not Counted: ${details.extra.join(", ")}',
                               style: const TextStyle(
                                   fontSize: 11, color: Colors.blue),
                             ),
@@ -540,16 +685,37 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           ),
         ),
         actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryNavy,
-              foregroundColor: Colors.white,
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _textSecondary,
+              side: const BorderSide(color: _outlineVariant),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () {
               Navigator.pop(ctx);
               Navigator.pop(context);
             },
             child: const Text('Done'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primaryNavy,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            icon: const Icon(Icons.home, size: 18),
+            label: const Text('Home'),
+            onPressed: () {
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+                (route) => false,
+              );
+            },
           ),
         ],
       ),
@@ -558,11 +724,118 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentQ = _questions[_currentIndex];
-    final isFlagged = _flaggedIndices.contains(_currentIndex);
-    final isLastQuestion = _currentIndex == _questions.length - 1;
-    final progress = (_currentIndex + 1) / _questions.length;
     final title = widget.quiz?.title ?? widget.quizTitle;
+
+    if (widget.attemptNumber >= 3) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: _textPrimary,
+            ),
+          ),
+          backgroundColor: _surfaceWhite,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: _primaryNavy),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [_gradientStart, _gradientEnd],
+            ),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Card(
+                elevation: 0,
+                color: _surfaceWhite,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: const BorderSide(color: _outlineVariant),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.block_rounded,
+                          size: 56,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Maximum Attempts Reached',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: _textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'You have reached the maximum 2 attempts for this practice quiz. Further attempts are not permitted.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: _textSecondary,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryNavy,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(Icons.arrow_back, size: 18),
+                        label: const Text('Return to Class'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final currentQ = _currentQuestion;
+    final isFlagged = _flaggedQuestionIds.contains(currentQ.id);
+    final isLastQueueItem = _currentIndex == _questionQueue.length - 1;
+    final hasSkippedPending = _hasSkippedPending;
+    final isSubmitState = isLastQueueItem && !hasSkippedPending;
+    final canSubmit = _allQuestionsAnswered;
+    final progress =
+        _questions.isEmpty ? 0.0 : (_answeredCount / _questions.length);
 
     return Scaffold(
       appBar: AppBar(
@@ -735,65 +1008,106 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                     ),
                   ],
                 ),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_currentIndex > 0)
-                      OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _textPrimary,
-                          side: const BorderSide(color: _outlineVariant),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                        onPressed: _goToPrevious,
-                        child: const Row(
-                          children: [
-                            Icon(Icons.arrow_back, size: 16),
-                            SizedBox(width: 4),
-                            Text('Previous'),
-                          ],
-                        ),
-                      ),
-                    if (_currentIndex > 0) const SizedBox(width: 12),
-
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryNavy,
-                          foregroundColor: Colors.white,
-                          elevation: 1,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: _goToNext,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              isLastQuestion ? 'Submit Quiz' : 'Next Question',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
+                    Row(
+                      children: [
+                        if (_currentIndex > 0) ...[
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _textPrimary,
+                              side: const BorderSide(color: _outlineVariant),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                            Icon(
-                              isLastQuestion
-                                  ? Icons.check
-                                  : Icons.arrow_forward,
-                              size: 18,
+                            onPressed: _goToPrevious,
+                            child: const Row(
+                              children: [
+                                Icon(Icons.arrow_back, size: 16),
+                                SizedBox(width: 4),
+                                Text('Previous'),
+                              ],
                             ),
-                          ],
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.orange.shade800,
+                            side: BorderSide(color: Colors.orange.shade400),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                          ),
+                          onPressed: _skipCurrentQuestion,
+                          icon: const Icon(Icons.skip_next, size: 18),
+                          label: const Text('Skip'),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primaryNavy,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor:
+                                  _primaryNavy.withValues(alpha: 0.35),
+                              disabledForegroundColor: Colors.white70,
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            onPressed: isSubmitState
+                                ? (canSubmit ? _showSubmitConfirmation : null)
+                                : _goToNext,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  isSubmitState
+                                      ? 'Submit Quiz'
+                                      : 'Next Question',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Icon(
+                                  isSubmitState
+                                      ? Icons.check
+                                      : Icons.arrow_forward,
+                                  size: 18,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    if (isSubmitState && !canSubmit) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Answer all questions to enable submission ($_answeredCount of ${_questions.length} completed)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade800,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -805,7 +1119,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   }
 
   Widget _buildChoiceOptions(List<String> options) {
-    final selectedOption = _userAnswers[_currentIndex];
+    final selectedOption = _userAnswers[_currentQuestion.id];
 
     return Column(
       children: options.map((option) {
@@ -816,7 +1130,8 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           child: InkWell(
             onTap: () {
               setState(() {
-                _userAnswers[_currentIndex] = option;
+                _userAnswers[_currentQuestion.id] = option;
+                _pendingSkippedQuestionIds.remove(_currentQuestion.id);
               });
             },
             borderRadius: BorderRadius.circular(12),
@@ -894,7 +1209,12 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           border: InputBorder.none,
         ),
         onChanged: (val) {
-          _userAnswers[_currentIndex] = val.trim();
+          setState(() {
+            _userAnswers[_currentQuestion.id] = val.trim();
+            if (val.trim().isNotEmpty) {
+              _pendingSkippedQuestionIds.remove(_currentQuestion.id);
+            }
+          });
         },
       ),
     );
@@ -902,7 +1222,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
 
   Widget _buildEnumerationInput() {
     final currentList = List<String>.from(
-      (_userAnswers[_currentIndex] as List<String>?) ?? [],
+      (_userAnswers[_currentQuestion.id] as List<String>?) ?? [],
     );
 
     return Column(

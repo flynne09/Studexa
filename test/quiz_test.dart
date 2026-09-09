@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:studexa/models/quiz_model.dart';
 import 'package:studexa/services/quiz_service.dart';
+import 'package:studexa/utils/document_text_extractor.dart';
 import 'package:studexa/utils/scoring_utils.dart';
 
 void main() {
@@ -208,6 +211,49 @@ void main() {
       expect(actualQuestions.first.question.startsWith('Fill in the blank'), true);
       expect(practiceQuestions.first.question.contains('Practice Question'), true);
     });
+
+    test('Accuracy: Filters metadata, masks identification answers, and generates plausible distractors', () {
+      const complexText = '''
+Course: BIO 101 - Fall 2026. Page 14 of 95. Copyright 2026 University.
+Instructor: Dr. Smith. Welcome to lecture 4.
+Cellular respiration is defined as the biochemical pathway that cells use to convert nutrients into ATP.
+Mitochondria: The double-membraned organelle responsible for ATP synthesis.
+Glycolysis occurs in the cytoplasm and breaks down glucose into pyruvate.
+The citric acid cycle takes place inside the mitochondrial matrix.
+''';
+
+      final questions = QuizService.generateLocalFallbackQuestions(
+        extractedText: complexText,
+        questionTypes: [
+          'Multiple Choice',
+          'Identification',
+          'True/False',
+          'Fill-in-the-Blank',
+        ],
+        questionCount: 4,
+        isActual: true,
+      );
+
+      // 1. Verify metadata was filtered out of all questions
+      for (final q in questions) {
+        expect(q.question.contains('Course: BIO 101'), false);
+        expect(q.question.contains('Page 14'), false);
+        expect(q.question.contains('Copyright'), false);
+        expect(q.question.contains('Dr. Smith'), false);
+      }
+
+      // 2. Verify Multiple Choice has plausible options, no "Concept 1"
+      final mcq = questions.firstWhere((q) => q.type == QuizQuestionType.multipleChoice);
+      for (final opt in mcq.options) {
+        expect(opt.contains('Concept 1'), false);
+        expect(opt.contains('Concept 2'), false);
+        expect(opt.contains('Concept 3'), false);
+      }
+
+      // 3. Verify Identification prompt does NOT reveal the correctAnswer
+      final ident = questions.firstWhere((q) => q.type == QuizQuestionType.identification);
+      expect(ident.question.toLowerCase().contains(ident.correctAnswer.toLowerCase()), false);
+    });
   });
 
   group('Quiz Evaluation & Scoring Integration Tests', () {
@@ -261,6 +307,338 @@ void main() {
       expect(partialResult.earnedPoints, 2.0);
       expect(partialResult.found.length, 2);
       expect(partialResult.missing, ['Electron Transport']);
+    });
+  });
+
+  group('DocumentTextExtractor & AI Resiliency Tests', () {
+    test('Extracts plain text correctly from TXT bytes', () async {
+      const originalText = 'Photosynthesis converts solar energy into chemical energy stored in glucose.';
+      final bytes = Uint8List.fromList(utf8.encode(originalText));
+
+      final result = await DocumentTextExtractor.extractText(
+        bytes: bytes,
+        extension: 'txt',
+      );
+
+      expect(result, originalText);
+    });
+
+    test('Case-insensitive extension handling for documents', () async {
+      const originalText = 'Cellular biology notes.';
+      final bytes = Uint8List.fromList(utf8.encode(originalText));
+
+      final result = await DocumentTextExtractor.extractText(
+        bytes: bytes,
+        extension: '.TXT',
+      );
+
+      expect(result, originalText);
+    });
+
+    test('Throws on unsupported file extensions', () async {
+      final bytes = Uint8List.fromList([1, 2, 3]);
+
+      expect(
+        () => DocumentTextExtractor.extractText(bytes: bytes, extension: 'exe'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test('QuizService.callGeminiApi returns null gracefully when apiKey is empty', () async {
+      final result = await QuizService.callGeminiApi(
+        apiKey: '',
+        extractedText: 'Sample text',
+        questionTypes: ['multipleChoice'],
+        questionCount: 5,
+        isActual: false,
+      );
+
+      expect(result, isNull);
+    });
+  });
+
+  group('QuizService Validation Tests (Issue 1 & 4)', () {
+    test('validateQuizQuestions returns null for valid questions across types', () {
+      final questions = [
+        const QuizQuestion(
+          id: 'q1',
+          type: QuizQuestionType.multipleChoice,
+          question: 'What organelle synthesizes ATP?',
+          options: ['A. Nucleus', 'B. Mitochondria', 'C. Ribosome'],
+          correctAnswer: 'B. Mitochondria',
+        ),
+        const QuizQuestion(
+          id: 'q2',
+          type: QuizQuestionType.trueFalse,
+          question: 'Photosynthesis occurs in chloroplasts.',
+          options: ['True', 'False'],
+          correctAnswer: 'True',
+        ),
+        const QuizQuestion(
+          id: 'q3',
+          type: QuizQuestionType.fillInTheBlank,
+          question: 'The powerhouse of the cell is _______',
+          correctAnswer: 'Mitochondria',
+        ),
+        const QuizQuestion(
+          id: 'q4',
+          type: QuizQuestionType.enumeration,
+          question: 'List three stages of respiration:',
+          enumerationAnswers: ['Glycolysis', 'Krebs Cycle', 'ETC'],
+          correctAnswer: 'Glycolysis, Krebs Cycle, ETC',
+        ),
+      ];
+
+      final error = QuizService.validateQuizQuestions(questions);
+      expect(error, isNull);
+    });
+
+    test('validateQuizQuestions catches empty questions list', () {
+      final error = QuizService.validateQuizQuestions([]);
+      expect(error, contains('must have at least one question'));
+    });
+
+    test('validateQuizQuestions catches blank prompt or blank answer', () {
+      final emptyPrompt = [
+        const QuizQuestion(
+          id: 'q1',
+          type: QuizQuestionType.fillInTheBlank,
+          question: '   ',
+          correctAnswer: 'Cell',
+        ),
+      ];
+      expect(QuizService.validateQuizQuestions(emptyPrompt), contains('prompt cannot be empty'));
+
+      final emptyAnswer = [
+        const QuizQuestion(
+          id: 'q1',
+          type: QuizQuestionType.identification,
+          question: 'What is the cell powerhouse?',
+          correctAnswer: '',
+        ),
+      ];
+      expect(QuizService.validateQuizQuestions(emptyAnswer), contains('must have a correct answer'));
+    });
+
+    test('validateQuizQuestions catches MCQ with invalid options or mismatching answer', () {
+      final noMatchingOption = [
+        const QuizQuestion(
+          id: 'q1',
+          type: QuizQuestionType.multipleChoice,
+          question: 'What organelle synthesizes ATP?',
+          options: ['A. Nucleus', 'B. Ribosome'],
+          correctAnswer: 'C. Mitochondria',
+        ),
+      ];
+      expect(
+        QuizService.validateQuizQuestions(noMatchingOption),
+        contains('must match one of the options'),
+      );
+    });
+
+    test('validateQuizQuestions catches invalid True/False answer', () {
+      final invalidTF = [
+        const QuizQuestion(
+          id: 'q1',
+          type: QuizQuestionType.trueFalse,
+          question: 'Mitochondria make ATP.',
+          options: ['True', 'False'],
+          correctAnswer: 'Maybe',
+        ),
+      ];
+      expect(
+        QuizService.validateQuizQuestions(invalidTF),
+        contains('must be True or False'),
+      );
+    });
+  });
+
+  group('QuizService Accuracy & Redundant Question Prevention Tests (Issues 1 & 2)', () {
+    test('tokenJaccardSimilarity calculates word overlap ignoring punctuation and case', () {
+      // Identical
+      expect(
+        QuizService.tokenJaccardSimilarity(
+          'What is the powerhouse of the cell?',
+          'WHAT IS THE POWERHOUSE OF THE CELL?',
+        ),
+        1.0,
+      );
+
+      // Disjoint
+      expect(
+        QuizService.tokenJaccardSimilarity(
+          'Photosynthesis converts light into glucose.',
+          'Database algorithms utilize binary search trees.',
+        ),
+        0.0,
+      );
+
+      // Highly similar (> 0.70)
+      final simHigh = QuizService.tokenJaccardSimilarity(
+        'What organelle is the powerhouse of the cell?',
+        'Which organelle is the powerhouse of the cell?',
+      );
+      expect(simHigh > 0.70, true);
+
+      // Distinct concepts (< 0.40)
+      final simLow = QuizService.tokenJaccardSimilarity(
+        'Glycolysis occurs in the cytoplasm and breaks down glucose.',
+        'Mitochondria are double-membraned organelles known as the powerhouse of the cell.',
+      );
+      expect(simLow < 0.40, true);
+    });
+
+    test('validateAndDeduplicateQuestions prunes duplicates, drops invalid, and backfills to targetCount', () {
+      const validQ1 = QuizQuestion(
+        id: 'orig_1',
+        type: QuizQuestionType.multipleChoice,
+        question: 'Which organelle is the powerhouse of the cell?',
+        options: ['A. Mitochondria', 'B. Nucleus', 'C. Ribosome', 'D. Chloroplast'],
+        correctAnswer: 'A. Mitochondria',
+      );
+
+      // Exact prompt duplicate
+      const duplicateExact = QuizQuestion(
+        id: 'orig_2',
+        type: QuizQuestionType.multipleChoice,
+        question: 'Which organelle is the powerhouse of the cell?',
+        options: ['A. Mitochondria', 'B. Nucleus', 'C. Ribosome', 'D. Chloroplast'],
+        correctAnswer: 'A. Mitochondria',
+      );
+
+      // Near duplicate (> 0.70 similarity)
+      const duplicateNear = QuizQuestion(
+        id: 'orig_3',
+        type: QuizQuestionType.multipleChoice,
+        question: 'Which organelle is the powerhouse of the cell structure?',
+        options: ['A. Mitochondria', 'B. Nucleus', 'C. Ribosome', 'D. Chloroplast'],
+        correctAnswer: 'A. Mitochondria',
+      );
+
+      // Structurally invalid question (empty prompt)
+      const invalidEmptyPrompt = QuizQuestion(
+        id: 'orig_4',
+        type: QuizQuestionType.trueFalse,
+        question: '   ',
+        options: ['True', 'False'],
+        correctAnswer: 'True',
+      );
+
+      final input = [validQ1, duplicateExact, duplicateNear, invalidEmptyPrompt];
+
+      const sampleMaterial =
+          'Cellular respiration produces ATP in eukaryotic cells. '
+          'Mitochondria are the powerhouse of the cell. '
+          'Glycolysis occurs in the cytoplasm. '
+          'The citric acid cycle occurs inside the mitochondrial matrix. '
+          'Photosynthesis converts light into chemical energy. '
+          'Enzymes are biological catalysts.';
+
+      // Request targetCount: 5 with backfilling
+      final result = QuizService.validateAndDeduplicateQuestions(
+        input,
+        targetCount: 5,
+        extractedText: sampleMaterial,
+      );
+
+      // 1. Target count fulfilled
+      expect(result.length, 5);
+
+      // 2. All questions are valid
+      final validationError = QuizService.validateQuizQuestions(result);
+      expect(validationError, isNull);
+
+      // 3. No duplicates among questions
+      for (int i = 0; i < result.length; i++) {
+        for (int j = i + 1; j < result.length; j++) {
+          final sim = QuizService.tokenJaccardSimilarity(
+            result[i].question,
+            result[j].question,
+          );
+          expect(
+            sim <= 0.70,
+            true,
+            reason: 'Questions #${i + 1} and #${j + 1} are too similar: sim=$sim',
+          );
+        }
+      }
+
+      // 4. Sequential IDs
+      expect(result[0].id, 'q_1');
+      expect(result[1].id, 'q_2');
+      expect(result[2].id, 'q_3');
+      expect(result[3].id, 'q_4');
+      expect(result[4].id, 'q_5');
+    });
+
+    test('Generates 10, 30, and 50 questions with ZERO duplicate stems and Jaccard similarity <= 0.70', () {
+      const richLectureText = '''
+Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells.
+Mitochondria are double-membraned organelles known as the powerhouse of the cell.
+Glycolysis occurs in the cytoplasm and breaks down glucose into two molecules of pyruvate.
+The citric acid cycle takes place inside the mitochondrial matrix.
+Adenosine triphosphate serves as the primary energy currency for cellular reactions.
+Photosynthesis converts light energy into chemical energy stored in carbohydrates.
+Enzymes are biological catalysts that lower activation energy without being consumed.
+Deoxyribonucleic acid stores genetic instructions within the cell nucleus.
+Ribosomes are macromolecular machines responsible for biological protein synthesis.
+The endoplasmic reticulum facilitates protein folding and transport in eukaryotic cells.
+Chloroplasts contain chlorophyll pigments that absorb sunlight during photosynthesis.
+The cell membrane maintains homeostasis through selective membrane permeability.
+''';
+
+      for (final count in [10, 30, 50]) {
+        final questions = QuizService.generateLocalFallbackQuestions(
+          extractedText: richLectureText,
+          questionTypes: [
+            'Multiple Choice',
+            'True/False',
+            'Fill-in-the-Blank',
+            'Identification',
+            'Enumeration',
+          ],
+          questionCount: count,
+          isActual: true,
+        );
+
+        // 1. Exactly requested count returned
+        expect(
+          questions.length,
+          count,
+          reason: 'Expected exactly $count questions for count=$count',
+        );
+
+        // 2. All questions pass pedagogical validation
+        final error = QuizService.validateQuizQuestions(questions);
+        expect(
+          error,
+          isNull,
+          reason: 'Validation failed for count=$count: $error',
+        );
+
+        // 3. ZERO duplicate stems: All pairwise Jaccard similarities <= 0.70
+        for (int i = 0; i < questions.length; i++) {
+          for (int j = i + 1; j < questions.length; j++) {
+            final sim = QuizService.tokenJaccardSimilarity(
+              questions[i].question,
+              questions[j].question,
+            );
+            expect(
+              sim <= 0.70,
+              true,
+              reason: 'Pairwise duplicate in $count-question set: Q${i + 1} vs Q${j + 1} (sim=$sim)\nQ1: "${questions[i].question}"\nQ2: "${questions[j].question}"',
+            );
+          }
+        }
+
+        // 4. All 5 question types are present
+        final presentTypes = questions.map((q) => q.type).toSet();
+        expect(presentTypes.contains(QuizQuestionType.multipleChoice), true);
+        expect(presentTypes.contains(QuizQuestionType.trueFalse), true);
+        expect(presentTypes.contains(QuizQuestionType.fillInTheBlank), true);
+        expect(presentTypes.contains(QuizQuestionType.identification), true);
+        expect(presentTypes.contains(QuizQuestionType.enumeration), true);
+      }
     });
   });
 }

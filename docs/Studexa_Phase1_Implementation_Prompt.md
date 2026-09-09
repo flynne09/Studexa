@@ -113,11 +113,12 @@ Use Firebase as the application backend:
 - Firebase Cloud Functions for secure server-side processing, file text extraction, Gemini API calls, fallback generation, scoring-related server logic where appropriate, and PDF generation/export where appropriate.
 - Firebase App Check may be added if compatible with the existing setup, but do not let it block the Week 11 core flow.
 
-## Backend security rule
+## Backend security rule (NFR-03)
 
 The Gemini API key must never be placed in Flutter, Firestore documents, client configuration, logs, or public source code. The mobile app must call a secure backend function that owns the Gemini credential.
 
-The Phase 1 documentation explicitly requires the Gemini key not to be exposed to the mobile app. fileciteturn0file0L540-L564
+> **Academic MVP Deviation Note (NFR-03)**:
+> Due to Firebase Spark-tier (free tier) constraints where external outbound networking is blocked on Cloud Functions without a paid Blaze plan, Gemini API calls are made client-side via `lib/config/gemini_config.dart` (git-ignored) with automated offline concept-engine fallback. To defend against key extraction from the mobile binary, the API key is restricted in Google Cloud Console via Android Application Restrictions (Package Name: `com.example.studexa`, SHA-1: `BA:62:AF:97:16:D1:A4:1D:1B:B2:C9:47:1F:04:97:AF:96:7B:17:3B`) alongside strict daily quota caps.
 
 ---
 

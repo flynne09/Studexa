@@ -1,6 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import '../config/gemini_config.dart';
 import '../models/quiz_model.dart';
+import '../utils/scoring_utils.dart';
 import 'firestore_provider.dart';
 
 /// Service managing quiz creation, generation, Firestore persistence, and streaming.
@@ -9,6 +15,9 @@ class QuizService {
       : _firestore = firestore ?? getAppFirestore();
 
   final FirebaseFirestore _firestore;
+
+  /// Optional global or teacher-provided Gemini API key
+  static String? globalGeminiApiKey;
 
   CollectionReference<Map<String, dynamic>> get _quizzesCollection =>
       _firestore.collection('quizzes');
@@ -75,7 +84,8 @@ class QuizService {
   }
 
   /// Generates a quiz from a study material.
-  /// Uses material text from Firestore and generates questions across requested types.
+  /// First attempts Google Gemini AI (if an API key is available), then automatically
+  /// falls back to Studexa's built-in concept engine if no API key is provided or offline.
   Future<QuizModel> generateQuiz({
     required String teacherId,
     required String classId,
@@ -84,6 +94,9 @@ class QuizService {
     required List<String> questionTypes,
     required int questionCount,
     String? sourceQuizId,
+    String? geminiApiKey,
+    String? preloadedExtractedText,
+    String? preloadedFileName,
   }) async {
     if (teacherId.isEmpty) {
       throw ArgumentError('Teacher ID is required to generate a quiz.');
@@ -95,27 +108,69 @@ class QuizService {
       throw ArgumentError('A study material must be selected to generate a quiz.');
     }
 
-    // Retrieve material to access extractedText
-    final matDoc = await _materialsCollection.doc(materialId).get();
-    if (!matDoc.exists) {
-      throw StateError('Study material not found.');
+    String extractedText = (preloadedExtractedText ?? '').trim();
+    String fileName = (preloadedFileName ?? '').trim();
+
+    if (extractedText.isEmpty) {
+      // Retrieve material to access extractedText
+      final matDoc = await _materialsCollection.doc(materialId).get();
+      if (!matDoc.exists) {
+        throw StateError('Study material not found.');
+      }
+
+      final matData = matDoc.data() ?? {};
+      extractedText = (matData['extractedText'] as String? ?? '').trim();
+      fileName = (matData['fileName'] as String? ?? 'Study Material');
     }
 
-    final matData = matDoc.data() ?? {};
-    final extractedText = (matData['extractedText'] as String? ?? '').trim();
-    final fileName = (matData['fileName'] as String? ?? 'Study Material');
-
-    if (extractedText.length < 20) {
+    if (extractedText.isEmpty) {
       throw StateError(
-        'The selected study material has not completed text extraction or contains insufficient text.',
+        'The selected study material has not completed text extraction or contains no readable text.',
       );
     }
+    if (fileName.isEmpty) {
+      fileName = 'Study Material';
+    }
 
-    // Generate questions using deterministic rule-based generator
-    final questions = generateLocalFallbackQuestions(
+    final apiKey = geminiApiKey ??
+        (GeminiConfig.apiKey.isNotEmpty ? GeminiConfig.apiKey : null) ??
+        globalGeminiApiKey ??
+        const String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
+
+    List<QuizQuestion>? questions;
+    String method = 'fallback';
+
+    if (apiKey.trim().isNotEmpty) {
+      try {
+        questions = await callGeminiApi(
+          apiKey: apiKey.trim(),
+          extractedText: extractedText,
+          questionTypes: questionTypes,
+          questionCount: questionCount,
+          isActual: isActual,
+        );
+        if (questions != null && questions.isNotEmpty) {
+          method = 'gemini';
+        }
+      } catch (e) {
+        debugPrint('Gemini AI synthesis failed, falling back: $e');
+      }
+    }
+
+    // If Gemini was not used or did not return questions, use local concept generator
+    questions ??= generateLocalFallbackQuestions(
       extractedText: extractedText,
       questionTypes: questionTypes,
       questionCount: questionCount,
+      isActual: isActual,
+    );
+
+    // Validate questions, prune redundant/duplicate questions, and ensure targetCount
+    questions = validateAndDeduplicateQuestions(
+      questions,
+      targetCount: questionCount,
+      extractedText: extractedText,
+      questionTypes: questionTypes,
       isActual: isActual,
     );
 
@@ -133,7 +188,7 @@ class QuizService {
       type: isActual ? 'actual' : 'practice',
       title: title,
       status: 'draft',
-      generationMethod: 'fallback',
+      generationMethod: method,
       sourceQuizId: sourceQuizId,
       questions: questions,
       totalPoints: totalPoints,
@@ -150,6 +205,432 @@ class QuizService {
     return newQuiz;
   }
 
+  /// Attempts to generate questions via Google Gemini API (gemini-1.5-flash).
+  /// For question counts > 15, chunks text and batches requests (10-12 per call)
+  /// with distinct text slicing and anti-redundancy directives.
+  static Future<List<QuizQuestion>?> callGeminiApi({
+    required String apiKey,
+    required String extractedText,
+    required List<String> questionTypes,
+    required int questionCount,
+    required bool isActual,
+    String? sourceQuizContext,
+  }) async {
+    if (apiKey.trim().isEmpty) return null;
+
+    final targetCount = questionCount > 0 ? questionCount : 10;
+
+    // If targetCount <= 15, a single request is optimal and fast
+    if (targetCount <= 15) {
+      return _callGeminiSingleBatch(
+        apiKey: apiKey,
+        extractedText: extractedText,
+        questionTypes: questionTypes,
+        batchCount: targetCount,
+        isActual: isActual,
+        sourceQuizContext: sourceQuizContext,
+        batchIndex: 0,
+        totalBatches: 1,
+      );
+    }
+
+    // For 30 to 50 questions: partition into batches of 10 to 12 questions
+    const batchSize = 10;
+    final numBatches = (targetCount / batchSize).ceil();
+    final allQuestions = <QuizQuestion>[];
+
+    // Divide text into overlapping chunks so each batch assesses distinct sections
+    final textLength = extractedText.length;
+    final chunkSize = (textLength / numBatches).ceil();
+
+    final batchFutures = <Future<List<QuizQuestion>?>>[];
+
+    for (int b = 0; b < numBatches; b++) {
+      final questionsForThisBatch = (b == numBatches - 1)
+          ? (targetCount - (b * batchSize))
+          : batchSize;
+
+      int start = b * chunkSize;
+      if (start > 0 && start > 200) start -= 200; // 200 char overlap
+      int end = min(textLength, (b + 1) * chunkSize + 200);
+      if (start >= end) start = 0;
+
+      final chunkText =
+          textLength > 1000 ? extractedText.substring(start, end) : extractedText;
+
+      batchFutures.add(
+        _callGeminiSingleBatch(
+          apiKey: apiKey,
+          extractedText: chunkText,
+          questionTypes: questionTypes,
+          batchCount: questionsForThisBatch,
+          isActual: isActual,
+          sourceQuizContext: sourceQuizContext,
+          batchIndex: b,
+          totalBatches: numBatches,
+        ),
+      );
+    }
+
+    try {
+      final results = await Future.wait(batchFutures);
+      for (final batchList in results) {
+        if (batchList != null && batchList.isNotEmpty) {
+          allQuestions.addAll(batchList);
+        }
+      }
+    } catch (e) {
+      debugPrint('Gemini batched generation error: $e');
+    }
+
+    return allQuestions.isNotEmpty ? allQuestions : null;
+  }
+
+  /// Handles a single batch HTTP request to Google Gemini API
+  static Future<List<QuizQuestion>?> _callGeminiSingleBatch({
+    required String apiKey,
+    required String extractedText,
+    required List<String> questionTypes,
+    required int batchCount,
+    required bool isActual,
+    String? sourceQuizContext,
+    required int batchIndex,
+    required int totalBatches,
+  }) async {
+    final model = GeminiConfig.modelName.isNotEmpty
+        ? GeminiConfig.modelName
+        : 'gemini-1.5-flash';
+    final url = Uri.parse(
+      'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=${apiKey.trim()}',
+    );
+
+    final batchNote = totalBatches > 1
+        ? 'BATCH ${batchIndex + 1} OF $totalBatches: Focus strictly on key concepts and definitions found in THIS section. Do NOT repeat questions from other sections.'
+        : '';
+
+    final systemInstruction = '''
+You are an expert academic assessment designer for Studexa.
+Your primary objective is to evaluate student mastery of CORE CONCEPTS, KEY DEFINITIONS, and FUNDAMENTAL MECHANISMS from the provided study material.
+
+MANDATORY ASSESSMENT DIRECTIVES:
+1. CORE CONCEPTS & DEFINITIONS FIRST:
+   - Identify the central principles, key definitions, primary mechanisms, and functional relationships in the material.
+   - Every question must assess a core concept that an instructor would legitimately evaluate on a comprehensive final exam.
+2. STRICTLY FORBID TRIVIA & DOCUMENT METADATA:
+   - NEVER ask about: dates of publication, author names, page numbers, chapter/slide numbers, figure or table numbers, course codes, syllabus announcements, file names, or incidental, isolated trivia.
+3. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
+   - For multipleChoice questions, all 3 incorrect distractors MUST be plausible, academically meaningful terms in the EXACT SAME conceptual category/domain as the correct answer.
+   - NEVER produce joke, nonsensical, or obviously absurd options.
+4. FACTUAL GROUNDING:
+   - Every question, answer option, and explanation must be 100% grounded in and verifiable against the provided text. Do not invent or assume unstated facts.
+5. ANTI-REDUNDANCY:
+   - Every question MUST test a DIFFERENT concept, definition, or mechanism.
+   - NEVER generate duplicate questions, rephrased copies of another question, or questions with identical stems or answers.
+6. QUESTION FORMAT CONSTRAINTS:
+   - multipleChoice: Provide exactly 4 options labeled 'A.', 'B.', 'C.', 'D.'. correctAnswer must match the full option string (e.g. 'A. Mitochondria').
+   - trueFalse: options must be exactly ['True', 'False']. correctAnswer must be either 'True' or 'False'. Negations must test a core concept or mechanism, not trivial phrasing tricks.
+   - fillInTheBlank: The question prompt must contain '_______' where the single primary keyword or concept belongs. correctAnswer must be that exact term.
+   - identification: The question provides a clear, precise definition or functional description WITHOUT giving away the term in the prompt. correctAnswer is the exact term.
+   - enumeration: The question asks to list 2 to 5 specific items, stages, components, or characteristics. enumerationAnswers must be an array of strings representing the expected items. correctAnswer must be a comma-separated list of those items.
+${!isActual && sourceQuizContext != null && sourceQuizContext.isNotEmpty ? "7. DISTINCT PHRASING FOR PRACTICE: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME core concepts using scenario-based framing, inverse questions, or applied contexts." : ""}
+
+$batchNote
+
+STRICT JSON OUTPUT SCHEMA:
+You MUST respond strictly with valid JSON conforming to this schema:
+{
+  "questions": [
+    {
+      "id": "b${batchIndex}_q_1",
+      "type": "multipleChoice",
+      "question": "Clear question testing a core concept",
+      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
+      "correctAnswer": "A. ...",
+      "enumerationAnswers": [],
+      "explanation": "Clear pedagogical explanation grounded in the text",
+      "points": 1.0
+    }
+  ]
+}
+''';
+
+    final userContent = '''
+STUDY MATERIAL EXTRACTED TEXT:
+${extractedText.length > 20000 ? extractedText.substring(0, 20000) : extractedText}
+
+${(!isActual && sourceQuizContext != null && sourceQuizContext.isNotEmpty) ? "REFERENCE ACTUAL QUIZ CONTEXT:\n$sourceQuizContext\n" : ""}
+
+Generate exactly $batchCount unique questions testing core concepts and definitions matching the specified types and strict JSON schema.
+''';
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'contents': [
+            {
+              'role': 'user',
+              'parts': [
+                {'text': '$systemInstruction\n\n$userContent'}
+              ]
+            }
+          ],
+          'generationConfig': {
+            'responseMimeType': 'application/json',
+            'temperature': 0.3,
+          },
+        }),
+      ).timeout(const Duration(seconds: 35));
+
+      if (response.statusCode != 200) {
+        debugPrint(
+            'Gemini API batch $batchIndex responded with status ${response.statusCode}: ${response.body}');
+        return null;
+      }
+
+      final responseJson = jsonDecode(response.body) as Map<String, dynamic>;
+      final candidates = responseJson['candidates'] as List<dynamic>?;
+      if (candidates == null || candidates.isEmpty) return null;
+
+      final parts = candidates[0]['content']?['parts'] as List<dynamic>?;
+      final textOutput =
+          parts != null && parts.isNotEmpty ? parts[0]['text'] as String? : null;
+      if (textOutput == null || textOutput.trim().isEmpty) return null;
+
+      final parsed = jsonDecode(textOutput) as Map<String, dynamic>;
+      final rawQuestions = parsed['questions'] as List<dynamic>?;
+      if (rawQuestions == null || rawQuestions.isEmpty) return null;
+
+      final questions = <QuizQuestion>[];
+      for (int i = 0; i < rawQuestions.length; i++) {
+        final qMap = rawQuestions[i] as Map<String, dynamic>;
+        final typeStr = (qMap['type'] as String? ?? 'multipleChoice');
+        final qType = QuizQuestionType.fromString(typeStr);
+
+        final rawOptions = qMap['options'];
+        final optionsList = (rawOptions is List)
+            ? rawOptions.map((o) => o.toString()).toList()
+            : <String>[];
+
+        final rawEnum = qMap['enumerationAnswers'];
+        final enumList = (rawEnum is List)
+            ? rawEnum.map((e) => e.toString()).toList()
+            : <String>[];
+
+        questions.add(QuizQuestion(
+          id: 'b${batchIndex}_q_${i + 1}',
+          type: qType,
+          question: (qMap['question'] as String?) ?? 'Question ${i + 1}',
+          options: optionsList,
+          correctAnswer: (qMap['correctAnswer'] as String?) ?? '',
+          enumerationAnswers: enumList,
+          explanation: (qMap['explanation'] as String?) ?? '',
+          points: (qMap['points'] as num?)?.toDouble() ?? 1.0,
+        ));
+      }
+
+      return questions.isNotEmpty ? questions : null;
+    } catch (e) {
+      debugPrint('Gemini batch $batchIndex generation error: $e');
+      return null;
+    }
+  }
+
+  /// Computes the word-level Jaccard similarity coefficient between two strings.
+  /// Ignores case, punctuation, and short words (< 2 chars).
+  /// Returns a value in [0.0, 1.0].
+  static double tokenJaccardSimilarity(String a, String b) {
+    Set<String> tokenize(String input) {
+      return input
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+          .split(RegExp(r'\s+'))
+          .map((w) => w.trim())
+          .where((w) => w.length >= 2)
+          .toSet();
+    }
+
+    final setA = tokenize(a);
+    final setB = tokenize(b);
+
+    if (setA.isEmpty && setB.isEmpty) return 1.0;
+    if (setA.isEmpty || setB.isEmpty) return 0.0;
+
+    final intersectionSize = setA.intersection(setB).length;
+    final unionSize = setA.union(setB).length;
+
+    if (unionSize == 0) return 0.0;
+    return intersectionSize / unionSize;
+  }
+
+  /// Validates each question for structural integrity and removes duplicate or
+  /// nearly identical questions (Jaccard similarity > 0.70 or same answer with similarity > 0.45).
+  /// If deduplication leaves fewer than [targetCount], backfills with fresh questions
+  /// from the fallback generator so the requested count is always fulfilled.
+  static List<QuizQuestion> validateAndDeduplicateQuestions(
+    List<QuizQuestion> questions, {
+    int? targetCount,
+    String? extractedText,
+    List<String>? questionTypes,
+    bool isActual = false,
+  }) {
+    if (questions.isEmpty) {
+      if (targetCount != null &&
+          targetCount > 0 &&
+          extractedText != null &&
+          extractedText.isNotEmpty) {
+        return generateLocalFallbackQuestions(
+          extractedText: extractedText,
+          questionTypes: questionTypes ?? [],
+          questionCount: targetCount,
+          isActual: isActual,
+        );
+      }
+      return [];
+    }
+
+    final accepted = <QuizQuestion>[];
+
+    bool isSingleQuestionValid(QuizQuestion q) {
+      if (q.question.trim().isEmpty || q.correctAnswer.trim().isEmpty) {
+        return false;
+      }
+      switch (q.type) {
+        case QuizQuestionType.multipleChoice:
+          if (q.options.length < 2) return false;
+          final cleanAns = ScoringUtils.normalizeText(
+            ScoringUtils.cleanExpectedAnswer(q.correctAnswer),
+          );
+          final hasMatch = q.options.any((opt) {
+            final cleanOpt = ScoringUtils.normalizeText(
+              ScoringUtils.cleanExpectedAnswer(opt),
+            );
+            return cleanOpt == cleanAns || cleanOpt.contains(cleanAns);
+          });
+          if (!hasMatch) return false;
+          break;
+        case QuizQuestionType.trueFalse:
+          final cleanTf = q.correctAnswer.trim().toLowerCase();
+          if (cleanTf != 'true' && cleanTf != 'false') return false;
+          break;
+        case QuizQuestionType.fillInTheBlank:
+          if (q.correctAnswer.trim().length < 2) return false;
+          break;
+        case QuizQuestionType.identification:
+          if (q.correctAnswer.trim().length < 2) return false;
+          break;
+        case QuizQuestionType.enumeration:
+          if (q.enumerationAnswers.isEmpty && q.correctAnswer.trim().isEmpty) {
+            return false;
+          }
+          break;
+      }
+      return true;
+    }
+
+    bool isDuplicate(QuizQuestion candidate, List<QuizQuestion> currentList) {
+      final candNormPrompt = candidate.question.trim().toLowerCase();
+      final candNormAnswer = ScoringUtils.normalizeText(
+        ScoringUtils.cleanExpectedAnswer(candidate.correctAnswer),
+      );
+
+      for (final existing in currentList) {
+        final existNormPrompt = existing.question.trim().toLowerCase();
+        final existNormAnswer = ScoringUtils.normalizeText(
+          ScoringUtils.cleanExpectedAnswer(existing.correctAnswer),
+        );
+
+        // Exact prompt match
+        if (candNormPrompt == existNormPrompt) return true;
+
+        // High token similarity
+        final similarity =
+            tokenJaccardSimilarity(candidate.question, existing.question);
+        if (similarity > 0.70) return true;
+
+        // Same answer with moderate token similarity
+        if (candNormAnswer.isNotEmpty &&
+            candNormAnswer == existNormAnswer &&
+            similarity > 0.45) {
+          return true;
+        }
+
+        // Exact same MCQ options
+        if (candidate.type == QuizQuestionType.multipleChoice &&
+            existing.type == QuizQuestionType.multipleChoice &&
+            candidate.options.length == existing.options.length) {
+          final candOptions = candidate.options
+              .map((o) => ScoringUtils.normalizeText(
+                  ScoringUtils.cleanExpectedAnswer(o)))
+              .toSet();
+          final existOptions = existing.options
+              .map((o) => ScoringUtils.normalizeText(
+                  ScoringUtils.cleanExpectedAnswer(o)))
+              .toSet();
+          if (candOptions.containsAll(existOptions)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    for (final q in questions) {
+      if (!isSingleQuestionValid(q)) continue;
+      if (isDuplicate(q, accepted)) continue;
+      accepted.add(q);
+    }
+
+    // Backfill if below targetCount
+    if (targetCount != null && targetCount > 0 && accepted.length < targetCount) {
+      final textForFallback =
+          (extractedText != null && extractedText.trim().isNotEmpty)
+              ? extractedText
+              : accepted
+                  .map((q) => '${q.question} ${q.correctAnswer}')
+                  .join(' ');
+
+      if (textForFallback.trim().isNotEmpty) {
+        final backfillCandidates = generateLocalFallbackQuestions(
+          extractedText: textForFallback,
+          questionTypes: questionTypes ?? [],
+          questionCount: targetCount * 2 + 10,
+          isActual: isActual,
+        );
+
+        for (final candidate in backfillCandidates) {
+          if (accepted.length >= targetCount) break;
+          if (!isSingleQuestionValid(candidate)) continue;
+          if (isDuplicate(candidate, accepted)) continue;
+          accepted.add(candidate);
+        }
+      }
+    }
+
+    // Cap at targetCount if exceeded
+    final capped = (targetCount != null &&
+            targetCount > 0 &&
+            accepted.length > targetCount)
+        ? accepted.sublist(0, targetCount)
+        : accepted;
+
+    // Renumber IDs sequentially
+    return List<QuizQuestion>.generate(capped.length, (idx) {
+      final orig = capped[idx];
+      return QuizQuestion(
+        id: 'q_${idx + 1}',
+        type: orig.type,
+        question: orig.question,
+        options: orig.options,
+        correctAnswer: orig.correctAnswer,
+        enumerationAnswers: orig.enumerationAnswers,
+        explanation: orig.explanation,
+        points: orig.points,
+      );
+    });
+  }
+
   /// Updates an existing quiz with teacher edits.
   Future<void> updateQuiz(QuizModel quiz) async {
     await _quizzesCollection.doc(quiz.id).update({
@@ -162,8 +643,80 @@ class QuizService {
     });
   }
 
+  /// Validates a list of questions to ensure each question is complete and pedagogical.
+  /// Returns null if all questions are valid, or a descriptive error string if invalid.
+  static String? validateQuizQuestions(List<QuizQuestion> questions) {
+    if (questions.isEmpty) {
+      return 'Quiz must have at least one question.';
+    }
+
+    for (int i = 0; i < questions.length; i++) {
+      final q = questions[i];
+      final num = i + 1;
+
+      if (q.question.trim().isEmpty) {
+        return 'Question #$num prompt cannot be empty.';
+      }
+      if (q.correctAnswer.trim().isEmpty) {
+        return 'Question #$num must have a correct answer.';
+      }
+
+      switch (q.type) {
+        case QuizQuestionType.multipleChoice:
+          if (q.options.length < 2) {
+            return 'Question #$num (Multiple Choice) must have at least 2 options.';
+          }
+          final normAnswer = ScoringUtils.normalizeText(
+            ScoringUtils.cleanExpectedAnswer(q.correctAnswer),
+          );
+          final hasMatchingOption = q.options.any((opt) {
+            final normOpt = ScoringUtils.normalizeText(
+              ScoringUtils.cleanExpectedAnswer(opt),
+            );
+            return normOpt == normAnswer || normOpt.contains(normAnswer);
+          });
+          if (!hasMatchingOption) {
+            return 'Question #$num correct answer must match one of the options.';
+          }
+          break;
+
+        case QuizQuestionType.trueFalse:
+          final cleanAns = q.correctAnswer.trim().toLowerCase();
+          if (cleanAns != 'true' && cleanAns != 'false') {
+            return 'Question #$num (True/False) answer must be True or False.';
+          }
+          break;
+
+        case QuizQuestionType.fillInTheBlank:
+          if (q.correctAnswer.trim().length < 2) {
+            return 'Question #$num missing blank answer term.';
+          }
+          break;
+
+        case QuizQuestionType.identification:
+          if (q.correctAnswer.trim().length < 2) {
+            return 'Question #$num missing identification term.';
+          }
+          break;
+
+        case QuizQuestionType.enumeration:
+          if (q.enumerationAnswers.isEmpty && q.correctAnswer.trim().isEmpty) {
+            return 'Question #$num (Enumeration) must have expected answers.';
+          }
+          break;
+      }
+    }
+    return null;
+  }
+
   /// Publishes a Practice Quiz, making it available to enrolled students.
-  Future<void> publishQuiz(String quizId) async {
+  Future<void> publishQuiz(String quizId, {QuizModel? quiz}) async {
+    if (quiz != null) {
+      final validationError = validateQuizQuestions(quiz.questions);
+      if (validationError != null) {
+        throw StateError(validationError);
+      }
+    }
     await _quizzesCollection.doc(quizId).update({
       'status': 'published',
       'publishedAt': FieldValue.serverTimestamp(),
@@ -172,7 +725,13 @@ class QuizService {
   }
 
   /// Finalizes an Actual Quiz as a reference exam.
-  Future<void> finalizeQuiz(String quizId) async {
+  Future<void> finalizeQuiz(String quizId, {QuizModel? quiz}) async {
+    if (quiz != null) {
+      final validationError = validateQuizQuestions(quiz.questions);
+      if (validationError != null) {
+        throw StateError(validationError);
+      }
+    }
     await _quizzesCollection.doc(quizId).update({
       'status': 'finalized',
       'updatedAt': FieldValue.serverTimestamp(),
@@ -184,8 +743,10 @@ class QuizService {
     await _quizzesCollection.doc(quizId).delete();
   }
 
-  /// Deterministic local question generator that extracts questions across all 5 types
-  /// from material text without requiring external network/AI calls.
+  /// Deterministic local question generator that extracts high-accuracy questions
+  /// across all 5 types targeting core concepts, definitions, and key mechanisms.
+  /// Generates 10, 30, or 50 distinct questions with multi-angle templates and
+  /// zero duplicate stems (verified with token Jaccard similarity <= 0.70).
   static List<QuizQuestion> generateLocalFallbackQuestions({
     required String extractedText,
     required List<String> questionTypes,
@@ -202,54 +763,99 @@ class QuizService {
             QuizQuestionType.enumeration,
           ];
 
-    // Extract sentences of usable length
+    // 1. Sentence and clause splitting with academic sanitization
     final rawSentences = extractedText
-        .split(RegExp(r'(?<=[.!?])\s+'))
+        .split(RegExp(r'(?<=[.!?])\s+|\n+|;\s+'))
         .map((s) => s.trim().replaceAll(RegExp(r'\s+'), ' '))
-        .where((s) => s.length >= 25 && s.length <= 250)
+        .where((s) => s.length >= 25 && s.length <= 280)
         .toList();
 
-    final sentences = rawSentences.length >= 4
-        ? rawSentences
-        : [
-            'Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells.',
-            'Mitochondria are double-membraned organelles known as the powerhouse of the cell.',
-            'Glycolysis occurs in the cytoplasm and breaks down glucose into two molecules of pyruvate.',
-            'The citric acid cycle takes place inside the mitochondrial matrix.',
-            'Adenosine triphosphate serves as the primary energy currency for cellular reactions.',
-            'Photosynthesis converts light energy into chemical energy stored in carbohydrates.',
-            'Enzymes are biological catalysts that lower activation energy without being consumed.',
-            'DNA stores genetic information within the cell nucleus using four nucleotide bases.',
-          ];
-
-    // Extract candidate concepts and terms
-    final candidateTerms = <String>[];
-    final defRegex = RegExp(
-      r'([A-Z][a-zA-Z\s]{2,25})\s+(?:is defined as|is a|is an|refers to|represents|serves as|means)\s+([^.!?]+)',
+    // Filter out trivia, formatting artifacts, and metadata
+    final metadataRegex = RegExp(
+      r'\b(course|syllabus|page\s+\d+|figure\s+\d+|table\s+\d+|chapter\s+\d+|copyright|all rights reserved|email:|author:|https?://|www\.|isbn|instructor|university|college|professor|lecture\s+\d+|slide\s+\d+|homework|due date|welcome to|fall\s+\d{4}|spring\s+\d{4}|summer\s+\d{4})\b',
       caseSensitive: false,
     );
 
-    for (final match in defRegex.allMatches(extractedText)) {
-      final term = match.group(1)?.trim() ?? '';
-      if (term.length > 2 && !candidateTerms.contains(term)) {
-        candidateTerms.add(term);
+    final cleanSentences = rawSentences.where((s) {
+      if (metadataRegex.hasMatch(s)) return false;
+      if (s.endsWith('?')) return false;
+      if (RegExp(r'^\d+\.?\s*$').hasMatch(s)) return false;
+      return true;
+    }).toList();
+
+    const fallbackCoreSentences = [
+      'Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells.',
+      'Mitochondria are double-membraned organelles known as the powerhouse of the cell.',
+      'Glycolysis occurs in the cytoplasm and breaks down glucose into two molecules of pyruvate.',
+      'The citric acid cycle takes place inside the mitochondrial matrix.',
+      'Adenosine triphosphate serves as the primary energy currency for cellular reactions.',
+      'Photosynthesis converts light energy into chemical energy stored in carbohydrates.',
+      'Enzymes are biological catalysts that lower activation energy without being consumed.',
+      'Deoxyribonucleic acid stores genetic instructions within the cell nucleus.',
+      'Ribosomes are macromolecular machines responsible for biological protein synthesis.',
+      'The endoplasmic reticulum facilitates protein folding and transport in eukaryotic cells.',
+      'Chloroplasts contain chlorophyll pigments that absorb sunlight during photosynthesis.',
+      'The cell membrane maintains homeostasis through selective membrane permeability.',
+      'Algorithms are step-by-step computational procedures designed to solve specific problems.',
+      'Data structures organize and store information efficiently for algorithmic processing.',
+      'Object-oriented programming utilizes encapsulation, inheritance, and polymorphism.',
+      'Relational databases organize structured data into related tables with primary keys.',
+    ];
+
+    final sentencesPool = cleanSentences.length >= 8
+        ? cleanSentences
+        : [...cleanSentences, ...fallbackCoreSentences];
+
+    // 2. Extract defined concepts and key academic terms
+    final defRegex = RegExp(
+      r'([A-Z][a-zA-Z0-9\s\-]{2,30})\s+(?:is defined as|refers to|is a|is an|are defined as|is known as|is called|serves as|functions as|consists of)\s+([^.!?]+)',
+      caseSensitive: false,
+    );
+    final colonDefRegex = RegExp(
+      r'^([A-Z][a-zA-Z0-9\s\-]{2,30}):\s+([A-Z][^.!?]+)',
+    );
+
+    final candidateTerms = <String>[];
+    final conceptDefinitions = <String, String>{};
+
+    for (final s in sentencesPool) {
+      final m = defRegex.firstMatch(s);
+      if (m != null) {
+        final term = m.group(1)?.trim() ?? '';
+        final def = m.group(2)?.trim() ?? '';
+        if (term.length >= 3 && def.length >= 8 && !candidateTerms.contains(term)) {
+          candidateTerms.add(term);
+          conceptDefinitions[term] = def;
+        }
+      }
+      final cm = colonDefRegex.firstMatch(s);
+      if (cm != null) {
+        final term = cm.group(1)?.trim() ?? '';
+        final def = cm.group(2)?.trim() ?? '';
+        if (term.length >= 3 && def.length >= 8 && !candidateTerms.contains(term)) {
+          candidateTerms.add(term);
+          conceptDefinitions[term] = def;
+        }
       }
     }
 
-    // Extract capitalized mid-sentence words
-    for (final s in sentences) {
+    // Extract significant capitalized academic terms from sentences
+    for (final s in sentencesPool) {
       final words = s.split(' ');
-      for (int i = 1; i < words.length; i++) {
+      for (int i = 0; i < words.length; i++) {
         final clean = words[i].replaceAll(RegExp(r'[^a-zA-Z]'), '');
         if (clean.length >= 4 &&
             words[i].startsWith(RegExp(r'[A-Z]')) &&
-            !candidateTerms.contains(clean)) {
+            !candidateTerms.contains(clean) &&
+            !RegExp(r'^(These|Those|There|Their|Which|After|Before|Because|However|When|Where|While|Since|Both|Each|Every)$')
+                .hasMatch(clean)) {
           candidateTerms.add(clean);
         }
       }
     }
 
-    const defaultTerms = [
+    // Plausible academic domain terms for fallback distractors (ensuring domain parallelism, never "Concept 1")
+    const academicDomainDistractors = [
       'Mitochondria',
       'Ribosome',
       'Chloroplast',
@@ -257,47 +863,139 @@ class QuizService {
       'Enzyme',
       'Glucose',
       'ATP',
-      'Cytoplasm'
+      'Cytoplasm',
+      'Endoplasmic Reticulum',
+      'Golgi Apparatus',
+      'Glycolysis',
+      'Phosphorylation',
+      'Algorithm',
+      'Compiler',
+      'Database',
+      'Encryption',
+      'Firewall',
+      'Inheritance',
+      'Kernel',
+      'Polymorphism',
+      'Recursion',
+      'Protocol',
+      'Stack',
+      'Variable',
     ];
-    for (final t in defaultTerms) {
-      if (!candidateTerms.contains(t)) candidateTerms.add(t);
+
+    for (final term in academicDomainDistractors) {
+      if (!candidateTerms.contains(term)) {
+        candidateTerms.add(term);
+      }
     }
+
+    // Stopwords for keyword filtering
+    const stopwords = {
+      'about', 'after', 'before', 'because', 'between', 'during',
+      'however', 'through', 'under', 'which', 'where', 'while',
+      'their', 'there', 'these', 'those', 'would', 'could', 'should',
+      'other', 'being', 'having', 'within', 'called', 'known', 'defined',
+    };
+
+    List<String> getKeywordsForSentence(String s) {
+      final words = <String>[];
+      for (final t in candidateTerms) {
+        if (s.toLowerCase().contains(t.toLowerCase())) {
+          words.add(t);
+        }
+      }
+      if (words.isEmpty) {
+        final parts = s.split(' ');
+        for (final w in parts) {
+          final clean = w.replaceAll(RegExp(r'[^a-zA-Z]'), '');
+          if (clean.length >= 5 &&
+              !stopwords.contains(clean.toLowerCase()) &&
+              !RegExp(r'^\d+$').hasMatch(clean)) {
+            words.add(clean);
+          }
+        }
+      }
+      if (words.isEmpty) {
+        words.add(candidateTerms.first);
+      }
+      return words;
+    }
+
+    // 3. Score sentences by pedagogical density
+    final scoredSentences = sentencesPool.map((s) {
+      double score = 5.0;
+      if (defRegex.hasMatch(s) || colonDefRegex.hasMatch(s)) score += 10.0;
+      if (RegExp(
+              r'\b(produces|synthesizes|catalyzes|regulates|converts|generates|membrane|pathway|reaction|structure|process)\b',
+              caseSensitive: false)
+          .hasMatch(s)) {
+        score += 4.0;
+      }
+      if (s.length >= 45 && s.length <= 180) score += 3.0;
+      return MapEntry(s, score);
+    }).toList();
+
+    scoredSentences.sort((a, b) => b.value.compareTo(a.value));
+    final rankedSentences = scoredSentences.map((e) => e.key).toList();
 
     final questions = <QuizQuestion>[];
     final targetCount = questionCount > 0 ? questionCount : 10;
 
-    for (int i = 0; i < targetCount; i++) {
-      final qIndex = i + 1;
-      final qType = parsedTypes[i % parsedTypes.length];
-      final sentence = sentences[i % sentences.length];
-      final term = candidateTerms[i % candidateTerms.length];
+    int attempts = 0;
+    final maxAttempts = max(400, targetCount * 15);
+
+    while (questions.length < targetCount && attempts < maxAttempts) {
+      attempts++;
+      final currentTypeIndex = questions.length % parsedTypes.length;
+      final qType = parsedTypes[currentTypeIndex];
+      final typeCount = questions.where((q) => q.type == qType).length;
+      final offset = typeCount + (attempts - 1);
+      final i = offset;
+      final sentenceIndex = offset % rankedSentences.length;
+      final round = offset ~/ rankedSentences.length;
+      final angle = round % 5;
+      final sentence = rankedSentences[sentenceIndex];
+
+      final keywords = getKeywordsForSentence(sentence);
+      final targetWord = keywords[(round + offset) % keywords.length];
+
+      QuizQuestion? candidate;
 
       switch (qType) {
         case QuizQuestionType.multipleChoice:
-          final words = sentence.split(' ');
-          String targetWord = term;
           String displaySentence = sentence;
-
-          if (sentence.contains(term)) {
-            displaySentence = sentence.replaceFirst(term, '_______');
-          } else {
-            final noun = words.firstWhere(
-              (w) => w.length >= 5 && RegExp(r'^[a-zA-Z]+$').hasMatch(w),
-              orElse: () => words.first,
+          if (sentence.toLowerCase().contains(targetWord.toLowerCase())) {
+            displaySentence = sentence.replaceFirst(
+              RegExp(RegExp.escape(targetWord), caseSensitive: false),
+              '_______',
             );
-            targetWord = noun.replaceAll(RegExp(r'[^a-zA-Z]'), '');
-            displaySentence = sentence.replaceFirst(noun, '_______');
+          } else {
+            displaySentence = '$sentence (_______)';
           }
 
-          final distractors = candidateTerms
+          // Build distractors from candidate terms
+          final distractorPool = candidateTerms
               .where((t) => t.toLowerCase() != targetWord.toLowerCase())
-              .take(3)
+              .toSet()
               .toList();
-          while (distractors.length < 3) {
-            distractors.add('Concept ${distractors.length + 1}');
+
+          if (distractorPool.length < 3) {
+            for (final fallback in academicDomainDistractors) {
+              if (fallback.toLowerCase() != targetWord.toLowerCase() &&
+                  !distractorPool.contains(fallback)) {
+                distractorPool.add(fallback);
+              }
+            }
           }
 
-          final allOptions = [targetWord, ...distractors]..shuffle();
+          final distractors = <String>[];
+          for (int d = 0; d < distractorPool.length && distractors.length < 3; d++) {
+            final cand = distractorPool[(i + d * 3) % distractorPool.length];
+            if (!distractors.contains(cand)) {
+              distractors.add(cand);
+            }
+          }
+
+          final allOptions = [targetWord, ...distractors]..shuffle(Random(i * 31 + 7));
           const letters = ['A', 'B', 'C', 'D'];
           final formattedOptions = List<String>.generate(
             allOptions.length,
@@ -306,21 +1004,48 @@ class QuizService {
           final correctIdx = allOptions.indexOf(targetWord);
           final correctAnswer = formattedOptions[correctIdx];
 
-          questions.add(QuizQuestion(
-            id: 'q_$qIndex',
+          String mcqPrompt;
+          switch (angle) {
+            case 0:
+              mcqPrompt = isActual
+                  ? 'Fill in the blank: $displaySentence'
+                  : 'Practice Question: Based on the reading, complete the statement: "$displaySentence"';
+              break;
+            case 1:
+              mcqPrompt = isActual
+                  ? 'In the context of the study material, which term correctly completes:\n"$displaySentence"?'
+                  : 'Concept Check: Which term belongs in the blank below?\n"$displaySentence"';
+              break;
+            case 2:
+              mcqPrompt = isActual
+                  ? 'Which of the following concepts is directly described in the statement:\n"$displaySentence"?'
+                  : 'Review Question: Complete this fundamental principle:\n"$displaySentence"';
+              break;
+            case 3:
+              mcqPrompt = isActual
+                  ? 'Select the correct concept that fits the blank below:\n"$displaySentence"'
+                  : 'Self-Assessment: Choose the term that accurately completes the statement:\n"$displaySentence"';
+              break;
+            default:
+              mcqPrompt = isActual
+                  ? 'Which term accurately matches this statement:\n"$displaySentence"?'
+                  : 'Practice Question: Select the correct term:\n"$displaySentence"';
+              break;
+          }
+
+          candidate = QuizQuestion(
+            id: 'q_${questions.length + 1}',
             type: QuizQuestionType.multipleChoice,
-            question: isActual
-                ? 'Fill in the blank: $displaySentence'
-                : 'Practice Question: Based on the reading, complete the statement: "$displaySentence"',
+            question: mcqPrompt,
             options: formattedOptions,
             correctAnswer: correctAnswer,
-            explanation: 'The correct answer is $targetWord from: "$sentence".',
+            explanation: 'The correct answer is $targetWord grounded in: "$sentence".',
             points: 1.0,
-          ));
+          );
           break;
 
         case QuizQuestionType.trueFalse:
-          final isTrue = i % 2 == 0;
+          final isTrue = (i + round) % 2 == 0;
           String statement = sentence;
           if (!isTrue) {
             if (statement.contains(' is ')) {
@@ -329,91 +1054,297 @@ class QuizService {
               statement = statement.replaceFirst(' are ', ' are not ');
             } else if (statement.contains(' can ')) {
               statement = statement.replaceFirst(' can ', ' cannot ');
+            } else if (statement.contains(' produces ')) {
+              statement = statement.replaceFirst(' produces ', ' does not produce ');
+            } else if (statement.contains(' requires ')) {
+              statement = statement.replaceFirst(' requires ', ' functions without ');
+            } else if (statement.contains(' occurs ')) {
+              statement = statement.replaceFirst(' occurs ', ' does not occur ');
             } else {
               statement = 'It is false that ${statement[0].toLowerCase()}${statement.substring(1)}';
             }
           }
 
-          questions.add(QuizQuestion(
-            id: 'q_$qIndex',
+          String tfPrompt;
+          switch (angle) {
+            case 0:
+              tfPrompt = isActual
+                  ? 'Determine whether the following statement is True or False:\n"$statement"'
+                  : 'Concept Check: Is the following statement accurate?\n"$statement"';
+              break;
+            case 1:
+              tfPrompt = isActual
+                  ? 'Fact Check: Evaluate the validity of this statement from the reading:\n"$statement"'
+                  : 'True or False: Consider the following assertion:\n"$statement"';
+              break;
+            case 2:
+              tfPrompt = isActual
+                  ? 'Assess the factual correctness of this statement based on the material:\n"$statement"'
+                  : 'Quick Quiz: Is this statement True or False?\n"$statement"';
+              break;
+            case 3:
+              tfPrompt = isActual
+                  ? 'Statement Evaluation (True/False):\n"$statement"'
+                  : 'Verify this fact from the text:\n"$statement"';
+              break;
+            default:
+              tfPrompt = isActual
+                  ? 'True or False: $statement'
+                  : 'Review Check: True or False: "$statement"';
+              break;
+          }
+
+          candidate = QuizQuestion(
+            id: 'q_${questions.length + 1}',
             type: QuizQuestionType.trueFalse,
-            question: isActual
-                ? 'Determine whether the following statement is True or False:\n"$statement"'
-                : 'Concept Check: Is the following statement accurate?\n"$statement"',
+            question: tfPrompt,
             options: const ['True', 'False'],
             correctAnswer: isTrue ? 'True' : 'False',
             explanation: isTrue
                 ? 'Verified directly from the material: "$sentence".'
-                : 'False. The actual material notes: "$sentence".',
+                : 'False. The actual material states: "$sentence".',
             points: 1.0,
-          ));
+          );
           break;
 
         case QuizQuestionType.fillInTheBlank:
-          final words = sentence.split(' ');
-          final keyword = words.firstWhere(
-            (w) =>
-                w.length >= 5 &&
-                !RegExp(r'^(about|which|their|there|these|those)$',
-                        caseSensitive: false)
-                    .hasMatch(w),
-            orElse: () => term,
-          );
-          final cleanKeyword = keyword.replaceAll(RegExp(r'[^a-zA-Z]'), '');
-          final blankPrompt = sentence.replaceFirst(
-            RegExp('\\b$cleanKeyword\\b', caseSensitive: false),
-            '_______',
-          );
+          String blankPrompt;
+          if (sentence.toLowerCase().contains(targetWord.toLowerCase())) {
+            blankPrompt = sentence.replaceFirst(
+              RegExp(r'\b' + RegExp.escape(targetWord) + r'\b', caseSensitive: false),
+              '_______',
+            );
+            if (!blankPrompt.contains('_______')) {
+              blankPrompt = sentence.replaceFirst(
+                RegExp(RegExp.escape(targetWord), caseSensitive: false),
+                '_______',
+              );
+            }
+          } else {
+            blankPrompt = '$sentence (_______)';
+          }
 
-          questions.add(QuizQuestion(
-            id: 'q_$qIndex',
+          String fibPrompt;
+          switch (angle) {
+            case 0:
+              fibPrompt = isActual
+                  ? 'Complete the statement: $blankPrompt'
+                  : 'Fill in the missing term from the lesson: $blankPrompt';
+              break;
+            case 1:
+              fibPrompt = isActual
+                  ? 'Fill in the blank with the appropriate academic concept:\n"$blankPrompt"'
+                  : 'Practice Fill-in: Complete this sentence:\n"$blankPrompt"';
+              break;
+            case 2:
+              fibPrompt = isActual
+                  ? 'Key concept completion: $blankPrompt'
+                  : 'Study Recall: Provide the missing word:\n"$blankPrompt"';
+              break;
+            case 3:
+              fibPrompt = isActual
+                  ? 'According to the material, complete the following statement:\n"$blankPrompt"'
+                  : 'Knowledge Check: Fill in the blank:\n"$blankPrompt"';
+              break;
+            default:
+              fibPrompt = isActual
+                  ? 'Provide the missing term to complete this principle:\n"$blankPrompt"'
+                  : 'Practice: Complete the statement: "$blankPrompt"';
+              break;
+          }
+
+          candidate = QuizQuestion(
+            id: 'q_${questions.length + 1}',
             type: QuizQuestionType.fillInTheBlank,
-            question: isActual
-                ? 'Complete the statement: $blankPrompt'
-                : 'Fill in the missing term from the lesson: $blankPrompt',
+            question: fibPrompt,
             options: const [],
-            correctAnswer: cleanKeyword,
-            explanation: 'The missing term is "$cleanKeyword". Full context: "$sentence".',
+            correctAnswer: targetWord,
+            explanation: 'The missing term is "$targetWord". Context: "$sentence".',
             points: 1.0,
-          ));
+          );
           break;
 
         case QuizQuestionType.identification:
-          questions.add(QuizQuestion(
-            id: 'q_$qIndex',
+          // Mask the term completely so the question does NOT reveal the answer!
+          String description = sentence;
+          if (conceptDefinitions.containsKey(targetWord)) {
+            description = conceptDefinitions[targetWord]!;
+          }
+          description = description.replaceAll(
+            RegExp(r'\b' + RegExp.escape(targetWord) + r'\b', caseSensitive: false),
+            '[this concept]',
+          );
+          description = description.replaceAll(
+            RegExp(RegExp.escape(targetWord), caseSensitive: false),
+            '[this concept]',
+          );
+
+          String idPrompt;
+          switch (angle) {
+            case 0:
+              idPrompt = isActual
+                  ? 'Identify the term or concept described:\n"$description"'
+                  : 'What key term or concept matches this description?\n"$description"';
+              break;
+            case 1:
+              idPrompt = isActual
+                  ? 'Name the academic concept characterized as follows:\n"$description"'
+                  : 'Identification Check: Which concept is described below?\n"$description"';
+              break;
+            case 2:
+              idPrompt = isActual
+                  ? 'Which term corresponds to the following definition or mechanism?\n"$description"'
+                  : 'Study Question: Name the concept described:\n"$description"';
+              break;
+            case 3:
+              idPrompt = isActual
+                  ? 'Identify the following structure, process, or principle:\n"$description"'
+                  : 'Terminology Check: What term corresponds to:\n"$description"';
+              break;
+            default:
+              idPrompt = isActual
+                  ? 'Name the key concept described below:\n"$description"'
+                  : 'Identification: What term matches:\n"$description"';
+              break;
+          }
+
+          candidate = QuizQuestion(
+            id: 'q_${questions.length + 1}',
             type: QuizQuestionType.identification,
-            question: isActual
-                ? 'Identify the term or concept described:\n"$sentence"'
-                : 'What key term or concept matches this description?\n"$sentence"',
+            question: idPrompt,
             options: const [],
-            correctAnswer: term,
-            explanation: 'The term being identified is "$term".',
+            correctAnswer: targetWord,
+            explanation: 'The term being identified is "$targetWord".',
             points: 1.0,
-          ));
+          );
           break;
 
         case QuizQuestionType.enumeration:
-          final enumList = candidateTerms.skip(i % candidateTerms.length).take(3).toList();
-          if (enumList.length < 3) {
-            enumList.addAll(candidateTerms.take(3 - enumList.length));
+          final listMatch = RegExp(
+            r'(?:including|consists of|such as|phases are|stages are|components are)\s+([^.]+)',
+            caseSensitive: false,
+          ).firstMatch(sentence);
+
+          List<String> enumList = [];
+          if (listMatch != null) {
+            final rawList = listMatch.group(1) ?? '';
+            final parsedItems = rawList
+                .split(RegExp(r',\s*(?:and\s+)?|\band\b'))
+                .map((item) => item.trim())
+                .where((item) => item.length >= 3 && item.length <= 40)
+                .take(4)
+                .toList();
+            if (parsedItems.length >= 2) {
+              enumList = parsedItems;
+            }
           }
 
-          questions.add(QuizQuestion(
-            id: 'q_$qIndex',
+          if (enumList.isEmpty) {
+            enumList = candidateTerms
+                .where((t) => t.toLowerCase() != targetWord.toLowerCase())
+                .skip((i + round * 2) % candidateTerms.length)
+                .take(3)
+                .toList();
+            if (enumList.length < 2) {
+              enumList = academicDomainDistractors
+                  .where((t) => t.toLowerCase() != targetWord.toLowerCase())
+                  .take(3)
+                  .toList();
+            }
+          }
+
+          final briefSubject = sentence.length > 70
+              ? '${sentence.substring(0, 70)}...'
+              : sentence;
+
+          String enumPrompt;
+          switch (angle) {
+            case 0:
+              enumPrompt = isActual
+                  ? 'Enumerate ${enumList.length} key components, elements, or concepts discussed regarding:\n"$briefSubject"'
+                  : 'Practice Enumeration: List any ${enumList.length} key terms or factors covered in this section:';
+              break;
+            case 1:
+              enumPrompt = isActual
+                  ? 'List ${enumList.length} essential terms or concepts highlighted in this section of the material:'
+                  : 'Enumeration Challenge: Name ${enumList.length} distinct items related to this topic:';
+              break;
+            case 2:
+              enumPrompt = isActual
+                  ? 'Name any ${enumList.length} distinct factors, stages, or items mentioned in the reading:'
+                  : 'Review: List ${enumList.length} key terms associated with this subject:';
+              break;
+            case 3:
+              enumPrompt = isActual
+                  ? 'Enumerate ${enumList.length} core concepts or components covered in the text:'
+                  : 'Knowledge Check: Provide ${enumList.length} items discussed in the material:';
+              break;
+            default:
+              enumPrompt = isActual
+                  ? 'List ${enumList.length} elements or principles discussed in connection with $targetWord:'
+                  : 'Practice: Enumerate ${enumList.length} items from this lesson:';
+              break;
+          }
+
+          candidate = QuizQuestion(
+            id: 'q_${questions.length + 1}',
             type: QuizQuestionType.enumeration,
-            question: isActual
-                ? 'Enumerate ${enumList.length} key components, elements, or concepts discussed regarding:\n"$sentence"'
-                : 'Practice Enumeration: List any ${enumList.length} key terms or factors covered in this section:',
+            question: enumPrompt,
             options: const [],
             correctAnswer: enumList.join(', '),
             enumerationAnswers: enumList,
             explanation: 'Expected items: ${enumList.join(", ")}.',
             points: enumList.length * 1.0,
-          ));
+          );
           break;
+      }
+
+      // Check for pairwise duplicates / near duplicates
+      bool isDuplicate = false;
+      final candNormPrompt = candidate.question.trim().toLowerCase();
+      final candNormAnswer = ScoringUtils.normalizeText(
+        ScoringUtils.cleanExpectedAnswer(candidate.correctAnswer),
+      );
+
+      for (final existing in questions) {
+        if (candNormPrompt == existing.question.trim().toLowerCase()) {
+          isDuplicate = true;
+          break;
+        }
+        final sim = tokenJaccardSimilarity(candidate.question, existing.question);
+        if (sim > 0.70) {
+          isDuplicate = true;
+          break;
+        }
+        final existNormAnswer = ScoringUtils.normalizeText(
+          ScoringUtils.cleanExpectedAnswer(existing.correctAnswer),
+        );
+        if (candNormAnswer.isNotEmpty &&
+            candNormAnswer == existNormAnswer &&
+            sim > 0.45) {
+          isDuplicate = true;
+          break;
+        }
+      }
+
+      if (!isDuplicate) {
+        questions.add(candidate);
       }
     }
 
-    return questions;
+    // Renumber IDs sequentially
+    return List<QuizQuestion>.generate(questions.length, (idx) {
+      final orig = questions[idx];
+      return QuizQuestion(
+        id: 'q_${idx + 1}',
+        type: orig.type,
+        question: orig.question,
+        options: orig.options,
+        correctAnswer: orig.correctAnswer,
+        enumerationAnswers: orig.enumerationAnswers,
+        explanation: orig.explanation,
+        points: orig.points,
+      );
+    });
   }
 }

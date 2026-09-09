@@ -36,11 +36,31 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   final ClassService _classService = ClassService();
 
   QuizAssignmentModel? _assignment;
+  late Stream<List<ClassMember>> _membersStream;
+  late Stream<List<QuizAttemptModel>> _attemptsStream;
 
   @override
   void initState() {
     super.initState();
+    _initStreams();
     _loadAssignment();
+  }
+
+  void _initStreams() {
+    _membersStream = _classService.getClassMembersStream(widget.quiz.classId);
+    _attemptsStream = _assignmentService.streamClassQuizAttempts(
+      widget.quiz.classId,
+      widget.quiz.id,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant QuizMonitoringScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.quiz.id != widget.quiz.id ||
+        oldWidget.quiz.classId != widget.quiz.classId) {
+      _initStreams();
+    }
   }
 
   Future<void> _loadAssignment() async {
@@ -297,17 +317,14 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
         ),
         child: SafeArea(
           child: StreamBuilder<List<ClassMember>>(
-            stream: _classService.getClassMembersStream(widget.quiz.classId),
+            stream: _membersStream,
             builder: (context, membersSnapshot) {
               final allMembers = membersSnapshot.data ?? [];
               final students =
                   allMembers.where((m) => m.role == 'student').toList();
 
               return StreamBuilder<List<QuizAttemptModel>>(
-                stream: _assignmentService.streamClassQuizAttempts(
-                  widget.quiz.classId,
-                  widget.quiz.id,
-                ),
+                stream: _attemptsStream,
                 builder: (context, attemptsSnapshot) {
                   final attempts = attemptsSnapshot.data ?? [];
 
@@ -565,86 +582,98 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
                               color: _surfaceWhite,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(14),
                               border: Border.all(
                                 color: hasCompleted
                                     ? Colors.green.withValues(alpha: 0.3)
                                     : _outlineVariant,
                               ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                            child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 4),
-                              leading: CircleAvatar(
-                                backgroundColor: hasCompleted
-                                    ? Colors.green.withValues(alpha: 0.15)
-                                    : Colors.grey.withValues(alpha: 0.15),
-                                child: Text(
-                                  student.displayName.isNotEmpty
-                                      ? student.displayName[0].toUpperCase()
-                                      : 'S',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: hasCompleted
-                                        ? Colors.green[800]
-                                        : Colors.grey[700],
+                            child: Material(
+                              color: Colors.transparent,
+                              borderRadius: BorderRadius.circular(14),
+                              clipBehavior: Clip.antiAlias,
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 4),
+                                leading: CircleAvatar(
+                                  backgroundColor: hasCompleted
+                                      ? Colors.green.withValues(alpha: 0.15)
+                                      : Colors.grey.withValues(alpha: 0.15),
+                                  child: Text(
+                                    student.displayName.isNotEmpty
+                                        ? student.displayName[0].toUpperCase()
+                                        : 'S',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: hasCompleted
+                                          ? Colors.green[800]
+                                          : Colors.grey[700],
+                                    ),
                                   ),
                                 ),
-                              ),
-                              title: Text(
-                                student.displayName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: _textPrimary,
+                                title: Text(
+                                  student.displayName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textPrimary,
+                                  ),
                                 ),
-                              ),
-                              subtitle: Text(
-                                hasCompleted
-                                    ? 'Score: ${attempt.formattedScore} (${attempt.formattedPercentage})'
-                                    : 'Not yet attempted',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: hasCompleted
-                                      ? Colors.green[800]
-                                      : _textSecondary,
-                                  fontWeight: hasCompleted
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
+                                subtitle: Text(
+                                  hasCompleted
+                                      ? 'Score: ${attempt.formattedScore} (${attempt.formattedPercentage})'
+                                      : 'Not yet attempted',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: hasCompleted
+                                        ? Colors.green[800]
+                                        : _textSecondary,
+                                    fontWeight: hasCompleted
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
                                 ),
-                              ),
-                              trailing: hasCompleted
-                                  ? OutlinedButton(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: _primaryNavy,
-                                        side: const BorderSide(
-                                            color: _primaryNavy),
+                                trailing: hasCompleted
+                                    ? OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: _primaryNavy,
+                                          side: const BorderSide(
+                                              color: _primaryNavy),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                        onPressed: () =>
+                                            _showStudentAttemptDetails(attempt),
+                                        child: const Text('Review',
+                                            style: TextStyle(fontSize: 11)),
+                                      )
+                                    : Container(
                                         padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 4),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
+                                            horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color:
+                                              Colors.grey.withValues(alpha: 0.1),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Text(
+                                          'Pending',
+                                          style: TextStyle(
+                                              fontSize: 11, color: Colors.grey),
                                         ),
                                       ),
-                                      onPressed: () =>
-                                          _showStudentAttemptDetails(attempt),
-                                      child: const Text('Review',
-                                          style: TextStyle(fontSize: 11)),
-                                    )
-                                  : Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            Colors.grey.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: const Text(
-                                        'Pending',
-                                        style: TextStyle(
-                                            fontSize: 11, color: Colors.grey),
-                                      ),
-                                    ),
+                              ),
                             ),
                           );
                         }),
@@ -670,7 +699,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.3)),
           boxShadow: [
             BoxShadow(

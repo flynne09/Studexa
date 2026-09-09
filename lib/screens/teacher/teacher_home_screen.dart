@@ -11,7 +11,12 @@ import 'teacher_class_details_screen.dart';
 /// Teacher Home Screen displaying the teacher's classes, quick actions
 /// to create classes or upload materials, and recent quiz activity.
 class TeacherHomeScreen extends StatefulWidget {
-  const TeacherHomeScreen({super.key});
+  final UserProfile? initialProfile;
+
+  const TeacherHomeScreen({
+    super.key,
+    this.initialProfile,
+  });
 
   @override
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
@@ -28,11 +33,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   static const _textSecondary = Color(0xFF454652);
 
   UserProfile? _teacherProfile;
+  Stream<List<ClassModel>>? _classesStream;
 
   @override
   void initState() {
     super.initState();
-    _loadTeacherProfile();
+    _teacherProfile = widget.initialProfile;
+    final currentUid =
+        widget.initialProfile?.uid ?? AuthService().currentUser?.uid;
+    if (currentUid != null) {
+      _classesStream = ClassService().getTeacherClassesStream(currentUid);
+    }
+    if (_teacherProfile == null) {
+      _loadTeacherProfile();
+    }
   }
 
   Future<void> _loadTeacherProfile() async {
@@ -40,6 +54,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     if (mounted && profile != null) {
       setState(() {
         _teacherProfile = profile;
+        _classesStream = ClassService().getTeacherClassesStream(profile.uid);
       });
     }
   }
@@ -176,6 +191,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   itemBuilder: (context, i) {
                     final cls = classes[i];
                     return ListTile(
+                      key: ValueKey(cls.id),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                         side: const BorderSide(color: _outlineVariant),
@@ -457,51 +473,63 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               // ── Header Bar ─────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: _primaryNavy.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: _primaryNavy.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.school,
+                                    size: 16,
+                                    color: _primaryNavy,
+                                  ),
                                 ),
-                                child: const Icon(
-                                  Icons.school,
-                                  size: 16,
-                                  color: _primaryNavy,
+                                const SizedBox(width: 8),
+                                const Flexible(
+                                  child: Text(
+                                    'Teacher Portal',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: _primaryNavy,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Teacher Portal',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: _primaryNavy,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'My Classes & Materials',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: _textPrimary,
+                              ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 4),
+                            const Text(
+                              'My Classes & Materials',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: _textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(width: 12),
                       PopupMenuButton<String>(
+                        key: const Key('teacher_header_avatar_menu'),
                         tooltip: 'Account options',
                         color: _surfaceWhite,
                         shape: RoundedRectangleBorder(
@@ -574,6 +602,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                     style: const TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: _primaryNavy,
+                                      fontSize: 16,
                                     ),
                                   )
                                 : const Icon(
@@ -581,6 +610,149 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                     color: _primaryNavy,
                                     size: 22,
                                   ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── Teacher Profile & Quick Action Card ────────
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: _surfaceWhite,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _outlineVariant),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: _primaryNavy.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _primaryNavy.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                _teacherProfile != null &&
+                                        _teacherProfile!.displayName.isNotEmpty
+                                    ? _teacherProfile!.displayName[0]
+                                        .toUpperCase()
+                                    : 'T',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: _primaryNavy,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _teacherProfile?.displayName ??
+                                            'Teacher Account',
+                                        key: const Key(
+                                            'teacher_display_name_text'),
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: _textPrimary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _primaryNavy
+                                            .withValues(alpha: 0.08),
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                      ),
+                                      child: const Text(
+                                        'Teacher',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: _primaryNavy,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _teacherProfile?.email.isNotEmpty == true
+                                      ? _teacherProfile!.email
+                                      : 'Signed in as teacher',
+                                  key: const Key('teacher_email_text'),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _textSecondary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      const Divider(height: 1, color: _outlineVariant),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          key: const Key('teacher_logout_button'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            side: BorderSide(
+                              color: Colors.redAccent.withValues(alpha: 0.4),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 9),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: _handleLogout,
+                          icon: const Icon(Icons.logout, size: 16),
+                          label: const Text(
+                            'Log Out',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
@@ -623,10 +795,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
 
               // ── Section: Classes ───────────────────────────
               StreamBuilder<List<ClassModel>>(
-                stream: _teacherProfile != null
-                    ? ClassService()
-                        .getTeacherClassesStream(_teacherProfile!.uid)
-                    : const Stream.empty(),
+                stream: _classesStream ?? const Stream.empty(),
                 builder: (context, snapshot) {
                   final classes = snapshot.data ?? [];
                   final countText =
@@ -642,14 +811,19 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text(
-                                'Enrolled Classes',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _textPrimary,
+                              const Expanded(
+                                child: Text(
+                                  'Enrolled Classes',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
+                              const SizedBox(width: 8),
                               Text(
                                 countText,
                                 style: const TextStyle(
@@ -722,32 +896,35 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             delegate: SliverChildBuilderDelegate(
                               (context, index) {
                                 final item = classes[index];
-                                return _ClassItemCard(
-                                  classModel: item,
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            TeacherClassDetailsScreen(
-                                          classModel: item,
+                                return RepaintBoundary(
+                                  key: ValueKey(item.id),
+                                  child: _ClassItemCard(
+                                    classModel: item,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              TeacherClassDetailsScreen(
+                                            classModel: item,
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
-                                  onUploadTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            UploadGenerateQuizScreen(
-                                          initialClassId: item.id,
-                                          preselectedClass: item,
-                                          isClassLocked: true,
+                                      );
+                                    },
+                                    onUploadTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              UploadGenerateQuizScreen(
+                                            initialClassId: item.id,
+                                            preselectedClass: item,
+                                            isClassLocked: true,
+                                          ),
                                         ),
-                                      ),
-                                    );
-                                  },
+                                      );
+                                    },
+                                  ),
                                 );
                               },
                               childCount: classes.length,
@@ -777,12 +954,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           Icon(Icons.lightbulb_outline,
                               size: 20, color: _primaryNavy),
                           SizedBox(width: 8),
-                          Text(
-                            'Classroom Workflow',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: _textPrimary,
+                          Expanded(
+                            child: Text(
+                              'Classroom Workflow',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: _textPrimary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
@@ -874,6 +1055,8 @@ class _ActionCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   color: isPrimary ? Colors.white : const Color(0xFF1B1C1C),
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
               Text(
@@ -884,6 +1067,8 @@ class _ActionCard extends StatelessWidget {
                       ? Colors.white.withValues(alpha: 0.8)
                       : const Color(0xFF454652),
                 ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
@@ -1017,20 +1202,30 @@ class _ClassItemCard extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.people_alt_outlined,
-                      size: 15,
-                      color: textSecondary,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '${classModel.rosterCount} students enrolled',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: textSecondary,
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.people_alt_outlined,
+                            size: 15,
+                            color: textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              '${classModel.rosterCount} students enrolled',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         foregroundColor: primaryNavy,

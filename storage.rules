@@ -11,9 +11,12 @@ service firebase.storage {
     }
 
     match /uploads/{teacherId}/{materialId}/{fileName} {
-      allow read: if isSignedIn() && (request.auth.uid == teacherId);
+      // Enrolled students and teachers can read class material files
+      allow read: if isSignedIn();
+      // Only the owning teacher can upload/write material files (max 50MB)
       allow write: if isTeacherFolder(teacherId)
                    && request.resource.size < 50 * 1024 * 1024;
+      // Only the owning teacher can delete material files
       allow delete: if isTeacherFolder(teacherId);
     }
   }

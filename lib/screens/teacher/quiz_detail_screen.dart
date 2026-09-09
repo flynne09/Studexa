@@ -9,10 +9,7 @@ import 'quiz_monitoring_screen.dart';
 class QuizDetailScreen extends StatefulWidget {
   final QuizModel quiz;
 
-  const QuizDetailScreen({
-    super.key,
-    required this.quiz,
-  });
+  const QuizDetailScreen({super.key, required this.quiz});
 
   @override
   State<QuizDetailScreen> createState() => _QuizDetailScreenState();
@@ -24,7 +21,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
   static const _gradientStart = Color(0xFFF3F0FF);
   static const _gradientEnd = Color(0xFFEFF6FF);
   static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5C4);
+  static const _outlineVariant = Color(0xFFC6C5D4);
   static const _textPrimary = Color(0xFF1B1C1C);
   static const _textSecondary = Color(0xFF454652);
 
@@ -85,10 +82,23 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     );
 
     if (confirm != true) return;
+    if (!mounted) return;
+
+    final publishValidationError =
+        QuizService.validateQuizQuestions(_currentQuiz.questions);
+    if (publishValidationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cannot publish quiz: $publishValidationError'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isSaving = true);
     try {
-      await _quizService.publishQuiz(_currentQuiz.id);
+      await _quizService.publishQuiz(_currentQuiz.id, quiz: _currentQuiz);
       setState(() {
         _currentQuiz = _currentQuiz.copyWith(status: 'published');
         _isSaving = false;
@@ -96,7 +106,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Quiz published successfully! Students can now practice.'),
+          content: Text(
+            'Quiz published successfully! Students can now practice.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -113,9 +125,21 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
   }
 
   Future<void> _finalizeQuiz() async {
+    final finalizeValidationError =
+        QuizService.validateQuizQuestions(_currentQuiz.questions);
+    if (finalizeValidationError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Cannot finalize quiz: $finalizeValidationError'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSaving = true);
     try {
-      await _quizService.finalizeQuiz(_currentQuiz.id);
+      await _quizService.finalizeQuiz(_currentQuiz.id, quiz: _currentQuiz);
       setState(() {
         _currentQuiz = _currentQuiz.copyWith(status: 'finalized');
         _isSaving = false;
@@ -172,7 +196,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       ),
     );
 
-    if (newTitle == null || newTitle.isEmpty || newTitle == _currentQuiz.title) {
+    if (newTitle == null ||
+        newTitle.isEmpty ||
+        newTitle == _currentQuiz.title) {
       return;
     }
 
@@ -197,8 +223,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Question Prompt',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Text(
+                'Question Prompt',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: questionTextController,
@@ -206,8 +234,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                 decoration: const InputDecoration(border: OutlineInputBorder()),
               ),
               const SizedBox(height: 14),
-              const Text('Correct Answer',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const Text(
+                'Correct Answer',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
               const SizedBox(height: 6),
               TextField(
                 controller: answerController,
@@ -276,9 +306,52 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
 
     if (confirm != true) return;
 
-    await _quizService.deleteQuiz(_currentQuiz.id);
     if (!mounted) return;
-    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Deleting "${_currentQuiz.title}"...'),
+            ),
+          ],
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      await _quizService.deleteQuiz(_currentQuiz.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Quiz "${_currentQuiz.title}" deleted.'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to delete quiz: $e'),
+          backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Future<void> _exportOrPrintExam() async {
@@ -323,22 +396,33 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: _outlineVariant),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                    child: SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        'Include Teacher Answer Key',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      clipBehavior: Clip.antiAlias,
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          'Include Teacher Answer Key',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: const Text(
+                          'Appends a confidential rubric page at the end of the PDF for teacher scoring.',
+                          style: TextStyle(fontSize: 11, color: _textSecondary),
+                        ),
+                        value: includeKey,
+                        activeThumbColor: _primaryNavy,
+                        onChanged: (val) {
+                          setModalState(() => includeKey = val);
+                        },
                       ),
-                      subtitle: const Text(
-                        'Appends a confidential rubric page at the end of the PDF for teacher scoring.',
-                        style: TextStyle(fontSize: 11, color: _textSecondary),
-                      ),
-                      value: includeKey,
-                      activeThumbColor: _primaryNavy,
-                      onChanged: (val) {
-                        setModalState(() => includeKey = val);
-                      },
                     ),
                   ),
                 ],
@@ -467,8 +551,11 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.edit,
-                              color: Colors.white70, size: 20),
+                          icon: const Icon(
+                            Icons.edit,
+                            color: Colors.white70,
+                            size: 20,
+                          ),
                           onPressed: _editTitle,
                           tooltip: 'Edit Title',
                         ),
@@ -492,15 +579,15 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                           color: _currentQuiz.isPublished
                               ? Colors.greenAccent
                               : (_currentQuiz.isFinalized
-                                  ? Colors.tealAccent
-                                  : Colors.amberAccent),
+                                    ? Colors.tealAccent
+                                    : Colors.amberAccent),
                         ),
                         _buildBadge(
                           label: _currentQuiz.isGeminiGenerated
-                              ? 'Gemini AI'
+                              ? 'AI Generated'
                               : (_currentQuiz.isFallbackGenerated
-                                  ? 'Fallback Gen'
-                                  : 'Manual'),
+                                    ? 'Auto Generated'
+                                    : 'Manual'),
                           color: Colors.orangeAccent,
                         ),
                         _buildBadge(
@@ -520,8 +607,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
 
               // ── Action Bar (Publish / Finalize / Monitor) ────────────────
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Row(
                   children: [
                     if (_currentQuiz.isDraft && _currentQuiz.isPractice)
@@ -555,9 +644,8 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => QuizMonitoringScreen(
-                                  quiz: _currentQuiz,
-                                ),
+                                builder: (context) =>
+                                    QuizMonitoringScreen(quiz: _currentQuiz),
                               ),
                             );
                           },
@@ -577,8 +665,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           onPressed: _isSaving ? null : _finalizeQuiz,
-                          icon: const Icon(Icons.check_circle_outline,
-                              size: 18),
+                          icon: const Icon(
+                            Icons.check_circle_outline,
+                            size: 18,
+                          ),
                           label: const Text('Finalize Reference Exam'),
                         ),
                       ),
@@ -591,7 +681,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                           borderRadius: BorderRadius.circular(10),
                         ),
                         padding: const EdgeInsets.symmetric(
-                            vertical: 12, horizontal: 14),
+                          vertical: 12,
+                          horizontal: 14,
+                        ),
                       ),
                       onPressed: _exportOrPrintExam,
                       icon: const Icon(Icons.print_outlined, size: 18),
@@ -650,7 +742,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
         border: Border.all(color: _outlineVariant.withValues(alpha: 0.6)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -663,8 +755,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: _primaryNavy.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
@@ -680,8 +771,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.indigo.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(6),
@@ -704,7 +794,11 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
               IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                icon: const Icon(Icons.edit_outlined, size: 18, color: _primaryNavy),
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  size: 18,
+                  color: _primaryNavy,
+                ),
                 onPressed: () => _editQuestion(index),
                 tooltip: 'Edit Question',
               ),
@@ -732,8 +826,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                 final isCorrect = opt == q.correctAnswer;
                 return Container(
                   margin: const EdgeInsets.only(bottom: 6),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: isCorrect
                         ? Colors.green.withValues(alpha: 0.1)
@@ -779,8 +875,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                     opt.toLowerCase() == q.correctAnswer.toLowerCase();
                 return Container(
                   margin: const EdgeInsets.only(right: 10),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: isCorrect
                         ? Colors.green.withValues(alpha: 0.1)
@@ -805,8 +903,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                         opt,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight:
-                              isCorrect ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isCorrect
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                           color: isCorrect ? Colors.green[900] : _textPrimary,
                         ),
                       ),
@@ -829,9 +928,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                   const Text(
                     'Expected Items (Order-independent):',
                     style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Wrap(
@@ -840,7 +940,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                     children: q.enumerationAnswers.map((item) {
                       return Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(6),
@@ -849,7 +951,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                         child: Text(
                           item,
                           style: const TextStyle(
-                              fontSize: 12, color: _textPrimary),
+                            fontSize: 12,
+                            color: _textPrimary,
+                          ),
                         ),
                       );
                     }).toList(),

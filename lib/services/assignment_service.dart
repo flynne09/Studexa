@@ -132,7 +132,23 @@ class AssignmentService {
       }
     }
 
-    // 2. Persist attempt
+    // 2. Validate maximum attempt limit (max 2 attempts per practice quiz)
+    if (attempt.quizId.isNotEmpty && attempt.studentId.isNotEmpty) {
+      Query<Map<String, dynamic>> query = _attemptsCollection
+          .where('quizId', isEqualTo: attempt.quizId)
+          .where('studentId', isEqualTo: attempt.studentId);
+      if (attempt.classId.isNotEmpty) {
+        query = query.where('classId', isEqualTo: attempt.classId);
+      }
+      final existingAttemptsSnapshot = await query.get();
+      if (existingAttemptsSnapshot.docs.length >= 2) {
+        throw const QuizUnavailableException(
+          'You have reached the maximum 2 attempts for this practice quiz.',
+        );
+      }
+    }
+
+    // 3. Persist attempt
     final docRef = _attemptsCollection.doc();
     final savedAttempt = QuizAttemptModel(
       id: docRef.id,

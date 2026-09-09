@@ -3,6 +3,19 @@ import 'dart:math';
 /// Scoring utility providing deterministic evaluation of quiz answers
 /// matching Phase 1 specifications (free-text typo tolerance and enumeration partial credit).
 class ScoringUtils {
+  /// Cleans extraneous prefixes (e.g. 'A. ', 'B) ', '1. ', '- ', '* ')
+  /// and surrounding quotation marks from expected answers.
+  static String cleanExpectedAnswer(String raw) {
+    var cleaned = raw.trim();
+    // Remove leading option prefixes like 'A. ', 'B) ', '1. ', '10. '
+    cleaned = cleaned.replaceAll(RegExp(r'^([A-Za-z]{1,2}|\d{1,3})[\.\)\-:]\s+'), '');
+    // Remove leading bullet points or dashes
+    cleaned = cleaned.replaceAll(RegExp(r'^[\-\*\u2022\u2023\u25E6\u2043\u2219]\s*'), '');
+    // Strip leading/trailing quotation marks
+    cleaned = cleaned.replaceAll(RegExp(r'''^["']|["']$'''), '').trim();
+    return cleaned;
+  }
+
   /// Normalizes free-text answers by trimming whitespace, lowercasing,
   /// and stripping extraneous punctuation.
   static String normalizeText(String text) {
@@ -44,8 +57,10 @@ class ScoringUtils {
   /// - Length 5 to 8: distance <= 1
   /// - Length >= 9: distance <= 2
   static bool isFreeTextMatch(String studentAnswer, String expectedAnswer) {
-    final normStudent = normalizeText(studentAnswer);
-    final normExpected = normalizeText(expectedAnswer);
+    final cleanedStudent = cleanExpectedAnswer(studentAnswer);
+    final cleanedExpected = cleanExpectedAnswer(expectedAnswer);
+    final normStudent = normalizeText(cleanedStudent);
+    final normExpected = normalizeText(cleanedExpected);
 
     if (normStudent == normExpected) return true;
     if (normExpected.isEmpty || normStudent.isEmpty) return false;
@@ -73,10 +88,28 @@ class ScoringUtils {
     final List<String> missing = [];
     final List<String> extra = [];
 
-    final remainingExpected = expectedItems.map((e) => e.trim()).toList();
-    final remainingStudent = studentItems.map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    // Clean and deduplicate expected items
+    final remainingExpected = <String>[];
+    for (final exp in expectedItems) {
+      final cleaned = cleanExpectedAnswer(exp);
+      if (cleaned.isNotEmpty && !remainingExpected.any((e) => normalizeText(e) == normalizeText(cleaned))) {
+        remainingExpected.add(cleaned);
+      }
+    }
 
-    for (final studentItem in remainingStudent) {
+    // Deduplicate student items case-insensitively
+    final deduplicatedStudent = <String>[];
+    final seenNormalizedStudent = <String>{};
+    for (final s in studentItems) {
+      final trimmed = s.trim();
+      final norm = normalizeText(trimmed);
+      if (norm.isNotEmpty && !seenNormalizedStudent.contains(norm)) {
+        seenNormalizedStudent.add(norm);
+        deduplicatedStudent.add(trimmed);
+      }
+    }
+
+    for (final studentItem in deduplicatedStudent) {
       int matchIndex = -1;
       for (int i = 0; i < remainingExpected.length; i++) {
         if (isFreeTextMatch(studentItem, remainingExpected[i])) {
@@ -95,7 +128,7 @@ class ScoringUtils {
 
     missing.addAll(remainingExpected);
 
-    final expectedCount = expectedItems.length;
+    final expectedCount = remainingExpected.length + found.length;
     final earnedPoints = expectedCount == 0
         ? 0.0
         : (found.length / expectedCount) * totalPoints;

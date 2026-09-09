@@ -9,6 +9,11 @@ class MaterialModel {
   final String fileName;
   final String fileType; // 'pdf' | 'pptx' | 'docx'
   final String fileRef; // Storage path e.g. uploads/{teacherId}/{materialId}/{fileName}
+  final String? downloadUrl; // Direct download URL when stored in Firebase Storage
+  final String? convertedPdfRef; // Storage path of converted preview PDF (uploads/{teacherId}/{materialId}/preview.pdf)
+  final String? convertedPdfUrl; // Download URL of converted preview PDF
+  final String? conversionStatus; // 'pending' | 'completed' | 'failed' | 'unsupported'
+  final DateTime? convertedAt;
   final String status; // 'pending' | 'processing' | 'ready' | 'failed'
   final String? errorReason; // 'no_extractable_text' | 'unsupported_format' | 'parse_error' | etc.
   final String extractedText;
@@ -23,6 +28,11 @@ class MaterialModel {
     required this.fileName,
     required this.fileType,
     required this.fileRef,
+    this.downloadUrl,
+    this.convertedPdfRef,
+    this.convertedPdfUrl,
+    this.conversionStatus,
+    this.convertedAt,
     required this.status,
     this.errorReason,
     this.extractedText = '',
@@ -35,6 +45,14 @@ class MaterialModel {
   bool get isProcessing => status == 'processing' || status == 'pending';
   bool get hasFailed => status == 'failed';
 
+  /// In-app preview availability
+  bool get hasConvertedPdf =>
+      conversionStatus == 'completed' &&
+      ((convertedPdfUrl != null && convertedPdfUrl!.isNotEmpty) ||
+          (convertedPdfRef != null && convertedPdfRef!.isNotEmpty));
+  bool get isConverting => conversionStatus == 'pending';
+  bool get conversionFailed => conversionStatus == 'failed';
+
   /// Human-readable explanation of error reasons matching Cloud Function codes
   String get formattedError {
     switch (errorReason) {
@@ -43,11 +61,13 @@ class MaterialModel {
       case 'unsupported_format':
         return 'Unsupported format. Please select a valid PDF, PPTX, or DOCX document.';
       case 'parse_error':
-        return 'Parse error encountered while reading the document. The file may be corrupt or encrypted.';
+        return 'This file couldn\'t be processed — try re-exporting it or use a different format.';
       case 'file_too_large':
         return 'The uploaded file exceeds the 50MB maximum size limit.';
       case 'empty_file':
         return 'The selected file is empty (0 bytes).';
+      case 'file_bytes_unavailable':
+        return 'Original document file is unavailable in storage. Please re-upload the document.';
       default:
         return errorReason ?? 'An unknown error occurred while extracting text from the document.';
     }
@@ -88,6 +108,11 @@ class MaterialModel {
     String? fileName,
     String? fileType,
     String? fileRef,
+    String? downloadUrl,
+    String? convertedPdfRef,
+    String? convertedPdfUrl,
+    String? conversionStatus,
+    DateTime? convertedAt,
     String? status,
     String? errorReason,
     String? extractedText,
@@ -102,6 +127,11 @@ class MaterialModel {
       fileName: fileName ?? this.fileName,
       fileType: fileType ?? this.fileType,
       fileRef: fileRef ?? this.fileRef,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
+      convertedPdfRef: convertedPdfRef ?? this.convertedPdfRef,
+      convertedPdfUrl: convertedPdfUrl ?? this.convertedPdfUrl,
+      conversionStatus: conversionStatus ?? this.conversionStatus,
+      convertedAt: convertedAt ?? this.convertedAt,
       status: status ?? this.status,
       errorReason: errorReason ?? this.errorReason,
       extractedText: extractedText ?? this.extractedText,
@@ -119,6 +149,11 @@ class MaterialModel {
       'fileName': fileName,
       'fileType': fileType.toLowerCase(),
       'fileRef': fileRef,
+      if (downloadUrl != null) 'downloadUrl': downloadUrl,
+      if (convertedPdfRef != null) 'convertedPdfRef': convertedPdfRef,
+      if (convertedPdfUrl != null) 'convertedPdfUrl': convertedPdfUrl,
+      if (conversionStatus != null) 'conversionStatus': conversionStatus,
+      if (convertedAt != null) 'convertedAt': Timestamp.fromDate(convertedAt!),
       'status': status,
       'errorReason': errorReason,
       'extractedText': extractedText,
@@ -143,6 +178,13 @@ class MaterialModel {
       fileName: (map['fileName'] as String?) ?? 'Unnamed Material',
       fileType: ((map['fileType'] as String?) ?? 'pdf').toLowerCase(),
       fileRef: (map['fileRef'] as String?) ?? '',
+      downloadUrl: map['downloadUrl'] as String?,
+      convertedPdfRef: map['convertedPdfRef'] as String?,
+      convertedPdfUrl: map['convertedPdfUrl'] as String?,
+      conversionStatus: map['conversionStatus'] as String?,
+      convertedAt: map['convertedAt'] != null
+          ? parseTimestamp(map['convertedAt'])
+          : null,
       status: (map['status'] as String?) ?? 'pending',
       errorReason: map['errorReason'] as String?,
       extractedText: (map['extractedText'] as String?) ?? '',

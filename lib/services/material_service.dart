@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import '../models/material_model.dart';
+import '../utils/document_text_extractor.dart';
 import 'firestore_provider.dart';
 
 /// Exception thrown when study material validation or processing fails.
@@ -77,8 +81,10 @@ class MaterialService {
     );
   }
 
-  /// Uploads a study material file to Firebase Storage and initializes
-  /// the Firestore `materials/{materialId}` document.
+  /// Uploads a study material file, extracts text on-device immediately,
+  /// and writes the ready document directly to Firestore.
+  /// Firebase Storage upload is performed with a non-blocking timeout so users
+  /// on free Firebase tiers are never stuck in an infinite upload loop.
   Future<MaterialModel> uploadStudyMaterial({
     required String teacherId,
     required String classId,
@@ -100,60 +106,218 @@ class MaterialService {
       byteLength: byteLength,
     );
 
-    // 2. Generate new Firestore materialId
+    // Ensure bytes are available
+    Uint8List? resolvedBytes = fileBytes;
+    if (resolvedBytes == null && localFilePath != null && !kIsWeb) {
+      try {
+        final localFile = File(localFilePath);
+        if (await localFile.exists()) {
+          resolvedBytes = await localFile.readAsBytes();
+        }
+      } catch (e) {
+        debugPrint('Could not read local file bytes: $e');
+      }
+    }
+
+    // 2. Client-side instant text extraction
+    String extractedText = '';
+    String? errorReason;
+    bool isExtracted = false;
+
+    if (resolvedBytes != null && resolvedBytes.isNotEmpty) {
+      try {
+        final extractionResult = await DocumentTextExtractor.extract(
+          bytes: resolvedBytes,
+          extension: cleanExt,
+        );
+        if (extractionResult.isSuccess) {
+          extractedText = extractionResult.text;
+          isExtracted = true;
+        } else {
+          errorReason = extractionResult.errorReason ?? 'no_extractable_text';
+        }
+      } catch (e) {
+        debugPrint('Client text extraction warning: $e');
+        errorReason = 'parse_error';
+      }
+    } else {
+      errorReason = 'empty_file';
+    }
+
+    final String initialStatus = isExtracted ? 'ready' : 'failed';
+
+    // 3. Generate Firestore document
     final materialDocRef = _firestore.collection('materials').doc();
     final materialId = materialDocRef.id;
     final storagePath = 'uploads/$teacherId/$materialId/$fileName';
 
-    // 3. Create initial Firestore document with status: 'processing'
-    final initialModel = MaterialModel(
+    final readyModel = MaterialModel(
       id: materialId,
       teacherId: teacherId,
       classId: cleanClassId,
       fileName: fileName,
       fileType: cleanExt,
       fileRef: storagePath,
-      status: 'processing',
+      status: initialStatus,
+      errorReason: errorReason,
+      extractedText: extractedText,
+      conversionStatus: cleanExt == 'pdf' ? 'completed' : 'pending',
       createdAt: DateTime.now(),
       fileSizeBytes: byteLength,
     );
 
-    await materialDocRef.set(initialModel.toMap());
+    await materialDocRef.set(readyModel.toMap());
 
-    // 4. Upload to Firebase Storage
-    final storageRef = _storage.ref().child(storagePath);
-    final metadata = SettableMetadata(
-      contentType: initialModel.contentType,
-      customMetadata: {
-        'teacherId': teacherId,
-        'materialId': materialId,
-        'classId': cleanClassId,
-      },
-    );
-
-    UploadTask uploadTask;
-    if (fileBytes != null) {
-      uploadTask = storageRef.putData(fileBytes, metadata);
-    } else if (localFilePath != null && !kIsWeb) {
-      uploadTask = storageRef.putFile(File(localFilePath), metadata);
-    } else {
-      throw const MaterialValidationException(
-        'No file data available to upload. Please pick the file again.',
+    // 4. Firebase Storage file upload and download URL persistence
+    String? downloadUrl;
+    try {
+      final storageRef = _storage.ref().child(storagePath);
+      final metadata = SettableMetadata(
+        contentType: readyModel.contentType,
+        customMetadata: {
+          'teacherId': teacherId,
+          'materialId': materialId,
+          'classId': cleanClassId,
+        },
       );
+
+      UploadTask? uploadTask;
+      if (resolvedBytes != null) {
+        uploadTask = storageRef.putData(resolvedBytes, metadata);
+      } else if (localFilePath != null && !kIsWeb) {
+        uploadTask = storageRef.putFile(File(localFilePath), metadata);
+      }
+
+      if (uploadTask != null) {
+        StreamSubscription<TaskSnapshot>? progressSub;
+        if (onProgress != null) {
+          progressSub = uploadTask.snapshotEvents.listen(
+            (TaskSnapshot snapshot) {
+              if (snapshot.totalBytes > 0) {
+                final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+                onProgress(progress);
+              }
+            },
+            onError: (err) {
+              debugPrint('Storage upload progress stream error: $err');
+            },
+            cancelOnError: true,
+          );
+        }
+
+        try {
+          final snapshot = await uploadTask.timeout(const Duration(seconds: 15));
+          if (snapshot.state == TaskState.success) {
+            try {
+              downloadUrl = await storageRef.getDownloadURL();
+              await materialDocRef.update({'downloadUrl': downloadUrl});
+            } catch (urlErr) {
+              debugPrint('Failed to get download URL: $urlErr');
+            }
+          }
+        } finally {
+          await progressSub?.cancel();
+        }
+      }
+    } catch (storageErr) {
+      // Free Spark tier without billing or offline mode:
+      // Firestore document already has status: 'ready' and extractedText populated.
+      debugPrint('Storage upload note: $storageErr');
     }
 
     if (onProgress != null) {
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        if (snapshot.totalBytes > 0) {
-          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-          onProgress(progress);
-        }
-      });
+      onProgress(1.0);
     }
 
-    await uploadTask;
+    return readyModel.copyWith(downloadUrl: downloadUrl);
+  }
 
-    return initialModel;
+  /// Fetch raw bytes for a material file (via download URL or directly from Storage)
+  Future<Uint8List?> getMaterialFileBytes(MaterialModel material) async {
+    // 1. Try downloadUrl via HTTP
+    if (material.downloadUrl != null && material.downloadUrl!.isNotEmpty) {
+      try {
+        final response = await http
+            .get(Uri.parse(material.downloadUrl!))
+            .timeout(const Duration(seconds: 10));
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          return response.bodyBytes;
+        }
+      } catch (e) {
+        debugPrint('Failed to download material via downloadUrl: $e');
+      }
+    }
+
+    // 2. Try direct Storage path ref
+    if (material.fileRef.isNotEmpty) {
+      try {
+        final bytes = await _storage
+            .ref()
+            .child(material.fileRef)
+            .getData(maxFileSizeBytes);
+        if (bytes != null && bytes.isNotEmpty) {
+          return bytes;
+        }
+      } catch (e) {
+        debugPrint('Failed to fetch material bytes via Storage ref: $e');
+      }
+    }
+
+    return null;
+  }
+
+  /// Fetch raw bytes for a converted preview PDF (via download URL or directly from Storage)
+  Future<Uint8List?> getConvertedPdfBytes(MaterialModel material) async {
+    // 1. Try convertedPdfUrl via HTTP
+    if (material.convertedPdfUrl != null &&
+        material.convertedPdfUrl!.isNotEmpty) {
+      try {
+        final response = await http
+            .get(Uri.parse(material.convertedPdfUrl!))
+            .timeout(const Duration(seconds: 10));
+        if (response.statusCode == 200 && response.bodyBytes.isNotEmpty) {
+          return response.bodyBytes;
+        }
+      } catch (e) {
+        debugPrint('Failed to download converted PDF via convertedPdfUrl: $e');
+      }
+    }
+
+    // 2. Try direct Storage path ref
+    if (material.convertedPdfRef != null &&
+        material.convertedPdfRef!.isNotEmpty) {
+      try {
+        final bytes = await _storage
+            .ref()
+            .child(material.convertedPdfRef!)
+            .getData(maxFileSizeBytes);
+        if (bytes != null && bytes.isNotEmpty) {
+          return bytes;
+        }
+      } catch (e) {
+        debugPrint('Failed to fetch converted PDF bytes via Storage ref: $e');
+      }
+    }
+
+    return null;
+  }
+
+  /// Download material to temporary file directory for opening with native apps
+  Future<File?> downloadMaterialToTemp(MaterialModel material) async {
+    if (kIsWeb) return null;
+    try {
+      final bytes = await getMaterialFileBytes(material);
+      if (bytes == null || bytes.isEmpty) return null;
+
+      final tempDir = await getTemporaryDirectory();
+      final safeName = material.fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final tempFile = File('${tempDir.path}/$safeName');
+      await tempFile.writeAsBytes(bytes, flush: true);
+      return tempFile;
+    } catch (e) {
+      debugPrint('Error writing material to temp file: $e');
+      return null;
+    }
   }
 
   /// Stream a single material document in real time to monitor extraction status
@@ -205,24 +369,137 @@ class MaterialService {
     });
   }
 
-  /// Reset a failed extraction attempt so the Cloud Function or user can retry
+  /// Reset a failed extraction attempt and re-attempt extraction if bytes are retrievable
   Future<void> retryMaterialExtraction(String materialId) async {
-    await _firestore.collection('materials').doc(materialId).update({
-      'status': 'processing',
-      'errorReason': FieldValue.delete(),
-    });
+    try {
+      final doc = await _firestore.collection('materials').doc(materialId).get();
+      if (doc.exists && doc.data() != null) {
+        final mat = MaterialModel.fromMap(doc.data()!, doc.id);
+        final bytes = await getMaterialFileBytes(mat);
+        if (bytes != null && bytes.isNotEmpty) {
+          final extractionResult = await DocumentTextExtractor.extract(
+            bytes: bytes,
+            extension: mat.fileType,
+          );
+          final isExtracted = extractionResult.isSuccess;
+          await _firestore.collection('materials').doc(materialId).update({
+            'status': isExtracted ? 'ready' : 'failed',
+            'extractedText': extractionResult.text,
+            'extractedAt': isExtracted ? FieldValue.serverTimestamp() : null,
+            'errorReason': isExtracted ? FieldValue.delete() : (extractionResult.errorReason ?? 'no_extractable_text'),
+          });
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Retry extraction error: $e');
+    }
+
+    // If file bytes cannot be retrieved, do NOT set status to 'processing'
+    // (which would hang indefinitely on free Spark tier). Mark as failed with clear reason.
+    try {
+      await _firestore.collection('materials').doc(materialId).update({
+        'status': 'failed',
+        'errorReason': 'file_bytes_unavailable',
+      });
+    } catch (updateErr) {
+      debugPrint('Status update error during retry failure: $updateErr');
+    }
+    throw const MaterialValidationException(
+      'Original document file is unavailable in storage. Please re-upload the document.',
+    );
   }
 
-  /// Delete a material from both Firestore and Firebase Storage
+  /// Delete a material from both Firestore and Firebase Storage, and clean up
+  /// any orphaned draft quizzes and locally cached temporary files.
   Future<void> deleteMaterial({
     required String materialId,
     required String fileRef,
+    String? fileName,
+    String? convertedPdfRef,
   }) async {
+    // 1. Delete Firestore material doc immediately so real-time UI streams reflect deletion
+    final firestoreDelete = _firestore.collection('materials').doc(materialId).delete();
+
+    // 2. Concurrently clean up orphaned draft quizzes referencing this material
+    final quizCleanup = _cleanupMaterialQuizzes(materialId);
+
+    // 3. Concurrently delete Firebase Storage file with a strict 5s timeout
+    final storageDelete = (fileRef.isNotEmpty)
+        ? _storage
+            .ref()
+            .child(fileRef)
+            .delete()
+            .timeout(const Duration(seconds: 5))
+            .catchError((err) {
+              debugPrint('Storage deletion non-critical notice: $err');
+            })
+        : Future.value();
+
+    // Concurrently delete converted preview PDF if present
+    final convertedStorageDelete = (convertedPdfRef != null && convertedPdfRef.isNotEmpty)
+        ? _storage
+            .ref()
+            .child(convertedPdfRef)
+            .delete()
+            .timeout(const Duration(seconds: 5))
+            .catchError((err) {
+              debugPrint('Converted PDF deletion non-critical notice: $err');
+            })
+        : Future.value();
+
+    // 4. Concurrently clean up any cached local temporary file
+    final localCleanup = _cleanupLocalTempFile(fileName: fileName);
+
+    await Future.wait([
+      firestoreDelete,
+      quizCleanup,
+      storageDelete,
+      convertedStorageDelete,
+      localCleanup,
+    ]);
+  }
+
+  Future<void> _cleanupMaterialQuizzes(String materialId) async {
+    if (materialId.isEmpty) return;
     try {
-      await _storage.ref().child(fileRef).delete();
-    } catch (_) {
-      // Storage deletion could fail if file doesn't exist; continue to delete Firestore doc
+      final snapshot = await _firestore
+          .collection('quizzes')
+          .where('materialId', isEqualTo: materialId)
+          .get()
+          .timeout(const Duration(seconds: 5));
+
+      if (snapshot.docs.isEmpty) return;
+
+      final batch = _firestore.batch();
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final status = data['status'] as String? ?? 'draft';
+        if (status == 'draft') {
+          // Clean up unfinalized draft quizzes tied to the deleted material
+          batch.delete(doc.reference);
+        } else {
+          // Unlink materialId from finalized or published quizzes to preserve student records
+          batch.update(doc.reference, {'materialId': ''});
+        }
+      }
+      await batch.commit().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('Notice: Quizzes cleanup for material $materialId finished with: $e');
     }
-    await _firestore.collection('materials').doc(materialId).delete();
+  }
+
+  Future<void> _cleanupLocalTempFile({String? fileName}) async {
+    if (kIsWeb || fileName == null || fileName.isEmpty) return;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final safeName = fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
+      final file = File('${tempDir.path}/$safeName');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      debugPrint('Notice: Local temp file cleanup error: $e');
+    }
   }
 }
