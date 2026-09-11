@@ -150,6 +150,119 @@ async function convertOfficeToPdf(bucket, teacherId, materialId, localFilePath, 
 }
 
 /**
+ * Structural table / column header keywords commonly found in data grids.
+ */
+const STRUCTURAL_HEADER_KEYWORDS = new Set([
+  "no", "no.", "num", "num.", "number", "name", "attribute", "attributes",
+  "value", "values", "field", "fields", "col", "column", "header", "row",
+  "description", "remarks", "category", "categories", "status", "type",
+  "types", "item", "items", "parameter", "parameters", "date", "key",
+  "default", "null", "extra"
+]);
+
+/**
+ * Strips table header artifacts and data grid structural labels from extracted text,
+ * preserving factual content inside table cells while preventing structural headers
+ * from leaking into generated questions.
+ */
+function stripTableHeaderArtifacts(text) {
+  if (!text) return "";
+  const lines = text.split("\n");
+  const cleaned = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      cleaned.push(line);
+      continue;
+    }
+
+    // Standalone column or header indicators
+    if (/^(?:Column|Header|Col|Row)\s+[A-Za-z0-9]+:?$/i.test(trimmed)) continue;
+    if (/^Table\s+\d+:?$/i.test(trimmed)) continue;
+
+    // Sequence of column labels: "Column A | Column B | Column C"
+    if (/^(?:(?:Column|Header|Col)\s+[A-Za-z0-9]+(?:\s*[\|\:\t\,]\s*|\s{2,}))+(?:(?:Column|Header|Col)\s+[A-Za-z0-9]+)?$/i.test(trimmed)) continue;
+
+    // Multi-column structural header row separated by delimiters (|, \t, spaces, commas)
+    if (trimmed.includes("|") || trimmed.includes("\t") || /\s{2,}/.test(trimmed) || (trimmed.includes(",") && !trimmed.includes("."))) {
+      const segments = trimmed
+        .split(/[\|\t]|\s{2,}|,/)
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => s.length > 0);
+
+      if (segments.length >= 2) {
+        let matching = 0;
+        for (const seg of segments) {
+          const cleanedSeg = seg.replace(/[^a-z0-9\.]/g, "");
+          const isColHeader = /^(?:column|header|col|row)[a-z0-9]*$/i.test(cleanedSeg) ||
+            /^(?:column|header|col|row)\s+[a-z0-9]+$/i.test(seg);
+          if (STRUCTURAL_HEADER_KEYWORDS.has(cleanedSeg) || isColHeader) {
+            matching++;
+          }
+        }
+        if (matching >= 2 && matching >= segments.length * 0.6) {
+          continue;
+        }
+      }
+    }
+
+    cleaned.push(line);
+  }
+
+  return cleaned.join("\n");
+}
+
+/**
+ * Checks if a generated question inappropriately tests table/column structure.
+ */
+function isTableHeaderQuestion(q) {
+  if (!q) return false;
+  const prompt = (q.question || "").toLowerCase().trim();
+  const answer = (q.correctAnswer || "").toLowerCase().trim().replace(/^[a-d]\.\s*/, "");
+
+  if (/\b(in\s+(?:the\s+)?(?:table|column|row)|which\s+column|what\s+is\s+(?:the\s+)?(?:header|column|attribute)|listed\s+in\s+column|under\s+column|title\s+of\s+column)\b/i.test(prompt)) {
+    return true;
+  }
+  if (/\b(?:column|header|col|row)\s+[a-z0-9]+\b/i.test(prompt)) {
+    if (prompt.includes("what") || prompt.includes("which") || prompt.includes("identify")) {
+      return true;
+    }
+  }
+  if (/^(?:column\s+[a-z0-9]+|header\s+[a-z0-9]+|row\s+[a-z0-9]+|col\s+[a-z0-9]+|attribute|attributes|value|values|field|fields|no\.?|num\.?|number|description|remarks|category|type)$/i.test(answer)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a generated question tests irrelevant, filler, or non-academic boilerplate content.
+ */
+function isFillerOrBoilerplateQuestion(q) {
+  if (!q) return false;
+  const prompt = (q.question || "").toLowerCase().trim();
+  const answer = (q.correctAnswer || "").toLowerCase().trim().replace(/^[a-d]\.\s*/, "");
+
+  const fillerPromptPattern = /(?:\b(?:copyright|all\s+rights\s+reserved|creative\s+commons|licensed\s+under|authors?|written\s+by|who\s+is\s+the\s+author|who\s+is\s+the\s+instructor|who\s+is\s+the\s+professor|instructors?|emails?|office\s+hours|syllabus|grading\s+policy|course\s+code|prerequisite|homework\s+assignment|due\s+date|welcome\s+to|in\s+this\s+lecture|today\x27s\s+lecture|previous\s+slide|next\s+slide|thank\s+you\s+for\s+(?:listening|attending)|summary\s+of\s+today|slide\s+\d+|page\s+\d+|figure\s+\d+|table\s+\d+|chapter\s+\d+|\d+(?:st|nd|rd|th)?\s+edition|edition|references|acknowledgments?)\b|any\s+questions\?)/i;
+  if (fillerPromptPattern.test(prompt)) return true;
+
+  if (/\b(?:on slide|in chapter|on page|published in|publication date|file name)\b/i.test(prompt)) {
+    return true;
+  }
+
+  const fillerAnswerPattern = /^(?:all rights reserved|copyright|creative commons|welcome|thank you|any questions|dr\.\s+\w+|prof\.\s+\w+|professor|instructor|syllabus|office hours|slide\s+\d+|page\s+\d+|chapter\s+\d+|https?:\/\/\S+|www\.\S+|\S+@\S+)$/i;
+  if (fillerAnswerPattern.test(answer)) return true;
+
+  if (answer.includes("@") || answer.includes("http://") || answer.includes("https://") || answer.includes("www.")) {
+    return true;
+  }
+
+  return false;
+}
+
+
+/**
  * Storage-triggered Cloud Function (2nd gen) that triggers on upload to
  * uploads/{teacherId}/{materialId}/{filename}.
  * Extracts text from PDF, DOCX, and PPTX files and updates Firestore materials/{materialId}.
@@ -218,6 +331,28 @@ exports.extractText = onObjectFinalized(
       return;
     }
 
+    // Short-circuit if client-side on-device extraction already completed successfully
+    try {
+      const existingDoc = await materialRef.get();
+      if (existingDoc.exists) {
+        const docData = existingDoc.data();
+        if (docData && docData.status === "ready" && docData.extractedText && docData.extractedText.length >= 20) {
+          console.log(`Client-side extraction already completed for materialId: ${materialId} (${docData.extractedText.length} chars). Skipping redundant download & extraction.`);
+          if (fileType === "pdf") {
+            if (docData.conversionStatus !== "completed") {
+              await materialRef.set({ conversionStatus: "completed" }, { merge: true });
+            }
+            return;
+          }
+          if ((fileType === "pptx" || fileType === "docx") && docData.conversionStatus === "completed") {
+            return;
+          }
+        }
+      }
+    } catch (checkErr) {
+      console.warn("Could not check existing material doc:", checkErr.message);
+    }
+
     const bucket = admin.storage().bucket(fileObject.bucket);
     const tempFilePath = path.join(os.tmpdir(), `${materialId}_${path.basename(fileName)}`);
 
@@ -239,7 +374,8 @@ exports.extractText = onObjectFinalized(
         rawExtractedText = await parsePptx(tempFilePath);
       }
 
-      const trimmedText = (rawExtractedText || "").trim();
+      const sanitizedText = stripTableHeaderArtifacts(rawExtractedText || "");
+      const trimmedText = sanitizedText.trim();
 
       // Validate non-trivial content (not empty or near-empty)
       if (trimmedText.length < 20) {
@@ -376,8 +512,16 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
     .map((s) => s.trim().replace(/\s+/g, " "))
     .filter((s) => s.length >= 25 && s.length <= 250);
 
-  const sentences = rawSentences.length >= 5
-    ? rawSentences
+  // Filter out table headers, structural labels, metadata, and filler boilerplate from candidate sentences
+  const structuralSentenceRegex = /^(?:column|header|col|row)\s+[a-z0-9]+:?/i;
+  const metadataSentenceRegex = /(?:\b(?:column\s+[a-z0-9]+|header\s+[a-z0-9]+|table\s+\d+|course|syllabus|page\s+\d+|figure\s+\d+|chapter\s+\d+|slide\s+\d+|\d+(?:st|nd|rd|th)?\s+edition|edition|copyright|all\s+rights\s+reserved|creative\s+commons|license|licensed\s+under|authors?|emails?|isbn|office\s+hours|grading\s+policy|welcome\s+to|in\s+this\s+lecture|thank\s+you\s+for\s+(?:listening|attending)|summary\s+of\s+today|references|further\s+reading|acknowledgments?)\b|any\s+questions\?|attribute\s*\||no\.\s+name\b|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i;
+
+  const filteredSentences = rawSentences.filter(
+    (s) => !structuralSentenceRegex.test(s) && !metadataSentenceRegex.test(s)
+  );
+
+  const sentences = filteredSentences.length >= 5
+    ? filteredSentences
     : [
         "Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells.",
         "Mitochondria are double-membraned organelles known as the powerhouse of the cell.",
@@ -389,13 +533,26 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
         "DNA stores genetic information within the cell nucleus using four nucleotide bases.",
       ];
 
+  // Structural blacklist to prevent column/table labels, metadata, and filler words from becoming candidate terms
+  const structuralBlacklist = new Set([
+    "column", "header", "attribute", "attributes", "value", "values",
+    "field", "fields", "table", "tables", "row", "rows", "item", "items",
+    "category", "categories", "no", "number", "type", "types", "description",
+    "remarks", "date", "col",
+    "copyright", "reserved", "author", "authors", "professor", "instructor", "syllabus",
+    "lecture", "slide", "page", "chapter", "university", "college", "homework",
+    "summary", "reference", "references", "license", "acknowledgment",
+    "acknowledgments", "welcome", "reading", "hours", "grading", "policy",
+    "edition", "editions", "email", "emails", "isbn"
+  ]);
+
   // Extract key candidate terms (nouns, capitalized words, phrases after definitions)
   const candidateTerms = [];
   const definitionRegex = /([A-Z][a-zA-Z\s]{2,25})\s+(?:is defined as|is a|is an|refers to|represents|serves as|means)\s+([^.!?]+)/gi;
   let defMatch;
   while ((defMatch = definitionRegex.exec(extractedText)) !== null) {
     const term = defMatch[1].trim();
-    if (term.length > 2 && !candidateTerms.includes(term)) {
+    if (term.length > 2 && !candidateTerms.includes(term) && !structuralBlacklist.has(term.toLowerCase())) {
       candidateTerms.push(term);
     }
   }
@@ -405,7 +562,7 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
     const words = s.split(/\s+/);
     for (let i = 1; i < words.length; i++) {
       const clean = words[i].replace(/[^a-zA-Z]/g, "");
-      if (clean.length >= 4 && /^[A-Z]/.test(words[i]) && !candidateTerms.includes(clean)) {
+      if (clean.length >= 4 && /^[A-Z]/.test(words[i]) && !candidateTerms.includes(clean) && !structuralBlacklist.has(clean.toLowerCase())) {
         candidateTerms.push(clean);
       }
     }
@@ -576,23 +733,34 @@ MANDATORY ASSESSMENT DIRECTIVES:
 1. CORE CONCEPTS & DEFINITIONS FIRST:
    - Identify the central principles, key definitions, primary mechanisms, and functional relationships in the material.
    - Every question must assess a core concept that an instructor would legitimately evaluate on a comprehensive final exam.
-2. STRICTLY FORBID TRIVIA & DOCUMENT METADATA:
-   - NEVER ask about: dates of publication, author names, page numbers, chapter/slide numbers, figure or table numbers, course codes, syllabus announcements, file names, or incidental, isolated trivia.
-3. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
+2. STRICTLY FORBID IRRELEVANT, FILLER & NON-ACADEMIC CONTENT:
+   - NEVER generate questions from, and completely ignore:
+     a) Copyright notices, license text, and "all rights reserved" (e.g. "© 2024", "Creative Commons", "All rights reserved").
+     b) Author, professor, or instructor details: names, academic titles, departments, affiliations, email addresses, phone numbers, and author bios.
+     c) Document metadata: file names, slide numbers ("Slide 1", "Slide 10"), page numbers, dates of publication, semesters, edition numbers, and timestamps.
+     d) Boilerplate phrases and lecture transitions: "Welcome to...", "In this lecture...", "Today we will discuss...", "As seen in the previous slide...", "Thank you for listening", "Any questions?", "Summary of today's class", "References", "Further Reading", "Acknowledgments".
+     e) Administrative & course management content: course codes (e.g. "CS 101", "BIO 204"), prerequisites, grading policies, office hours, exam schedules, syllabus policies, submission guidelines, homework assignments, or platform links.
+   - Questions and answers MUST test substantive academic concepts, theories, principles, processes, or core mechanisms only.
+3. STRICTLY FORBID TABLE/COLUMN HEADERS & STRUCTURAL LABELS:
+   - NEVER generate questions based on table or column headers, table row numbers, or data grid structural labels (e.g., "Column A", "Column B", "Header 1", "Header 2", "Attribute", "Value", "No.", "Field", "Item", "Category", "Description", "Remarks", "Date", "Type").
+   - NEVER ask what a column, row, or header is named, what is listed under a specific column/header, or test the visual layout/structure of tables, charts, or diagrams.
+   - When the study material includes tables, focus EXCLUSIVELY on the academic concepts, facts, mechanisms, and relationships described within the table cells — NOT the table structure itself.
+   - NEVER produce answer choices or distractors that are column headers or structural labels (e.g. options like "A. Column A", "B. Header 1", "C. Attribute", "D. Value" are strictly forbidden).
+4. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
    - For multiple_choice questions, all 3 incorrect distractors MUST be plausible, academically meaningful terms in the EXACT SAME conceptual category/domain as the correct answer.
    - NEVER produce joke, nonsensical, or obviously absurd options.
-4. FACTUAL GROUNDING:
+5. FACTUAL GROUNDING:
    - Every question, answer option, and explanation must be 100% grounded in and verifiable against the provided text.
-5. ANTI-REDUNDANCY:
+6. ANTI-REDUNDANCY:
    - Every question MUST test a DIFFERENT concept, definition, or mechanism.
    - NEVER generate duplicate questions, rephrased copies of another question, or questions with identical stems or answers.
-6. QUESTION FORMAT CONSTRAINTS:
-   - multiple_choice: exactly 4 options labeled "A. ...", "B. ...", "C. ...", "D. ...", and correctAnswer must match the full option string.
-   - true_false: options must be ["True", "False"], correctAnswer must be "True" or "False". Test a core concept, not a tricky technicality.
-   - fill_blank: question prompt must include "_______", correctAnswer must be the exact missing term.
-   - identification: question provides a precise description WITHOUT giving away the term, correctAnswer is the term.
-   - enumeration: question asks to enumerate 2 to 5 specific items, enumerationAnswers must be an array of expected string items, and correctAnswer can be a comma-separated list of those items.
-${!isActual && sourceQuizContext ? `7. DISTINCT PHRASING REQUIREMENT: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME underlying concepts using ALTERNATIVE phrasing, application scenarios, or inverted questions.` : ""}
+7. QUESTION FORMAT CONSTRAINTS:
+    - multiple_choice: exactly 4 options labeled "A. ...", "B. ...", "C. ...", "D. ...", and correctAnswer must match the full option string.
+    - true_false: options must be ["True", "False"], correctAnswer must be "True" or "False". Test a core concept, not a tricky technicality.
+    - fill_blank: The question stem MUST contain "_______" (7 underscores). The blank MUST target a single, specific, unambiguous key term (1-2 words max, ideally a proper noun, technical term, or core vocabulary word). The sentence must provide enough context so that ONLY that specific term makes logical sense. NEVER blank out generic verbs, adjectives, or filler words. The correctAnswer MUST be the exact word/term that fills the blank, with NO surrounding quotation marks, punctuation, or leading articles ("the", "a", "an") unless strictly part of a formal proper name.
+    - identification: question provides a precise description WITHOUT giving away the term, correctAnswer is the term.
+    - enumeration: question asks to enumerate 2 to 5 specific items, enumerationAnswers must be an array of expected string items, and correctAnswer can be a comma-separated list of those items.
+${!isActual && sourceQuizContext ? `8. DISTINCT PHRASING REQUIREMENT: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME underlying concepts using ALTERNATIVE phrasing, application scenarios, or inverted questions.` : ""}
 
 Output Schema:
 {
@@ -651,17 +819,54 @@ Generate exactly ${targetCount} questions matching the specified types and stric
     throw new Error("Gemini output missing valid questions array.");
   }
 
-  // Normalize questions
-  const normalizedQuestions = parsed.questions.map((q, idx) => ({
-    id: q.id || `q_${idx + 1}`,
-    type: normalizeQuestionType(q.type),
-    question: q.question || `Question ${idx + 1}`,
-    options: Array.isArray(q.options) ? q.options : [],
-    correctAnswer: q.correctAnswer || "",
-    enumerationAnswers: Array.isArray(q.enumerationAnswers) ? q.enumerationAnswers : [],
-    explanation: q.explanation || "",
-    points: typeof q.points === "number" ? q.points : 1.0,
-  }));
+  // Filter out table header questions and normalize questions
+  const filteredQuestions = parsed.questions.filter((q) => {
+    if (isTableHeaderQuestion(q)) {
+      console.warn(`Filtered out table header question from Gemini: "${q.question}"`);
+      return false;
+    }
+    if (isFillerOrBoilerplateQuestion(q)) {
+      console.warn(`Filtered out filler/boilerplate question from Gemini: "${q.question}"`);
+      return false;
+    }
+    return true;
+  });
+
+  let normalizedQuestions = filteredQuestions.map((q, idx) => {
+    const qType = normalizeQuestionType(q.type);
+    let cleanAnswer = (q.correctAnswer || "").trim();
+    if (qType === "fill_blank" || qType === "identification") {
+      cleanAnswer = cleanAnswer.replace(/^(the|a|an)\s+/i, "").trim();
+      let prev;
+      do {
+        prev = cleanAnswer;
+        cleanAnswer = cleanAnswer.replace(/^["']|["']$/g, "").replace(/[\.,;:!]$/g, "").trim();
+      } while (cleanAnswer !== prev);
+    }
+    return {
+      id: q.id || `q_${idx + 1}`,
+      type: qType,
+      question: q.question || `Question ${idx + 1}`,
+      options: Array.isArray(q.options) ? q.options : [],
+      correctAnswer: cleanAnswer,
+      enumerationAnswers: Array.isArray(q.enumerationAnswers) ? q.enumerationAnswers : [],
+      explanation: q.explanation || "",
+      points: typeof q.points === "number" ? q.points : 1.0,
+    };
+  });
+
+  // If questions were filtered out and count fell below targetCount, backfill
+  if (normalizedQuestions.length < targetCount) {
+    const backfill = generateFallbackQuizQuestions(extractedText, questionTypes, targetCount, isActual);
+    for (const bq of backfill) {
+      if (normalizedQuestions.length >= targetCount) break;
+      if (!normalizedQuestions.some((eq) => eq.question === bq.question) &&
+          !isTableHeaderQuestion(bq) &&
+          !isFillerOrBoilerplateQuestion(bq)) {
+        normalizedQuestions.push(bq);
+      }
+    }
+  }
 
   return {
     title: parsed.title || (isActual ? "Generated Actual Quiz" : "Generated Practice Quiz"),

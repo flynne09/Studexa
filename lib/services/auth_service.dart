@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user_profile.dart';
 import 'firestore_provider.dart';
 
@@ -24,14 +26,24 @@ class AuthRoleMismatchException implements Exception {
 /// Service managing user authentication with Firebase Auth and profile synchronization
 /// with Cloud Firestore `users/{uid}`.
 class AuthService {
+  /// OAuth 2.0 Web Client ID registered in Firebase Console / Google Cloud.
+  static const String webGoogleClientId =
+      '669223676992-tn4l6k5tnh5n7lr6hs8imtphd0i7grhd.apps.googleusercontent.com';
+
   AuthService({
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
+    GoogleSignIn? googleSignIn,
   })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = getAppFirestore(firestore);
+        _firestore = getAppFirestore(firestore),
+        _googleSignIn = googleSignIn ??
+            GoogleSignIn(
+              clientId: kIsWeb ? webGoogleClientId : null,
+            );
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+  final GoogleSignIn _googleSignIn;
 
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
@@ -189,6 +201,93 @@ class AuthService {
     return profile;
   }
 
+  /// Signs in or registers a user using Google Sign-In, syncs/verifies their
+  /// Firestore profile document in `users/{uid}`, and enforces role compatibility.
+  ///
+  /// Returns [UserProfile] on success, or `null` if the user cancelled the sign-in prompt.
+  /// Throws [AuthRoleMismatchException] if the existing account belongs to a different role.
+  Future<UserProfile?> signInWithGoogle({required String role}) async {
+    final normalizedRole = role.trim().toLowerCase();
+    if (normalizedRole != 'teacher' && normalizedRole != 'student') {
+      throw ArgumentError("Role must be 'teacher' or 'student'.");
+    }
+
+    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      // User cancelled the sign-in flow
+      return null;
+    }
+
+    final GoogleSignInAuthentication googleAuth =
+        await googleUser.authentication;
+    final AuthCredential credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+
+    final userCredential = await _auth.signInWithCredential(credential);
+    final user = userCredential.user;
+    if (user == null) {
+      throw FirebaseAuthException(
+        code: 'user-null',
+        message: 'Google sign-in failed. Please try again.',
+      );
+    }
+
+    // Check if user profile already exists in Cloud Firestore
+    final docSnapshot = await _usersCollection.doc(user.uid).get();
+    UserProfile profile;
+
+    if (!docSnapshot.exists || docSnapshot.data() == null) {
+      // New user: persist initial profile with selected role and Google account info
+      final cleanDisplayName = (user.displayName != null &&
+              user.displayName!.trim().isNotEmpty)
+          ? user.displayName!.trim()
+          : (googleUser.displayName != null &&
+                  googleUser.displayName!.trim().isNotEmpty
+              ? googleUser.displayName!.trim()
+              : (user.email?.split('@').first ?? 'User'));
+
+      profile = UserProfile(
+        uid: user.uid,
+        email: (user.email ?? googleUser.email).trim().toLowerCase(),
+        displayName: cleanDisplayName,
+        role: normalizedRole,
+        createdAt: DateTime.now(),
+        photoUrl: user.photoURL ?? googleUser.photoUrl,
+      );
+
+      await _saveUserProfile(user.uid, profile);
+    } else {
+      profile = UserProfile.fromFirestore(docSnapshot);
+
+      // Enforce role guarding
+      if (profile.role.toLowerCase() != normalizedRole) {
+        // Sign out immediately to preserve role boundary
+        await _auth.signOut();
+        try {
+          await _googleSignIn.signOut();
+        } catch (_) {}
+        throw AuthRoleMismatchException(
+          actualRole: profile.role,
+          attemptedRole: normalizedRole,
+        );
+      }
+
+      // Sync avatar if existing profile didn't have one
+      if (profile.photoUrl == null &&
+          (user.photoURL != null || googleUser.photoUrl != null)) {
+        final newPhoto = user.photoURL ?? googleUser.photoUrl;
+        profile = profile.copyWith(photoUrl: newPhoto);
+        _usersCollection
+            .doc(user.uid)
+            .update({'photoUrl': newPhoto}).catchError((_) {});
+      }
+    }
+
+    return profile;
+  }
+
   /// Retrieves the current authenticated user's Firestore profile, or null if unauthenticated.
   Future<UserProfile?> getCurrentUserProfile() async {
     final user = _auth.currentUser;
@@ -205,9 +304,12 @@ class AuthService {
     }
   }
 
-  /// Signs out the current user.
+  /// Signs out the current user from Firebase Auth and Google Sign-In.
   Future<void> signOut() async {
     await _auth.signOut();
+    try {
+      await _googleSignIn.signOut();
+    } catch (_) {}
   }
 
   /// Converts common Firebase Auth & Firestore errors into friendly user-facing messages.
@@ -222,6 +324,12 @@ class AuthService {
     final rawStr = error.toString();
     if (rawStr.toUpperCase().contains('CONFIGURATION_NOT_FOUND')) {
       return 'Firebase Authentication is not enabled for this project. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.';
+    }
+    if (rawStr.contains('sign_in_canceled') || rawStr.contains('canceled')) {
+      return 'Google sign-in was cancelled.';
+    }
+    if (rawStr.contains('network_error')) {
+      return 'Network error during Google sign-in. Please check your connection.';
     }
 
     if (error is FirebaseAuthException) {
@@ -241,6 +349,8 @@ class AuthService {
           return 'Invalid email or password. Please check your credentials.';
         case 'email-already-in-use':
           return 'An account already exists with this email address.';
+        case 'account-exists-with-different-credential':
+          return 'An account already exists with this email using another sign-in method. Please sign in with your original method.';
         case 'invalid-email':
           return 'The email address is invalid.';
         case 'weak-password':

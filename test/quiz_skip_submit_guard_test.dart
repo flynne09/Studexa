@@ -231,5 +231,141 @@ void main() {
       expect(doneBtn, findsOneWidget);
       expect(homeBtn, findsOneWidget);
     });
+
+    testWidgets('Task 1: Question navigation indicator shows answered vs unanswered live and supports out-of-order answering', (tester) async {
+      await tester.pumpWidget(createScreen());
+      await tester.pumpAndSettle();
+
+      // Verify initial unanswered state: 0 answered, 3 unanswered
+      expect(find.text('0 answered'), findsOneWidget);
+      expect(find.text('3 unanswered'), findsOneWidget);
+
+      final badge1Finder = find.byKey(const ValueKey('question_badge_1'));
+      final badge2Finder = find.byKey(const ValueKey('question_badge_2'));
+      final badge3Finder = find.byKey(const ValueKey('question_badge_3'));
+
+      expect(badge1Finder, findsOneWidget);
+      expect(badge2Finder, findsOneWidget);
+      expect(badge3Finder, findsOneWidget);
+
+      // Check initial tooltip messages
+      expect(
+        find.byTooltip('Question 1: Unanswered (Current)'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 2: Unanswered'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 3: Unanswered'),
+        findsOneWidget,
+      );
+
+      // ── Answer Q2 Out-of-Order ─────────────────────────────
+      // Tap on Q2 badge in the strip to jump directly to Q2
+      await tester.tap(badge2Finder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Glycolysis occurs in mitochondria.'), findsOneWidget);
+      expect(
+        find.byTooltip('Question 2: Unanswered (Current)'),
+        findsOneWidget,
+      );
+
+      // Answer Q2
+      await tester.tap(find.text('False'));
+      await tester.pumpAndSettle();
+
+      // Q2 should now be Answered live, Q1 & Q3 remain Unanswered
+      expect(find.text('1 answered'), findsOneWidget);
+      expect(find.text('2 unanswered'), findsOneWidget);
+      expect(
+        find.byTooltip('Question 2: Answered (Current)'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 1: Unanswered'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 3: Unanswered'),
+        findsOneWidget,
+      );
+
+      // ── Answer Q3 Out-of-Order ─────────────────────────────
+      // Tap on Q3 badge in the strip to jump directly to Q3
+      await tester.tap(badge3Finder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('The energy molecule of the cell is ____.'), findsOneWidget);
+      expect(
+        find.byTooltip('Question 3: Unanswered (Current)'),
+        findsOneWidget,
+      );
+
+      // Type answer for Q3
+      await tester.enterText(find.byType(TextField), 'ATP');
+      await tester.pumpAndSettle();
+
+      // Q3 is now Answered live
+      expect(find.text('2 answered'), findsOneWidget);
+      expect(find.text('1 unanswered'), findsOneWidget);
+      expect(
+        find.byTooltip('Question 3: Answered (Current)'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 2: Answered'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 1: Unanswered'),
+        findsOneWidget,
+      );
+
+      // ── Answer Q1 Out-of-Order ─────────────────────────────
+      // Tap on Q1 badge in the strip
+      await tester.tap(badge1Finder);
+      await tester.pumpAndSettle();
+
+      expect(find.text('What is the powerhouse of the cell?'), findsOneWidget);
+      expect(
+        find.byTooltip('Question 1: Unanswered (Current)'),
+        findsOneWidget,
+      );
+
+      // Answer Q1
+      await tester.tap(find.text('Mitochondria'));
+      await tester.pumpAndSettle();
+
+      // All questions are now answered
+      expect(find.text('3 answered'), findsOneWidget);
+      expect(find.text('0 unanswered'), findsOneWidget);
+      expect(
+        find.byTooltip('Question 1: Answered (Current)'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 2: Answered'),
+        findsOneWidget,
+      );
+      expect(
+        find.byTooltip('Question 3: Answered'),
+        findsOneWidget,
+      );
+
+      // ── Grid View Modal Test ───────────────────────────────
+      await tester.tap(find.text('Grid View'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Question Overview'), findsOneWidget);
+      expect(find.text('Answered (3)'), findsOneWidget);
+      expect(find.text('Unanswered (0)'), findsOneWidget);
+
+      // Close modal
+      await tester.tap(find.byIcon(Icons.close).last);
+      await tester.pumpAndSettle();
+    });
   });
 }

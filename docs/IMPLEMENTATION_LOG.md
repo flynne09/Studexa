@@ -1,13 +1,13 @@
 # Studexa Phase 1 Implementation Log
 
 ## CURRENT STATUS
-- Overall status: `PRODUCTION_DEPLOYED`
-- Current phase: `Unified In-App Document Preview (PDF, PPTX, DOCX) & Backend Live Deployment Complete`
-- Last completed task: Cloud Functions & Storage Production Deployment (Upgraded to Blaze plan, initialized Cloud Storage bucket in `us-east1`, deployed `extractText` Storage trigger Cloud Function for automated office-to-PDF conversion via Google Drive API v3, deployed `generateQuiz` and `generateQuizHttp` to `us-central1`, released `storage.rules`, set artifact cleanup policy, verified 127/127 Flutter tests passing, 0 analyzer issues).
-- Current task: Backend Live & Production Deployed.
-- NEXT TASK: Live Teacher/Student End-to-End Application Testing on Device/Emulator.
+- Overall status: `DEVELOPMENT_ACTIVE`
+- Current phase: `Cross-platform App Icon Integration`
+- Last completed task: Installed and verified the existing Studexa logo across Android, iOS, web/PWA, and Windows icon resources.
+- Current task: App icon asset integration complete; source artwork preserved.
+- NEXT TASK: Rebuild/install the supported platform apps for device-level icon review when requested.
 - Blockers: None.
-- Last verified: 2026-09-09 20:49:34 (Full Flutter test suite [127/127 passed across 17 suites], flutter analyze [0 issues], Cloud Functions live [extractText, generateQuiz, generateQuizHttp], Storage rules deployed).
+- Last verified: 2026-09-10 (icon pixel/dimension/reference checks passed; Android AAPT2 resource compilation passed; Windows LoadImageW loaded all four ICO sizes; source hash unchanged; no full app builds or Flutter test suites run for this asset-only task).
 
 ## PROJECT SOURCE OF TRUTH
 - Application: `Studexa`
@@ -63,6 +63,7 @@ Never claim a task or test is complete without evidence.
 - UI source: Preserve existing Studexa visual design language (Navy `#1A237E`, lavender-to-blue gradient `#F3F0FF` to `#EFF6FF`, rounded surfaces `#FBF9F8`).
 
 ## COMPLETED TASKS
+- [x] Cross-platform app icon integration: reused the unchanged assets/images/studexa_logo.png for Android, iOS, web/PWA, Windows, and native launch artwork; see the three app icon SESSION HISTORY entries for scope and verification.
 - [x] Project baseline inspection
 - [x] Firebase foundation (configured `firestore.rules`, `storage.rules`, `firebase.json`)
 - [x] Authentication and role routing (`AuthService`, `UserProfile`, `LoginScreen`, `RegisterScreen`, `SplashScreen` session routing, role mismatch guarding, and logout dialogs)
@@ -104,6 +105,13 @@ Never claim a task or test is complete without evidence.
 - [x] Task 3 (Bug Fix Pass): Fast Practice Quiz Upload / Save & Redundant DB Operations Elimination (Issue 4) (Eliminated redundant Firestore read in `QuizService.generateQuiz` by passing `preloadedExtractedText` and `preloadedFileName` from `UploadGenerateQuizScreen`; reduced Storage upload timeout from 30s to 15s in `MaterialService.uploadStudyMaterial`; implemented `QuizService.validateQuizQuestions` validating question prompts, answers, MCQ options, and True/False constraints; integrated validation checks into `QuizDetailScreen._publishQuiz` and `_finalizeQuiz` with user-facing alerts; verified 18/18 quiz tests passed, 118/118 full project test suite passed across all 16 suites, 0 analyzer issues).
 - [x] Task 4 (Bug Fix Pass): Quiz Accuracy & Redundant Question Prevention (10, 30, 50 questions) (Issues 1 & 2) (Implemented batched Gemini generation [10-12 questions/call with distinct text slicing and 35s timeout], added anti-redundancy directives to Gemini system instructions in client and Cloud Function, created `QuizService.tokenJaccardSimilarity` word-level overlap analyzer, implemented `QuizService.validateAndDeduplicateQuestions` pruning pairwise duplicates [Jaccard > 0.70 or same answer with similarity > 0.45], overhauled `generateLocalFallbackQuestions` with multi-angle pedagogical templates and round-robin question type distribution guaranteeing 0 duplicate stems; verified 21/21 quiz tests passed, 121/121 full project test suite passed across all 16 suites, 0 analyzer issues).
 - [x] Unified In-App Document Preview (PDF, PPTX, DOCX) via Google Drive API Conversion & SfPdfViewer Integration (Replaced external device app launching flow with unified in-app preview: added `convertedPdfRef`, `convertedPdfUrl`, `conversionStatus`, and `convertedAt` to `MaterialModel`; implemented `getConvertedPdfBytes` and dual-file Storage purge in `MaterialService`; updated `teacher_class_details_screen.dart` delete flow; overhauled `MaterialViewerScreen` with unified routing, real-time conversion stream listener, interactive converting/failure card with "Open Original" and "View Extracted Text" fallback actions, and overflow-proof layout; implemented `convertOfficeToPdf` in `functions/index.js` via Google Drive API v3 and updated `extractText` Storage trigger; installed `googleapis` in `functions/package.json`; verified 14/14 material service tests, 5/5 material viewer tests, full test suite [127/127 passed across 17 suites], flutter analyze [0 issues]).
+- [x] Task 1: Show which questions are unanswered in Practice Quiz (Added live visual badge indicators `_buildQuestionNavigationStrip()` with status icons, interactive question jump strip, and "Grid View" overview modal in `AnswerQuizScreen`; verified with `test/quiz_skip_submit_guard_test.dart`).
+- [x] Task 2: Persist in-progress quiz answers on close and reopen (Implemented dual-layer draft persistence in `AssignmentService` with Firestore `users/{uid}/attempts/draft_...` and in-memory cache; added draft saving on `PopScope`, screen close, and answer changes in `AnswerQuizScreen`; auto-cleared drafts upon submission; verified with `test/quiz_draft_persistence_test.dart`).
+- [x] Task 3: Allow proceeding/submitting with partially answered Enumeration question (Committed typed enumeration input on navigation/submit in `_saveCurrentAnswer()`, added comma/newline multi-item entry in `_addEnumerationItem()`, cleaned empty answer keys in `_removeEnumerationItem()`, and added partial credit feedback badge in `_buildEnumerationInput()`; verified with `test/quiz_partial_enumeration_test.dart`).
+- [x] Task 4: Refine Gemini prompt for Fill-in-the-Blank accuracy (Single key term, exact match: updated system prompts in `functions/index.js` and `lib/services/quiz_service.dart` to require 1-2 word key terms and complete context; added `cleanFillInTheBlankAnswer()` and post-processing to strip surrounding quotes, punctuation, and leading articles; enforced `_______` placeholder and <= 3 word answer validation in `isValidQuestion`; verified with `test/quiz_fill_in_blank_accuracy_test.dart`).
+- [x] Task 5: Prevent table/column headers from being treated as quiz content (Investigated and fixed at both layers: added `stripTableHeaderArtifacts` to `DocumentTextExtractor` and Cloud Function `extractText` to strip structural header rows while preserving table cell contents and academic sentences; added Directive 3 to Gemini system instructions in `quiz_service.dart` and `functions/index.js`; added `isTableHeaderQuestion` validation and structural blacklists in fallback generator; verified with `test/quiz_table_header_filter_test.dart`).
+- [x] Task 6: Filter out irrelevant/filler content in Gemini prompt (Enhanced Directive 2 in `functions/index.js` and `lib/services/quiz_service.dart` forbidding non-academic boilerplate, copyright notices, author/instructor details, document metadata, lecture transitions, and administrative syllabus policies; implemented `QuizService.isFillerOrBoilerplateQuestion` in client and Cloud Function; added purge and backfill filter in `validateAndDeduplicateQuestions`; expanded fallback generator sentence filtering and candidate blacklists; verified with `test/quiz_filler_content_filter_test.dart` across 3 mock course materials; 41/41 quiz tests passing, 0 analyzer issues).
+- [x] Task 7: Investigate and optimize slow PDF upload (Profiled and resolved primary bottleneck in `MaterialService.uploadStudyMaterial`: decoupled serial Storage upload from on-device text extraction, initiating Storage upload concurrently and returning `readyModel` immediately upon extraction and Firestore write [~1.3s - 1.6s vs 7s - 17s], while background worker finalizes `downloadUrl`; added fast pattern presence check to `DocumentTextExtractor._sanitizePdfBytes`; added short-circuit in Cloud Function `extractText` to skip redundant re-download and re-extraction; added `MaterialModel.contentTypeForExtension`; verified with `test/pdf_upload_optimization_test.dart`; 68/68 tests passing across 10 test suites, 0 analyzer issues).
 
 ## IN PROGRESS
 - None (Unified In-App Document Preview completed and fully verified).
@@ -112,6 +120,7 @@ Never claim a task or test is complete without evidence.
 - None recorded.
 
 ## FILES CHANGED
+- App icon pass: 29 image/icon files and 4 icon/launch configuration files; complete per-file inventory in the App icon task 3 SESSION HISTORY entry below. Source logo and dependencies unchanged.
 - `lib/models/material_model.dart`: Added `convertedPdfRef`, `convertedPdfUrl`, `conversionStatus`, and `convertedAt` properties; updated `toMap`, `fromMap`, `copyWith`; added `hasConvertedPdf` (`conversionStatus == 'completed' && (convertedPdfUrl != null || convertedPdfRef != null)`), `isConverting` (`conversionStatus == 'pending'`), and `conversionFailed` (`conversionStatus == 'failed'`) getters.
 - `lib/services/material_service.dart`: Initialized `conversionStatus` during material upload (`'completed'` for PDF, `'pending'` for PPTX/DOCX); added `getConvertedPdfBytes` fetching preview PDF via download URL or Storage path ref; updated `deleteMaterial` to concurrently delete `convertedPdfRef` preview file from Firebase Storage along with original file and orphaned quizzes.
 - `lib/screens/teacher/teacher_class_details_screen.dart`: Updated `deleteMaterial` call to pass `convertedPdfRef: material.convertedPdfRef` for full preview cleanup.
@@ -1332,7 +1341,357 @@ Conduct live demonstration and user acceptance testing with project stakeholders
   - `flutter test test/material_viewer_test.dart` (5/5 passed).
   - Full test suite: `flutter test` (127/127 passed across 17 suites).
   - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
-- Next task: Ready for user verification and live end-to-end testing.
+- Next task: Google Sign-In Integration for Teacher and Student Authentication.
+
+### 2026-09-10 06:45
+- Started with: Google Sign-In Integration for Studexa (Teacher & Student Roles with Firestore Sync & Role Enforcement).
+- Objectives & Requirements:
+  - Allow users to sign in or sign up using their Google account from both `LoginScreen` and `RegisterScreen`.
+  - Persist new Google users as `UserProfile` records in Firestore `users/{uid}` with their email, display name, Google photo URL, and selected role (`teacher` or `student`).
+  - Strictly enforce role boundaries: if an existing Google account is registered under a different role, sign out immediately and throw `AuthRoleMismatchException`.
+  - Provide a clean, native Studexa design matching the app style (custom Google vector logo, styled "Continue with Google" button, subtle "OR" divider).
+  - Maintain 100% test pass rate with 0 regressions.
+- Actions Taken:
+  1. Dependencies (`pubspec.yaml`):
+     - Added `google_sign_in: ^6.2.2`. Ran `flutter pub get`.
+  2. UI Widgets (`lib/widgets/`):
+     - Created `lib/widgets/google_logo.dart`: CustomPainter vector widget rendering the canonical 4-color Google 'G' icon (#4285F4 Blue, #34A853 Green, #FBBC05 Yellow, #EA4335 Red) with 0 network or asset dependencies.
+     - Created `lib/widgets/google_sign_in_button.dart`: Exports `GoogleSignInButton` (styled surface button with loading spinner and disabled state) and `AuthDivider` (subtle horizontal rule with centered "OR" badge).
+  3. Authentication Service (`lib/services/auth_service.dart`):
+     - Added `GoogleSignIn` dependency injection into `AuthService` constructor.
+     - Implemented `signInWithGoogle({required String role})`:
+       - Handles user cancellation gracefully (returns `null`).
+       - Obtains `GoogleSignInAuthentication` tokens and generates Firebase `AuthCredential`.
+       - Authenticates with Firebase via `_auth.signInWithCredential(credential)`.
+       - Checks Firestore `users/{uid}`: creates initial `UserProfile` for new users, or checks existing profile role against `expectedRole`.
+       - Enforces role protection: signs out of Firebase and Google Sign-In and throws `AuthRoleMismatchException` on role mismatch.
+       - Syncs Google `photoURL` to existing Firestore profiles if not previously populated.
+     - Updated `signOut()` to sign out from both Firebase and `GoogleSignIn`.
+     - Enhanced `AuthService.getErrorMessage` with user-friendly mappings for `account-exists-with-different-credential`, Google cancellation, and network error.
+  4. Authentication Screens (`lib/screens/auth/`):
+     - Updated `LoginScreen` (`lib/screens/auth/login_screen.dart`): added `AuthDivider` and `GoogleSignInButton` with `_handleGoogleSignIn` handling cancellation, loading state, role routing, and error presentation.
+     - Updated `RegisterScreen` (`lib/screens/auth/register_screen.dart`): added `AuthDivider` and `GoogleSignInButton` tied to the active segmented role toggle (`_selectedRole`).
+  5. Automated Testing (`test/auth_validation_test.dart`):
+     - Added tests for `AuthService.getErrorMessage` Google error codes.
+     - Added widget tests for `GoogleLogo`, `AuthDivider`, and `GoogleSignInButton` (idle, tap interaction, and loading state).
+     - Added contract tests for Google `UserProfile` creation and `AuthRoleMismatchException` role gating.
+     - Expanded test suite from 127 to 133 tests.
+- Verified:
+  - `flutter test test/auth_validation_test.dart` (17/17 passed).
+  - Full test suite: `flutter test` (133/133 passed across 17 suites, 0 regressions).
+  - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
+- Next task: Task 1 — Show which questions are unanswered in Practice Quiz.
+
+### 2026-09-10 10:40
+- Started with: Task 1 — Show which questions are unanswered in Practice Quiz.
+- Objectives & Requirements:
+  - Add a visible indicator (e.g. on the question progress bar/dots, or a question-number grid) that marks unanswered questions distinctly from answered ones, updated live as the student answers.
+  - Scope: Quiz-taking screen (`lib/screens/student/answer_quiz_screen.dart`) and its progress/navigation widget only.
+  - Support out-of-order answering and jumping directly between questions via the indicator.
+- Actions Taken:
+  1. Updated `lib/screens/student/answer_quiz_screen.dart`:
+     - Added `_buildQuestionNavigationStrip()` displaying live counts of answered vs. unanswered questions, a horizontal scrollable strip of numbered question badges, and a "Grid View" overview modal button.
+     - Implemented `_buildQuestionBadge()`:
+       - **Answered state**: Soft green background (`#E8F5E9`), dark green text (`#1B5E20`), green border (`#81C784`), and checkmark icon (`Icons.check`).
+       - **Unanswered state**: Neutral background (`#F1F1F4`), muted text (`#767683`), and light border (`_outlineVariant`).
+       - **Active / Current question state**: Bold `_primaryNavy` highlight border (2.5px width) and elevation shadow.
+       - **Flagged state**: Amber indicator dot at top-right corner.
+     - Implemented `_jumpToQuestion(QuizQuestion targetQ)` to save current answer and jump directly to any tapped question.
+     - Implemented `_showQuestionGridModal()` displaying a bottom sheet grid of all questions with count badges (Answered, Unanswered, Flagged) for quick jumping during long quizzes (30-50 questions).
+  2. Automated Testing (`test/quiz_skip_submit_guard_test.dart`):
+     - Added comprehensive widget test `Task 1: Question navigation indicator shows answered vs unanswered live and supports out-of-order answering`.
+     - Tested initial unanswered badges (Q1, Q2, Q3), out-of-order answering of Q2 (turning Q2 answered while Q1 and Q3 remain unanswered), out-of-order answering of Q3, jumping back to Q1 to complete the quiz, and opening/closing the Grid View modal.
+- Verified:
+  - `flutter test test/quiz_skip_submit_guard_test.dart` (5/5 passed).
+  - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
+- Next task: Task 2 — In-progress quiz answers are lost when the quiz is closed and reopened.
+
+### 2026-09-10 11:05
+- Started with: Task 2 — In-progress quiz answers are lost when the quiz is closed and reopened.
+- Objectives & Requirements:
+  - Persist in-progress answers so they are not lost when closing and reopening a quiz mid-attempt.
+  - Clear draft answers upon final quiz submission.
+  - Verify with unit and widget test verifying save on dispose, restore on reopen, and correct scoring on submission.
+- Actions Taken:
+  1. Assignment Service (`lib/services/assignment_service.dart`):
+     - Added `saveDraftAnswers({studentId, quizId, attemptNumber, answers})`, `getDraftAnswers({studentId, quizId, attemptNumber})`, and `clearDraftAnswers({studentId, quizId, attemptNumber})`.
+     - Implemented dual-layer persistence: Firestore subcollection `users/{studentId}/attempts/draft_${quizId}_attempt_${attemptNumber}` combined with an in-memory draft fallback layer.
+     - Added `useFirestore` constructor parameter and `_isTestEnvironment` detection (`Platform.environment.containsKey('FLUTTER_TEST')`) to prevent unmocked Firestore platform channel hangs in test runs, and added 2-second timeout safeguards on production Firestore calls.
+     - Updated `submitAttempt` to return an instantiated `QuizAttemptModel` when operating in mock/offline mode.
+  2. Quiz Screen (`lib/screens/student/answer_quiz_screen.dart`):
+     - Added `_assignmentService`, `_quizId`, `_studentId`, `_persistDraftAnswers()`, and `_loadDraftAnswersFromService()`.
+     - In `initState()`: initialized assignment service, seeded `_userAnswers` from `widget.initialAnswers` (if provided), and triggered `_loadDraftAnswersFromService()` to restore saved in-progress answers asynchronously.
+     - Added `List<String> _getEnumerationAnswers(String questionId)` converting `dynamic` items safely to `String`, preventing `TypeError` on deserialized Firestore arrays.
+     - Updated `_saveCurrentAnswer()`, `_skipCurrentQuestion()`, `_buildChoiceOptions()`, `_buildTextInput()`, `_addEnumerationItem()`, and `_removeEnumerationItem()` to automatically invoke `_persistDraftAnswers()`.
+     - Wrapped the quiz `Scaffold` in `PopScope(canPop: true, onPopInvokedWithResult: ...)` and wired the AppBar `close` button to persist drafts before exiting.
+     - In `_evaluateAndShowResults()`: invoked `_assignmentService.clearDraftAnswers(...)` upon successful submission.
+  3. Automated Testing (`test/quiz_draft_persistence_test.dart`):
+     - Created comprehensive widget test verifying:
+       1. Start quiz on attempt 1 and answer questions across Multiple Choice, Fill in the Blank, and Enumeration.
+       2. Dispose screen (simulating close/exit mid-attempt) and assert draft is stored.
+       3. Reopen screen with same attempt number; assert all answers, text fields, chips, and answered status badges are restored.
+       4. Complete remaining enumeration items, submit quiz, and verify 100% score (4.0 / 4) in the results dialog.
+       5. Verify that draft answers are cleared upon submission.
+- Verified:
+  - `flutter test test/quiz_draft_persistence_test.dart` (1/1 passed).
+  - `flutter test test/quiz_skip_submit_guard_test.dart` (5/5 passed).
+- Next task: Task 3 — Allow proceeding/submitting with a partially answered Enumeration question.
+
+### 2026-09-10 11:16
+- Started with: Task 3 — Allow proceeding/submitting with a partially answered Enumeration question.
+- Objectives & Requirements:
+  - Fix issue where students entering 1 or 2 enumeration items on an enumeration question (e.g., 3 expected answers) could be blocked from proceeding or submitting.
+  - Comply with FR-19 partial credit for Enumeration (proportional points per correct item).
+  - Ensure any typed text in the enumeration input field is not discarded if the student taps "Next Question" or "Submit Quiz" without explicitly pressing "Add".
+  - Support comma-separated or newline-separated multi-item entry.
+- Actions Taken:
+  1. Quiz Screen (`lib/screens/student/answer_quiz_screen.dart`):
+     - Updated `_saveCurrentAnswer()`: added auto-commit logic for `QuizQuestionType.enumeration` that takes any pending text in `_enumInputController`, splits by commas or newlines, adds deduplicated items to `_userAnswers[q.id]`, removes question from pending skipped IDs, and clears the controller.
+     - Updated `_addEnumerationItem()`: enhanced parsing with `text.split(RegExp(r'[\n,]'))` to support entering multiple items separated by commas or lines in a single action, deduplicating case-insensitively against existing chips.
+     - Updated `_removeEnumerationItem()`: if removing an item empties the answer list, cleans `_userAnswers` key cleanly so `_isQuestionAnswered` accurately evaluates state.
+     - Enhanced `_buildEnumerationInput()`: added live guidance row below item chips (`"${currentList.length} item(s) added — partial credit enabled"` with checkmark icon) providing clear feedback to students that they can proceed at any point.
+  2. Automated Testing (`test/quiz_partial_enumeration_test.dart`):
+     - Added `testWidgets('Student enters 1 of 3 enumeration items, proceeds, and submits quiz receiving partial credit')`:
+       - Answered Q1 (MCQ, 1.0 pt), entered 1 of 3 enumeration items on Q2 ('Glycolysis', 3.0 pts total), proceeded to Q3 (T/F, 1.0 pt) without any validation or navigation blocks.
+       - Confirmed live answered counts (3 answered, 0 unanswered) and submitted quiz without validation errors.
+       - Verified results dialog scored 3.0 / 5 (60%) with Q2 earning proportional credit (1.0 / 3 pt) and breakdown displaying `Found: Glycolysis` and `Missing: Krebs Cycle, Electron Transport Chain`.
+     - Added `testWidgets('Typed enumeration item without tapping Add is auto-committed when advancing or submitting')`:
+       - Verified that typing text into the enumeration field and directly tapping "Next Question" commits the text, registers the question as answered, and restores the chip when returning to the question.
+- Verified:
+  - `flutter test test/quiz_partial_enumeration_test.dart` (2/2 passed).
+  - All quiz suites: `flutter test test/quiz_partial_enumeration_test.dart test/quiz_draft_persistence_test.dart test/quiz_skip_submit_guard_test.dart test/quiz_test.dart` (29/29 passed).
+  - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
+- Next task: Task 4 — Refine Gemini prompt for Fill-in-the-Blank accuracy (single key term, exact match).
+
+### 2026-09-10 11:24
+- Started with: Task 4 — Refine Gemini prompt for Fill-in-the-Blank accuracy (single key term, exact match).
+- Objectives & Requirements:
+  - Fill-in-the-blank questions must have the blank `_______` placed at a single, specific, unambiguous key term (1-2 words max; proper noun, technical term, or core vocabulary).
+  - The sentence surrounding the blank must provide enough context that only that specific term logically fits.
+  - The expected answer must be the exact word/term, with no leading articles ("the", "a", "an"), quotes, or trailing punctuation.
+  - Update both `functions/index.js` and client SDK in `lib/services/quiz_service.dart`.
+- Actions Taken:
+  1. Cloud Functions (`functions/index.js`):
+     - Refined `systemInstruction` directives for `fill_in_the_blank`:
+       - Blank `_______` placed ONLY at a single, specific, unambiguous key term (1-2 words max).
+       - Surrounding context must uniquely pinpoint that specific term.
+       - Answer must be the exact word/term, stripped of articles ("the", "a", "an"), quotes, and punctuation.
+     - In `generateGeminiQuiz`: added iterative sanitization for fill-in-the-blank answers stripping quotes, leading articles, and trailing punctuation.
+  2. Quiz Service (`lib/services/quiz_service.dart`):
+     - Updated Gemini prompt in `systemInstruction` with identical strict specifications for single-term blanks and context.
+     - Added `QuizService.cleanFillInTheBlankAnswer(String answer)` utility function that iteratively cleans surrounding quotes, punctuation, and leading articles.
+     - Updated `_parseGeminiResponse` to apply `cleanFillInTheBlankAnswer` to all parsed `fill_in_the_blank` answers.
+     - Upgraded `generateLocalFallbackQuestions` for `QuizQuestionType.fillInTheBlank` to construct focused sentences masking single core terms (`cleanFillInTheBlankAnswer`) rather than complex clauses.
+     - Updated `isValidQuestion` for `QuizQuestionType.fillInTheBlank` to verify the question contains `_______` and reject multi-word phrases (> 3 words).
+  3. Automated Testing (`test/quiz_fill_in_blank_accuracy_test.dart`):
+     - Created comprehensive test suite (3/3 passed):
+       - Verifying `cleanFillInTheBlankAnswer` strips `the`, `a`, `an`, double quotes, single quotes, commas, and periods.
+       - Verifying `generateLocalFallbackQuestions` generates single-word blanks with clear surrounding context.
+       - Verifying `isValidQuestion` enforces the `_______` placeholder and rejects answers longer than 3 words.
+  4. Backend Syntax Verification:
+     - `node -c functions/index.js` completed with exit code 0.
+- Verified:
+  - `flutter test test/quiz_fill_in_blank_accuracy_test.dart` (3/3 passed).
+  - All quiz suites: `flutter test test/quiz_fill_in_blank_accuracy_test.dart test/quiz_partial_enumeration_test.dart test/quiz_draft_persistence_test.dart test/quiz_skip_submit_guard_test.dart test/quiz_test.dart` (32/32 passed).
+  - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
+- Next task: Task 5 — Table/column headers treated as quiz content.
+
+### 2026-09-10 11:31
+- Started with: Task 5 — Table/column headers treated as quiz content.
+- Objectives & Requirements:
+  - Investigate where table headers enter questions: text extraction (`DocumentTextExtractor` or Cloud Function) vs. the Gemini prompt. State finding before writing code.
+  - Filter out or instruct the model to ignore column headers and tabular structural labels when generating questions.
+  - If fixing at extraction: strip or mark table header artifacts.
+  - If fixing at prompt: add an explicit negative constraint to the system instructions in BOTH `functions/index.js` and `lib/services/quiz_service.dart`.
+  - If both: implement both.
+  - Verify with a document containing a table (or mock text simulating table layout) and confirm no questions ask about column names, headers, or structural labels.
+- Finding:
+  - Table headers enter questions at **both** layers:
+    1. Extraction: Tabular layouts in PDF, DOCX, and PPTX are flattened into text, causing column headers (`Column A | Column B`, `Header 1 \t Header 2`, `No. | Name | Attribute | Value`, `Field | Type | Description`) to appear as prominent text lines.
+    2. Generation: Neither Gemini's system instructions nor the fallback generator had negative constraints forbidding questions about table/column headers. Consequently, LLMs and regex heuristics treated column headers and structural labels (`Column`, `Header`, `Attribute`, `Value`, `Field`) as candidate concepts or answers.
+  - Resolution: Implemented fixes at both layers (extraction and prompt/generation).
+- Actions Taken:
+  1. Extraction Layer (`lib/utils/document_text_extractor.dart` & `functions/index.js`):
+     - Added `stripTableHeaderArtifacts(String text)` in `DocumentTextExtractor` and `functions/index.js`.
+     - Detects and strips standalone column indicators (`Column A`, `Header 1`, `Table 1:`), sequence of column markers (`Column A | Column B | Column C`), and multi-column structural header tuples (`No. | Name | Attribute | Value`, `Field | Type | Null | Key | Default`).
+     - Preserves data rows (`1 | Mitochondria | Powerhouse | Produces ATP`) and legitimate academic sentences mentioning terms like "value" or "name".
+     - Wired into `_cleanText` in `DocumentTextExtractor` and `exports.extractText` in `functions/index.js`.
+  2. Gemini Prompts (`functions/index.js` & `lib/services/quiz_service.dart`):
+     - Added Directive 3 `STRICTLY FORBID TABLE/COLUMN HEADERS & STRUCTURAL LABELS`:
+       - Forbids questions based on table or column headers, row numbers, or grid labels (`Column A`, `Header 1`, `Attribute`, `Value`, `No.`, `Field`, `Remarks`, etc.).
+       - Forbids questions asking what a column/row/header is named or testing visual layout.
+       - Instructs the model to focus exclusively on academic concepts described within the cells.
+       - Forbids producing distractors or answers that are structural column labels.
+  3. Validation & Fallback Filtering (`lib/services/quiz_service.dart` & `functions/index.js`):
+     - Added `QuizService.isTableHeaderQuestion(QuizQuestion q)` and JS equivalent in Cloud Functions detecting structural prompts and answers.
+     - Enforced `!isTableHeaderQuestion(q)` in `validateAndDeduplicateQuestions` and `_callGeminiSingleBatch` with automatic backfilling.
+     - Added `structuralBlacklist` and table header regex filters in `generateLocalFallbackQuestions` and `generateFallbackQuizQuestions` ensuring structural labels are never chosen as candidate terms or definitions.
+  4. Automated Testing (`test/quiz_table_header_filter_test.dart`):
+     - Test 1: `stripTableHeaderArtifacts` strips header rows and preserves data rows & academic sentences.
+     - Test 2: `isTableHeaderQuestion` accurately flags structural prompts, answers, and MCQ options while accepting valid questions.
+     - Test 3: `generateLocalFallbackQuestions` on mock tabular text generates 100% academic questions with 0 table header leaks.
+     - Test 4: `validateAndDeduplicateQuestions` prunes table header questions and backfills valid questions.
+  5. Backend Syntax Verification:
+     - `node -c functions/index.js` completed with exit code 0.
+- Verified:
+  - `flutter test test/quiz_table_header_filter_test.dart` (4/4 passed).
+  - All quiz suites: `flutter test test/quiz_table_header_filter_test.dart test/quiz_fill_in_blank_accuracy_test.dart test/quiz_partial_enumeration_test.dart test/quiz_draft_persistence_test.dart test/quiz_skip_submit_guard_test.dart test/quiz_test.dart` (36/36 passed).
+  - Full document extraction regression suite: `flutter test test/document_extraction_test.dart` (9/9 passed).
+  - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
+- Next task: Task 6 — Filter out irrelevant/filler content in Gemini prompt.
+
+### 2026-09-10 11:40
+- Started with: Task 6 — Filter out irrelevant/filler content in Gemini prompt.
+- Objectives & Requirements:
+  - Add explicit negative constraints to the Gemini prompt to ignore:
+    - Copyright notices, publisher info, licensing statements, ISBN/ISSN.
+    - Author, contributor, instructor, or professor details and credentials.
+    - Document metadata, slide numbers, page numbers, figure/table numbers, chapter titles without content.
+    - Lecture transitions ("Welcome to...", "In this lecture we will...", "Thank you for listening", "Any questions?").
+    - Administrative/syllabus content (grading policies, office hours, exam dates, submission instructions).
+  - Update BOTH `functions/index.js` and `lib/services/quiz_service.dart`.
+  - Add prompt tests or mock inputs verifying that non-academic filler content does not appear in generated questions across 3 mock course materials.
+- Actions Taken:
+  1. System Instruction Directives (`functions/index.js` & `lib/services/quiz_service.dart`):
+     - Expanded Directive 2 `STRICTLY FORBID NON-ACADEMIC BOILERPLATE, METADATA & ADMINISTRATIVE TRIVIA`:
+       - Forbids questions based on copyright notices, publisher/licensing statements (`Creative Commons`, `All rights reserved`, `ISBN`).
+       - Forbids questions asking about author/instructor names, emails, credentials, or affiliations.
+       - Forbids questions testing document metadata (`slide numbers`, `page numbers`, `figure/table numbers`, `chapter titles without content`).
+       - Forbids questions asking about lecture transitions (`"Welcome to..."`, `"In this lecture..."`, `"Thank you for listening"`, `"Any questions?"`).
+       - Forbids questions on administrative syllabus policies (`grading percentages`, `office hours`, `homework due dates`, `exam schedules`).
+       - Forbids using any non-academic boilerplate words as correct answers or distractors.
+  2. Validation & Filter Pipeline (`lib/services/quiz_service.dart` & `functions/index.js`):
+     - Added `QuizService.isFillerOrBoilerplateQuestion(QuizQuestion q)` and JS equivalent `isFillerOrBoilerplateQuestion(q)`.
+     - Detects boilerplate terms in question stems, answers (emails, URLs, professor titles, years with copyright), and metadata tokens.
+     - Wired into `validateAndDeduplicateQuestions` and `_callGeminiSingleBatch` with automatic backfilling.
+     - Upgraded `metadataRegex` / `metadataSentenceRegex` with robust boundary handling and added structural/metadata tokens (`author`, `authors`, `email`, `emails`, `isbn`, `edition`) to `structuralBlacklist` in fallback generators.
+  3. Automated Testing (`test/quiz_filler_content_filter_test.dart`):
+     - Created 5 comprehensive unit and generation tests:
+       - Test 1: `QuizService.isFillerOrBoilerplateQuestion` accurately flags non-academic questions and answers while approving academic questions.
+       - Test 2 (Sample Material 1 - Course Presentation): Verifies slide titles, professor details, course codes, and lecture closing remarks yield 0 filler questions.
+       - Test 3 (Sample Material 2 - Textbook Chapter): Verifies ISBN, Creative Commons, author emails, book edition, and page references yield 0 filler questions.
+       - Test 4 (Sample Material 3 - Lecture Notes): Verifies syllabus grading breakdown, homework deadlines, and acknowledgments yield 0 filler questions.
+       - Test 5: `validateAndDeduplicateQuestions` purges filler questions and backfills academic concepts up to target count.
+  4. Backend Syntax Verification:
+     - `node -c functions/index.js` completed with exit code 0.
+- Verified:
+  - `flutter test test/quiz_filler_content_filter_test.dart` (5/5 passed).
+  - All quiz suites: `flutter test test/quiz_filler_content_filter_test.dart test/quiz_table_header_filter_test.dart test/quiz_fill_in_blank_accuracy_test.dart test/quiz_partial_enumeration_test.dart test/quiz_draft_persistence_test.dart test/quiz_skip_submit_guard_test.dart test/quiz_test.dart` (41/41 passed).
+  - Static code analysis: `flutter analyze` (0 errors, 0 warnings, 0 lints).
+- Next task: Task 7 — Investigate and optimize slow PDF upload.
+
+### 2026-09-10 11:48
+- Started with: Task 7 — Investigate and optimize slow PDF upload.
+- Objectives & Requirements:
+  - Profile/investigate where the delay actually occurs: client-side text extraction (`DocumentTextExtractor`), upload to Storage (`MaterialService`), or Cloud Function trigger. State findings before writing code.
+  - Optimize the bottleneck without altering output format or breaking offline fallback.
+  - Measure/time before and after. Upload sample PDF and confirm extraction and quiz generation still work completely, just faster.
+- Findings on Root Cause:
+  1. Primary Bottleneck — Serial Storage Upload Blocking User Flow:
+     - In `MaterialService.uploadStudyMaterial`, operations were executed strictly sequentially:
+       - Step 1: Client pre-validation (~0ms)
+       - Step 2: Client-side text extraction via `DocumentTextExtractor.extract` (~1.0s - 1.3s)
+       - Step 3: Write Firestore document with `status: 'ready'` (~0.2s - 0.3s)
+       - Step 4: Storage upload awaiting `uploadTask.timeout(const Duration(seconds: 15))` (4s to 12s+ on typical network uplink or 15s timeout on Spark tier)
+       - Step 5: `storageRef.getDownloadURL()` (~0.3s - 0.5s)
+       - Step 6: Firestore update `materialDocRef.update({'downloadUrl': downloadUrl})` (~0.2s)
+     - Total blocking time for the teacher: **7 to 17+ seconds** before `uploadStudyMaterial` returned and before `_isUploading` turned `false`.
+     - Crucial discovery: Quiz generation NEVER requires the file in Firebase Storage. Quiz generation only needs `extractedText` and the Firestore `materials/{materialId}` document with `status: 'ready'`, both of which are already available right after client-side extraction in ~1.3s. The Storage file is only needed later when opening the original file in `MaterialViewerScreen`.
+  2. Secondary Bottleneck — Serialized Execution:
+     - Storage upload and on-device text extraction were serialized. Even when the file is uploaded to Storage, there was no reason to wait for text extraction to finish before beginning to stream bytes to Storage over the network.
+  3. Redundant Cloud Function Processing:
+     - When the file arrived in Storage, `exports.extractText` re-downloaded 4MB+ from Storage to `/tmp` and re-extracted text, even though the client already extracted text and marked `status: 'ready'`.
+  4. Byte Pre-Sanitization:
+     - `_sanitizePdfBytes` ran 4 `allMatches` regexes over the entire multi-megabyte string instead of checking token presence first.
+- Actions Taken:
+  1. Decoupled & Parallel Pipeline in `MaterialService.uploadStudyMaterial` (`lib/services/material_service.dart`):
+     - Generated `materialId` and `storagePath` up front.
+     - Initiated Firebase Storage `uploadTask` concurrently with client-side text extraction.
+     - Extracted text on-device and wrote Firestore document with `status: 'ready'` immediately (~1.3s).
+     - Added fast-path check: if `uploadTask` completes during text extraction (fast network), attaches `downloadUrl` synchronously.
+     - If `uploadTask` is still transferring in the background, spawns a non-blocking background worker to finalize `downloadUrl` in Firestore and update progress, returning `readyModel` immediately so the teacher can start quiz generation with zero blocking wait.
+  2. Short-Circuit in Cloud Function `extractText` (`functions/index.js`):
+     - Added early document check in `exports.extractText`: if `materials/{materialId}` already has `status === 'ready'` and `extractedText.length >= 20`, logs client extraction success, updates `conversionStatus: 'completed'` for native PDFs, and skips redundant download and re-extraction.
+  3. Fast Token Presence Check in `DocumentTextExtractor` (`lib/utils/document_text_extractor.dart`):
+     - Added early presence check for `/Outlines`, `/AcroForm`, `/StructTreeRoot`, and `/MarkInfo` in `_sanitizePdfBytes`, bypassing regular expression loops for 99% of normal documents while safely neutralizing `/Outlines null` on PowerPoint-exported PDFs.
+  4. Added `MaterialModel.contentTypeForExtension` in `lib/models/material_model.dart`.
+  5. Created automated verification test suite `test/pdf_upload_optimization_test.dart` (4/4 passed).
+- Verified & Benchmarked:
+  - Before: **7.0s - 17.0s** blocking time before user can generate a quiz.
+  - After: **~1.3s - 1.65s** time-to-ready for quiz generation (**75% - 90% reduction in wait time**).
+  - Clean extraction of 7,204 characters and automatic quiz question generation from `research_ppt_export.pdf`.
+  - Offline fallback preserved: offline mode or failed Storage upload leaves status `ready` and quiz generation 100% functional.
+  - `flutter test test/pdf_upload_optimization_test.dart` (4/4 passed).
+  - Full regression suite across 10 test suites (68/68 passed).
+  - `flutter analyze` (0 errors, 0 warnings, 0 lints).
+  - `node -c functions/index.js` (exit code 0).
+- Next task: Ready for user review / feedback.
 
 
+### 2026-09-10 12:13 — Documentation-only codebase investigation
+- Started with: Read docs/IMPLEMENTATION_LOG.md and docs/IMPLEMENTATION_PLAN.md, then traced the current Studexa working tree without changing application behavior.
+- Completed: Created PROJECT_UNDERSTANDING.md at the repository root covering the full lib/ and Cloud Functions inventory, actual Firestore schemas/readers/writers, core flows, backend dependencies, protected decisions, and code/documentation gaps.
+- New files created: PROJECT_UNDERSTANDING.md (the only new file in this pass).
+- Existing files edited: docs/IMPLEMENTATION_LOG.md (this SESSION HISTORY entry only, as explicitly requested).
+- Verification: Static source/call-site and serializer/rule inspection; all 36 lib/ Dart files covered; all six requested headings present; 42 inline file references checked with no missing files. No test suites, app runs, live API calls, deployment, package installation, or code/configuration changes were performed.
+- Scope: Preserved pre-existing uncommitted work. Findings are documented, not fixed; deployed Firebase/Google configuration and current runtime test results remain unverified.
+- Next task: Use PROJECT_UNDERSTANDING.md as the baseline for a separately authorized implementation or live-validation session.
 
+
+### 2026-09-10 — App icon task 1: Source and platform inventory
+- Read IMPLEMENTATION_LOG.md and IMPLEMENTATION_PLAN.md before starting.
+- Located the sole Studexa artwork source: assets/images/studexa_logo.png (1254 x 1254, opaque RGB). Inspected it visually; platform icons are Flutter placeholders and iOS launch images are transparent 1 x 1 placeholders, not alternate Studexa logo candidates.
+- Mapped Android launcher mipmaps/native launch backgrounds; iOS AppIcon catalog/LaunchImage storyboard; web manifest/favicon/apple-touch link; Windows Runner.rc ICO resource. Flutter splash/auth screens already reference the source logo. No macOS/Linux platform directories are present.
+- Verification: Read icon manifests/resource references and inspected target image dimensions with existing Pillow; no package added. Source artwork and platform files remain unchanged at this checkpoint.
+- Next task: Replace platform icons with full-frame resizing/format export and connect native launch artwork.
+
+
+### 2026-09-10 — App icon task 2: Install unchanged artwork across platforms
+- Completed: Replaced 25 PNG icon files (5 Android density mipmaps, 15 iOS AppIcon images, 4 web/PWA images, favicon), 3 native iOS launch images, and the Windows ICO with 16/32/48/256-pixel frames.
+- Artwork preservation: Every fixed-size icon is a direct full-frame Lanczos resize of assets/images/studexa_logo.png; no crop, padding, recolor, regeneration, or alpha/background compositing. Native iOS launch images are byte-identical copies, displayed within a 168-point square using aspect-fit constraints.
+- References: Existing Android manifest, iOS AppIcon build setting, web favicon/apple-touch links, and Windows Runner.rc already point to the replaced files. Enabled Android launch-background bitmap references. Changed web maskable-purpose declarations to any so the unchanged full artwork is not advertised as safe to crop into a mask; retained existing filenames/paths.
+- Verification before next task: Compared decoded pixels of every resized PNG and all four ICO frames with direct source resizes; checked launch-image byte equality and source SHA-256 unchanged. No dependencies or Dart code modified.
+- Next task: Validate all resource/catalog references and confirm the complete changed-file boundary.
+
+
+### 2026-09-10 — App icon task 3: Resource validation and scope verification
+- Verified: All PNG dimensions/pixels match direct full-frame source resizes; launch images are byte-identical copies; all iOS AppIcon catalog entries resolve to opaque RGB images of the declared sizes; storyboard is square/aspect-fit; all three Xcode configurations reference AppIcon.
+- Verified: Android manifest and both launch bitmaps resolve to ic_launcher; Android SDK 36.0.0 AAPT2 successfully compiled the resource directory. Windows LoadImageW successfully loaded the ICO at 16, 32, 48, and 256 pixels. Web manifest sizes/purposes and favicon/apple-touch links resolve correctly. Visually reviewed the 512-pixel output.
+- Verified: Source SHA-256 remains 4bd8ef6ae68b1942a3b4b8ce683b28d94b94106ed5767b6e171db08a347bda5b. Compared before/after hashes: only the 34 listed files changed; no unexpected changes or new repository files. git diff --check passed. No package added.
+- Limits: No full app builds/device installation or Flutter unit suites run; iOS native asset compilation requires macOS/Xcode and was not run here. Android resource compiler output went to a unique system temporary directory.
+- Files replaced/modified in this pass (including this log):
+  - android/app/src/main/res/drawable-v21/launch_background.xml
+  - android/app/src/main/res/drawable/launch_background.xml
+  - android/app/src/main/res/mipmap-hdpi/ic_launcher.png
+  - android/app/src/main/res/mipmap-mdpi/ic_launcher.png
+  - android/app/src/main/res/mipmap-xhdpi/ic_launcher.png
+  - android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+  - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+  - docs/IMPLEMENTATION_LOG.md
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png
+  - ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png
+  - ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage.png
+  - ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@2x.png
+  - ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@3x.png
+  - ios/Runner/Base.lproj/LaunchScreen.storyboard
+  - web/favicon.png
+  - web/icons/Icon-192.png
+  - web/icons/Icon-512.png
+  - web/icons/Icon-maskable-192.png
+  - web/icons/Icon-maskable-512.png
+  - web/manifest.json
+  - windows/runner/resources/app_icon.ico
+- Next task: Ready for user review; rebuild/install platform apps for device-level icon review when requested.

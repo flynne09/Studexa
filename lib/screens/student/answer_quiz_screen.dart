@@ -19,6 +19,8 @@ class AnswerQuizScreen extends StatefulWidget {
   final String quizTitle;
   final int attemptNumber;
   final Random? random;
+  final AssignmentService? assignmentService;
+  final Map<String, dynamic>? initialAnswers;
 
   const AnswerQuizScreen({
     super.key,
@@ -26,6 +28,8 @@ class AnswerQuizScreen extends StatefulWidget {
     this.quizTitle = 'Cellular Respiration & ATP Synthesis',
     this.attemptNumber = 1,
     this.random,
+    this.assignmentService,
+    this.initialAnswers,
   });
 
   @override
@@ -33,6 +37,7 @@ class AnswerQuizScreen extends StatefulWidget {
 }
 
 class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
+  late final AssignmentService _assignmentService;
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = Color(0xFF1A237E);
   static const _gradientStart = Color(0xFFF3F0FF);
@@ -80,9 +85,63 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         ),
       );
 
+  String get _quizId =>
+      (widget.quiz?.id.isNotEmpty == true) ? widget.quiz!.id : widget.quizTitle;
+
+  String get _studentId {
+    try {
+      return FirebaseAuth.instance.currentUser?.uid ?? 'guest_student';
+    } catch (_) {
+      return 'guest_student';
+    }
+  }
+
+  List<String> _getEnumerationAnswers(String questionId) {
+    final raw = _userAnswers[questionId];
+    if (raw is List) {
+      return raw.map((e) => e.toString()).toList();
+    }
+    return [];
+  }
+
+  void _persistDraftAnswers() {
+    _assignmentService
+        .saveDraftAnswers(
+          studentId: _studentId,
+          quizId: _quizId,
+          attemptNumber: widget.attemptNumber,
+          answers: Map<String, dynamic>.from(_userAnswers),
+        )
+        .catchError((_) {});
+  }
+
+  Future<void> _loadDraftAnswersFromService() async {
+    try {
+      final drafts = await _assignmentService.getDraftAnswers(
+        studentId: _studentId,
+        quizId: _quizId,
+        attemptNumber: widget.attemptNumber,
+      );
+      if (drafts != null && mounted) {
+        setState(() {
+          for (final entry in drafts.entries) {
+            _userAnswers.putIfAbsent(entry.key, () => entry.value);
+          }
+          _loadCurrentAnswer();
+        });
+      }
+    } catch (_) {}
+  }
+
   @override
   void initState() {
     super.initState();
+    _assignmentService = widget.assignmentService ?? AssignmentService();
+
+    if (widget.initialAnswers != null) {
+      _userAnswers.addAll(widget.initialAnswers!);
+    }
+
     if (widget.attemptNumber >= 3) {
       _questions = const [];
       _questionQueue = [];
@@ -170,10 +229,13 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
 
     _questionQueue = List<QuizQuestion>.from(_questions);
     _loadCurrentAnswer();
+    _loadDraftAnswersFromService();
   }
 
   @override
   void dispose() {
+    _saveCurrentAnswer();
+    _persistDraftAnswers();
     _textAnswerController.dispose();
     _enumInputController.dispose();
     super.dispose();
@@ -200,8 +262,38 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       if (text.isNotEmpty) {
         _userAnswers[q.id] = text;
         _pendingSkippedQuestionIds.remove(q.id);
+      } else {
+        _userAnswers.remove(q.id);
+      }
+    } else if (q.type == QuizQuestionType.enumeration) {
+      final pendingEnum = _enumInputController.text.trim();
+      if (pendingEnum.isNotEmpty) {
+        final currentList = _getEnumerationAnswers(q.id);
+        final parts = pendingEnum
+            .split(RegExp(r'[\n,]'))
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+
+        bool addedAny = false;
+        for (final part in parts) {
+          final normText = part.toLowerCase();
+          final alreadyExists = currentList.any(
+            (item) => item.trim().toLowerCase() == normText,
+          );
+          if (!alreadyExists) {
+            currentList.add(part);
+            addedAny = true;
+          }
+        }
+        if (addedAny) {
+          _userAnswers[q.id] = currentList;
+          _pendingSkippedQuestionIds.remove(q.id);
+          _enumInputController.clear();
+        }
       }
     }
+    _persistDraftAnswers();
   }
 
   void _skipCurrentQuestion() {
@@ -211,6 +303,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     // Skip does NOT count as answered
     _userAnswers.remove(currentQ.id);
     _pendingSkippedQuestionIds.add(currentQ.id);
+    _persistDraftAnswers();
 
     // Requeue: remove from current position and append to end
     final skipped = _questionQueue.removeAt(_currentIndex);
@@ -281,6 +374,17 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     }
   }
 
+  void _jumpToQuestion(QuizQuestion targetQ) {
+    _saveCurrentAnswer();
+    final targetIndex = _questionQueue.indexWhere((q) => q.id == targetQ.id);
+    if (targetIndex != -1) {
+      setState(() {
+        _currentIndex = targetIndex;
+        _loadCurrentAnswer();
+      });
+    }
+  }
+
   void _toggleFlag() {
     setState(() {
       final id = _currentQuestion.id;
@@ -296,35 +400,48 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     final text = _enumInputController.text.trim();
     if (text.isEmpty) return;
 
-    final currentList = List<String>.from(
-      (_userAnswers[_currentQuestion.id] as List<String>?) ?? [],
-    );
+    final currentList = _getEnumerationAnswers(_currentQuestion.id);
+    final parts = text
+        .split(RegExp(r'[\n,]'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
 
-    final normText = text.toLowerCase();
-    final alreadyExists = currentList.any(
-      (item) => item.trim().toLowerCase() == normText,
-    );
+    bool addedAny = false;
+    for (final part in parts) {
+      final normText = part.toLowerCase();
+      final alreadyExists = currentList.any(
+        (item) => item.trim().toLowerCase() == normText,
+      );
+      if (!alreadyExists) {
+        currentList.add(part);
+        addedAny = true;
+      }
+    }
 
-    if (!alreadyExists) {
-      currentList.add(text);
+    if (addedAny) {
       setState(() {
         _userAnswers[_currentQuestion.id] = currentList;
         _pendingSkippedQuestionIds.remove(_currentQuestion.id);
         _enumInputController.clear();
       });
+      _persistDraftAnswers();
     } else {
       _enumInputController.clear();
     }
   }
 
   void _removeEnumerationItem(String item) {
-    final currentList = List<String>.from(
-      (_userAnswers[_currentQuestion.id] as List<String>?) ?? [],
-    );
+    final currentList = _getEnumerationAnswers(_currentQuestion.id);
     currentList.remove(item);
     setState(() {
-      _userAnswers[_currentQuestion.id] = currentList;
+      if (currentList.isEmpty) {
+        _userAnswers.remove(_currentQuestion.id);
+      } else {
+        _userAnswers[_currentQuestion.id] = currentList;
+      }
     });
+    _persistDraftAnswers();
   }
 
   void _showSubmitConfirmation() {
@@ -506,11 +623,17 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         }).toList(),
       );
 
-      AssignmentService().submitAttempt(attempt).catchError((err) {
+      _assignmentService.submitAttempt(attempt).catchError((err) {
         debugPrint('Attempt persistence info: $err');
         return attempt;
       });
     }
+
+    _assignmentService.clearDraftAnswers(
+      studentId: _studentId,
+      quizId: _quizId,
+      attemptNumber: widget.attemptNumber,
+    ).catchError((_) {});
 
     showDialog(
       context: context,
@@ -837,23 +960,33 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     final progress =
         _questions.isEmpty ? 0.0 : (_answeredCount / _questions.length);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          title,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: _textPrimary,
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        _saveCurrentAnswer();
+        _persistDraftAnswers();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: _textPrimary,
+            ),
+          ),
+          backgroundColor: _surfaceWhite,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.close, color: _primaryNavy),
+            onPressed: () {
+              _saveCurrentAnswer();
+              _persistDraftAnswers();
+              Navigator.pop(context);
+            },
           ),
         ),
-        backgroundColor: _surfaceWhite,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close, color: _primaryNavy),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
       body: Container(
         width: double.infinity,
         height: double.infinity,
@@ -874,6 +1007,9 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                 valueColor: const AlwaysStoppedAnimation<Color>(_primaryNavy),
                 minHeight: 4,
               ),
+
+              // ── Question Navigation & Status Strip ────────
+              _buildQuestionNavigationStrip(),
 
               // ── Question Content Area ──────────────────────
               Expanded(
@@ -1115,8 +1251,9 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildChoiceOptions(List<String> options) {
     final selectedOption = _userAnswers[_currentQuestion.id];
@@ -1133,6 +1270,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                 _userAnswers[_currentQuestion.id] = option;
                 _pendingSkippedQuestionIds.remove(_currentQuestion.id);
               });
+              _persistDraftAnswers();
             },
             borderRadius: BorderRadius.circular(12),
             child: AnimatedContainer(
@@ -1215,15 +1353,14 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
               _pendingSkippedQuestionIds.remove(_currentQuestion.id);
             }
           });
+          _persistDraftAnswers();
         },
       ),
     );
   }
 
   Widget _buildEnumerationInput() {
-    final currentList = List<String>.from(
-      (_userAnswers[_currentQuestion.id] as List<String>?) ?? [],
-    );
+    final currentList = _getEnumerationAnswers(_currentQuestion.id);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1308,6 +1445,352 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
               );
             }).toList(),
           ),
+        if (currentList.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.check_circle_outline, size: 15, color: Colors.green[700]),
+              const SizedBox(width: 5),
+              Text(
+                '${currentList.length} item${currentList.length == 1 ? "" : "s"} added — partial credit enabled',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.green[800],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildQuestionNavigationStrip() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: const BoxDecoration(
+        color: _surfaceWhite,
+        border: Border(
+          bottom: BorderSide(color: _outlineVariant, width: 0.8),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF2E7D32),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$_answeredCount answered',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF2E7D32),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF767683),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_questions.length - _answeredCount} unanswered',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF767683),
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: _showQuestionGridModal,
+                borderRadius: BorderRadius.circular(4),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.grid_view, size: 14, color: _primaryNavy),
+                      SizedBox(width: 4),
+                      Text(
+                        'Grid View',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: _primaryNavy,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 38,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: _questions.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, idx) {
+                final q = _questions[idx];
+                final isCurrent = q.id == _currentQuestion.id;
+                final isAnswered = _isQuestionAnswered(q);
+                final isFlagged = _flaggedQuestionIds.contains(q.id);
+
+                return _buildQuestionBadge(
+                  number: idx + 1,
+                  isCurrent: isCurrent,
+                  isAnswered: isAnswered,
+                  isFlagged: isFlagged,
+                  onTap: () => _jumpToQuestion(q),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuestionBadge({
+    required int number,
+    required bool isCurrent,
+    required bool isAnswered,
+    required bool isFlagged,
+    required VoidCallback onTap,
+  }) {
+    final Color bgColor;
+    final Color borderColor;
+    final Color textColor;
+
+    if (isAnswered) {
+      bgColor = const Color(0xFFE8F5E9);
+      borderColor = isCurrent ? _primaryNavy : const Color(0xFF81C784);
+      textColor = const Color(0xFF1B5E20);
+    } else {
+      bgColor = const Color(0xFFF1F1F4);
+      borderColor = isCurrent ? _primaryNavy : _outlineVariant;
+      textColor = const Color(0xFF767683);
+    }
+
+    return Semantics(
+      label: 'Question $number, ${isAnswered ? "Answered" : "Unanswered"}${isCurrent ? ", Current" : ""}',
+      button: true,
+      child: Tooltip(
+        message: 'Question $number: ${isAnswered ? "Answered" : "Unanswered"}${isCurrent ? " (Current)" : ""}',
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            key: ValueKey('question_badge_$number'),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: borderColor,
+                width: isCurrent ? 2.5 : 1.0,
+              ),
+              boxShadow: isCurrent
+                  ? [
+                      BoxShadow(
+                        color: _primaryNavy.withValues(alpha: 0.18),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isAnswered) ...[
+                      const Icon(
+                        Icons.check,
+                        size: 11,
+                        color: Color(0xFF1B5E20),
+                      ),
+                      const SizedBox(width: 1),
+                    ],
+                    Text(
+                      '$number',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isCurrent || isAnswered
+                            ? FontWeight.bold
+                            : FontWeight.w600,
+                        color: textColor,
+                      ),
+                    ),
+                  ],
+                ),
+                if (isFlagged)
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Colors.amber,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showQuestionGridModal() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surfaceWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Question Overview',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: _textPrimary,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        _buildLegendItem(
+                          color: const Color(0xFFE8F5E9),
+                          borderColor: const Color(0xFF81C784),
+                          label: 'Answered ($_answeredCount)',
+                        ),
+                        const SizedBox(width: 12),
+                        _buildLegendItem(
+                          color: const Color(0xFFF1F1F4),
+                          borderColor: _outlineVariant,
+                          label: 'Unanswered (${_questions.length - _answeredCount})',
+                        ),
+                        if (_flaggedQuestionIds.isNotEmpty) ...[
+                          const SizedBox(width: 12),
+                          _buildLegendItem(
+                            color: Colors.amber.shade100,
+                            borderColor: Colors.amber,
+                            label: 'Flagged (${_flaggedQuestionIds.length})',
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(context).size.height * 0.45,
+                      ),
+                      child: SingleChildScrollView(
+                        child: Wrap(
+                          spacing: 10,
+                          runSpacing: 10,
+                          children: List.generate(_questions.length, (idx) {
+                            final q = _questions[idx];
+                            final isCurrent = q.id == _currentQuestion.id;
+                            final isAnswered = _isQuestionAnswered(q);
+                            final isFlagged = _flaggedQuestionIds.contains(q.id);
+
+                            return _buildQuestionBadge(
+                              number: idx + 1,
+                              isCurrent: isCurrent,
+                              isAnswered: isAnswered,
+                              isFlagged: isFlagged,
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                _jumpToQuestion(q);
+                              },
+                            );
+                          }),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildLegendItem({
+    required Color color,
+    required Color borderColor,
+    required String label,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            border: Border.all(color: borderColor),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: _textSecondary),
+        ),
       ],
     );
   }

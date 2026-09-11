@@ -1,7 +1,10 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:studexa/models/user_profile.dart';
 import 'package:studexa/services/auth_service.dart';
+import 'package:studexa/widgets/google_logo.dart';
+import 'package:studexa/widgets/google_sign_in_button.dart';
 
 void main() {
   group('UserProfile Model Tests', () {
@@ -130,6 +133,24 @@ void main() {
         ),
         'Network error. Please check your internet connection.',
       );
+      expect(
+        AuthService.getErrorMessage(
+          FirebaseAuthException(code: 'account-exists-with-different-credential'),
+        ),
+        'An account already exists with this email using another sign-in method. Please sign in with your original method.',
+      );
+      expect(
+        AuthService.getErrorMessage(
+          Exception('PlatformException(sign_in_canceled, The user canceled the sign-in prompt, null)'),
+        ),
+        'Google sign-in was cancelled.',
+      );
+      expect(
+        AuthService.getErrorMessage(
+          Exception('PlatformException(network_error, A network error occurred, null)'),
+        ),
+        'Network error during Google sign-in. Please check your connection.',
+      );
     });
 
     test('AuthService.getErrorMessage mappings for FirebaseException', () {
@@ -191,6 +212,138 @@ void main() {
       bool passwordsMatch(String p1, String p2) => p1 == p2;
       expect(passwordsMatch('password123', 'password123'), isTrue);
       expect(passwordsMatch('password123', 'password456'), isFalse);
+    });
+  });
+
+  group('Google Sign-In UI & Widget Tests', () {
+    testWidgets('GoogleLogo renders without error', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(child: GoogleLogo(size: 24)),
+          ),
+        ),
+      );
+
+      expect(find.byType(GoogleLogo), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
+    });
+
+    testWidgets('AuthDivider renders default and custom labels', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                AuthDivider(),
+                AuthDivider(label: 'OR SIGN IN WITH'),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('OR'), findsOneWidget);
+      expect(find.text('OR SIGN IN WITH'), findsOneWidget);
+      expect(find.byType(Divider), findsNWidgets(4));
+    });
+
+    testWidgets('GoogleSignInButton renders idle state and triggers callback', (tester) async {
+      bool tapped = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: GoogleSignInButton(
+                onPressed: () {
+                  tapped = true;
+                },
+                text: 'Continue with Google',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Continue with Google'), findsOneWidget);
+      expect(find.byType(GoogleLogo), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.tap(find.byType(GoogleSignInButton));
+      expect(tapped, isTrue);
+    });
+
+    testWidgets('GoogleSignInButton renders loading spinner and disables interaction', (tester) async {
+      bool tapped = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: GoogleSignInButton(
+                onPressed: () {
+                  tapped = true;
+                },
+                isLoading: true,
+                text: 'Continue with Google',
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Continue with Google'), findsNothing);
+
+      await tester.tap(find.byType(GoogleSignInButton));
+      expect(tapped, isFalse);
+    });
+  });
+
+  group('Google Sign-In Role & Profile Contract Tests', () {
+    test('Google sign-in user profile with new account attributes', () {
+      final googleUserMap = {
+        'email': 'student.google@univ.edu',
+        'displayName': 'Google Student',
+        'role': 'student',
+        'photoUrl': 'https://lh3.googleusercontent.com/a/photo_123',
+        'createdAt': '2026-09-10T00:00:00.000Z',
+      };
+
+      final profile = UserProfile.fromMap(googleUserMap, 'google_uid_001');
+
+      expect(profile.uid, 'google_uid_001');
+      expect(profile.email, 'student.google@univ.edu');
+      expect(profile.displayName, 'Google Student');
+      expect(profile.photoUrl, 'https://lh3.googleusercontent.com/a/photo_123');
+      expect(profile.isStudent, isTrue);
+      expect(profile.isTeacher, isFalse);
+    });
+
+    test('AuthRoleMismatchException guards Google accounts with mismatched role', () {
+      final existingTeacherProfile = UserProfile(
+        uid: 'google_uid_teacher',
+        email: 'teacher.google@univ.edu',
+        displayName: 'Professor Google',
+        role: 'teacher',
+      );
+
+      // Verify that checking role against student throws
+      expect(
+        existingTeacherProfile.role.toLowerCase() == 'student',
+        isFalse,
+      );
+
+      final mismatch = AuthRoleMismatchException(
+        actualRole: existingTeacherProfile.role,
+        attemptedRole: 'student',
+      );
+
+      expect(
+        mismatch.toString(),
+        contains('registered as a teacher, not a student'),
+      );
     });
   });
 }

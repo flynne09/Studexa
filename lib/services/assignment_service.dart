@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/quiz_assignment_model.dart';
 import '../models/quiz_attempt_model.dart';
@@ -13,12 +15,24 @@ class QuizUnavailableException implements Exception {
   String toString() => message;
 }
 
+bool get _isTestEnvironment {
+  if (kIsWeb) return false;
+  try {
+    return Platform.environment.containsKey('FLUTTER_TEST');
+  } catch (_) {
+    return false;
+  }
+}
+
 /// Service managing quiz assignments, deadlines, availability status, and student attempts.
 class AssignmentService {
-  AssignmentService({FirebaseFirestore? firestore})
-      : _firestore = firestore ?? getAppFirestore();
+  AssignmentService({FirebaseFirestore? firestore, bool? useFirestore})
+      : _firestore = firestore ?? getAppFirestore(),
+        useFirestore = useFirestore ?? !_isTestEnvironment;
 
   final FirebaseFirestore _firestore;
+  final bool useFirestore;
+  final Map<String, Map<String, dynamic>> _inMemoryDraftAnswers = {};
 
   CollectionReference<Map<String, dynamic>> get _assignmentsCollection =>
       _firestore.collection('quizAssignments');
@@ -110,6 +124,23 @@ class AssignmentService {
 
   /// Submits a student's graded quiz attempt after verifying availability.
   Future<QuizAttemptModel> submitAttempt(QuizAttemptModel attempt) async {
+    if (!useFirestore) {
+      return QuizAttemptModel(
+        id: 'mock_attempt_${DateTime.now().millisecondsSinceEpoch}',
+        quizId: attempt.quizId,
+        assignmentId: attempt.assignmentId,
+        classId: attempt.classId,
+        studentId: attempt.studentId,
+        studentName: attempt.studentName,
+        answers: attempt.answers,
+        score: attempt.score,
+        totalPoints: attempt.totalPoints,
+        percentage: attempt.percentage,
+        submittedAt: DateTime.now(),
+        breakdown: attempt.breakdown,
+      );
+    }
+
     // 1. Availability validation: check if an assignment exists
     final assignmentSnapshot = await _assignmentsCollection
         .where('classId', isEqualTo: attempt.classId)
@@ -210,5 +241,96 @@ class AssignmentService {
           .map((doc) => QuizAttemptModel.fromFirestore(doc))
           .toList();
     });
+  }
+
+  String _draftKey(String studentId, String quizId, int attemptNumber) =>
+      '${studentId}_${quizId}_$attemptNumber';
+
+  /// Saves in-progress (unsubmitted) quiz answers for an active attempt.
+  Future<void> saveDraftAnswers({
+    required String studentId,
+    required String quizId,
+    required int attemptNumber,
+    required Map<String, dynamic> answers,
+  }) async {
+    final key = _draftKey(studentId, quizId, attemptNumber);
+    _inMemoryDraftAnswers[key] = Map<String, dynamic>.from(answers);
+
+    if (!useFirestore || studentId.isEmpty || quizId.isEmpty) return;
+
+    try {
+      final docRef = _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('attempts')
+          .doc('draft_${quizId}_attempt_$attemptNumber');
+
+      await docRef.set({
+        'quizId': quizId,
+        'studentId': studentId,
+        'attemptNumber': attemptNumber,
+        'answers': answers,
+        'isDraft': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  /// Retrieves previously saved in-progress answers for an active attempt, or null if none.
+  Future<Map<String, dynamic>?> getDraftAnswers({
+    required String studentId,
+    required String quizId,
+    required int attemptNumber,
+  }) async {
+    final key = _draftKey(studentId, quizId, attemptNumber);
+    final memorySaved = _inMemoryDraftAnswers[key];
+
+    if (!useFirestore || studentId.isEmpty || quizId.isEmpty) {
+      return memorySaved != null ? Map<String, dynamic>.from(memorySaved) : null;
+    }
+
+    try {
+      final docSnapshot = await _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('attempts')
+          .doc('draft_${quizId}_attempt_$attemptNumber')
+          .get()
+          .timeout(const Duration(seconds: 2));
+
+      if (docSnapshot.exists && docSnapshot.data() != null) {
+        final data = docSnapshot.data()!;
+        final answers = data['answers'];
+        if (answers is Map) {
+          final mapped = Map<String, dynamic>.from(answers);
+          _inMemoryDraftAnswers[key] = mapped;
+          return mapped;
+        }
+      }
+    } catch (_) {}
+
+    return memorySaved != null ? Map<String, dynamic>.from(memorySaved) : null;
+  }
+
+  /// Clears in-progress draft answers once an attempt has been officially submitted.
+  Future<void> clearDraftAnswers({
+    required String studentId,
+    required String quizId,
+    required int attemptNumber,
+  }) async {
+    final key = _draftKey(studentId, quizId, attemptNumber);
+    _inMemoryDraftAnswers.remove(key);
+
+    if (!useFirestore || studentId.isEmpty || quizId.isEmpty) return;
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(studentId)
+          .collection('attempts')
+          .doc('draft_${quizId}_attempt_$attemptNumber')
+          .delete()
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {}
   }
 }

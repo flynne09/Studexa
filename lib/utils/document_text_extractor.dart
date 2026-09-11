@@ -113,6 +113,14 @@ class DocumentTextExtractor {
   /// PowerPoint PDF exports). Replaces null dictionary entries with whitespace of exact
   /// equal length to preserve cross-reference table byte offsets.
   static Uint8List _sanitizePdfBytes(Uint8List bytes) {
+    final latin1Str = latin1.decode(bytes, allowInvalid: true);
+    if (!latin1Str.contains('/Outlines') &&
+        !latin1Str.contains('/AcroForm') &&
+        !latin1Str.contains('/StructTreeRoot') &&
+        !latin1Str.contains('/MarkInfo')) {
+      return bytes;
+    }
+
     final patterns = [
       RegExp(r'/Outlines\s+null'),
       RegExp(r'/AcroForm\s+null'),
@@ -120,7 +128,6 @@ class DocumentTextExtractor {
       RegExp(r'/MarkInfo\s+null'),
     ];
 
-    final latin1Str = latin1.decode(bytes, allowInvalid: true);
     bool modified = false;
     Uint8List? workingBytes;
 
@@ -598,12 +605,85 @@ class DocumentTextExtractor {
     }
   }
 
-  /// Cleans and normalizes extracted text
+  /// Set of structural table / column header keywords commonly found in data grids.
+  static final Set<String> _structuralHeaderKeywords = {
+    'no', 'no.', 'num', 'num.', 'number', 'name', 'attribute', 'attributes',
+    'value', 'values', 'field', 'fields', 'col', 'column', 'header', 'row',
+    'description', 'remarks', 'category', 'categories', 'status', 'type',
+    'types', 'item', 'items', 'parameter', 'parameters', 'date', 'key',
+    'default', 'null', 'extra',
+  };
+
+  /// Strips table header artifacts and data grid structural labels from extracted text,
+  /// preserving factual content inside table cells while preventing structural headers
+  /// from leaking into generated questions.
+  static String stripTableHeaderArtifacts(String text) {
+    final lines = text.split('\n');
+    final cleanedLines = <String>[];
+
+    for (final line in lines) {
+      final trimmed = line.trim();
+      if (trimmed.isEmpty) {
+        cleanedLines.add(line);
+        continue;
+      }
+
+      // Check 1: Standalone column or header indicators: "Column A", "Header 1", "Column 2:", "Table 1:"
+      if (RegExp(r'^(?:Column|Header|Col|Row)\s+[A-Za-z0-9]+:?$', caseSensitive: false).hasMatch(trimmed)) {
+        continue;
+      }
+      if (RegExp(r'^Table\s+\d+:?$', caseSensitive: false).hasMatch(trimmed)) {
+        continue;
+      }
+
+      // Check 2: Pure sequence of column labels: "Column A | Column B | Column C" or "Header 1 \t Header 2"
+      if (RegExp(r'^(?:(?:Column|Header|Col)\s+[A-Za-z0-9]+(?:\s*[\|\:\t\,]\s*|\s{2,}))+(?:(?:Column|Header|Col)\s+[A-Za-z0-9]+)?$', caseSensitive: false).hasMatch(trimmed)) {
+        continue;
+      }
+
+      // Check 3: Multi-column structural header row separated by delimiters (|, \t, multiple spaces, commas)
+      // e.g. "No. | Name | Attribute | Value" or "Field | Type | Null | Key | Default"
+      if (trimmed.contains('|') || trimmed.contains('\t') || trimmed.contains(RegExp(r'\s{2,}')) || (trimmed.contains(',') && !trimmed.contains('.'))) {
+        final segments = trimmed
+            .split(RegExp(r'[\|\t]|\s{2,}|,'))
+            .map((s) => s.trim().toLowerCase())
+            .where((s) => s.isNotEmpty)
+            .toList();
+
+        if (segments.length >= 2) {
+          int matchingHeaders = 0;
+          for (final seg in segments) {
+            final cleanedSeg = seg.replaceAll(RegExp(r'[^a-z0-9\.]'), '').trim();
+            final isColHeader = RegExp(r'^(?:column|header|col|row)[a-z0-9]*$').hasMatch(cleanedSeg) ||
+                RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$').hasMatch(seg);
+            if (_structuralHeaderKeywords.contains(cleanedSeg) || isColHeader) {
+              matchingHeaders++;
+            }
+          }
+
+          // If at least 60% of segments and at least 2 are structural header keywords, it's a table header line
+          if (matchingHeaders >= 2 && matchingHeaders >= (segments.length * 0.6)) {
+            continue;
+          }
+        }
+      }
+
+      cleanedLines.add(line);
+    }
+
+    return cleanedLines.join('\n');
+  }
+
+  /// Cleans and normalizes extracted text, stripping table header artifacts
+  /// and structural data grid markers so questions are grounded in academic concepts.
   static String _cleanText(String text) {
-    return text
+    var cleaned = text
         .replaceAll(RegExp(r'\r\n|\r'), '\n')
         .replaceAll(RegExp(r'[ \t]+'), ' ')
-        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-        .trim();
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n');
+
+    cleaned = stripTableHeaderArtifacts(cleaned);
+
+    return cleaned.trim();
   }
 }

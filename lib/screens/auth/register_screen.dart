@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../../widgets/google_sign_in_button.dart';
 import 'login_screen.dart';
 import '../teacher/teacher_home_screen.dart';
 import '../student/student_home_screen.dart';
@@ -110,6 +111,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       if (!mounted) return;
+
+      if (profile.isTeacher) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          (route) => false,
+        );
+      } else {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = AuthService.getErrorMessage(e);
+      setState(() {
+        _errorMessage = msg;
+        _isLoading = false;
+      });
+      _showErrorSnackBar(msg);
+    }
+  }
+
+  Future<void> _handleGoogleSignIn() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final profile = await _authService.signInWithGoogle(role: _selectedRole);
+
+      if (!mounted) return;
+
+      // User aborted/cancelled the Google sign-in dialog
+      if (profile == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
 
       if (profile.isTeacher) {
         Navigator.pushAndRemoveUntil(
@@ -585,6 +629,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   ],
                                 ),
                         ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // ── Divider ─────────────────────────────
+                      const AuthDivider(),
+                      const SizedBox(height: 20),
+
+                      // ── Google Sign-In button ───────────────
+                      GoogleSignInButton(
+                        onPressed: _isLoading ? null : _handleGoogleSignIn,
+                        isLoading: _isLoading,
+                        text: 'Continue with Google',
                       ),
                       const SizedBox(height: 32),
                     ],

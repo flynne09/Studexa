@@ -119,7 +119,50 @@ class MaterialService {
       }
     }
 
-    // 2. Client-side instant text extraction
+    // 2. Prepare Firestore document ID and storage path up front
+    final materialDocRef = _firestore.collection('materials').doc();
+    final materialId = materialDocRef.id;
+    final storagePath = 'uploads/$teacherId/$materialId/$fileName';
+
+    // 3. Initiate Firebase Storage upload concurrently with text extraction
+    UploadTask? uploadTask;
+    StreamSubscription<TaskSnapshot>? progressSub;
+    try {
+      final storageRef = _storage.ref().child(storagePath);
+      final metadata = SettableMetadata(
+        contentType: MaterialModel.contentTypeForExtension(cleanExt),
+        customMetadata: {
+          'teacherId': teacherId,
+          'materialId': materialId,
+          'classId': cleanClassId,
+        },
+      );
+
+      if (resolvedBytes != null) {
+        uploadTask = storageRef.putData(resolvedBytes, metadata);
+      } else if (localFilePath != null && !kIsWeb) {
+        uploadTask = storageRef.putFile(File(localFilePath), metadata);
+      }
+
+      if (uploadTask != null && onProgress != null) {
+        progressSub = uploadTask.snapshotEvents.listen(
+          (TaskSnapshot snapshot) {
+            if (snapshot.totalBytes > 0) {
+              final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+              onProgress(progress);
+            }
+          },
+          onError: (err) {
+            debugPrint('Storage upload progress stream error: $err');
+          },
+          cancelOnError: true,
+        );
+      }
+    } catch (e) {
+      debugPrint('Storage upload task initiation note: $e');
+    }
+
+    // 4. Perform client-side text extraction concurrently while bytes are streaming to Storage
     String extractedText = '';
     String? errorReason;
     bool isExtracted = false;
@@ -146,11 +189,7 @@ class MaterialService {
 
     final String initialStatus = isExtracted ? 'ready' : 'failed';
 
-    // 3. Generate Firestore document
-    final materialDocRef = _firestore.collection('materials').doc();
-    final materialId = materialDocRef.id;
-    final storagePath = 'uploads/$teacherId/$materialId/$fileName';
-
+    // 5. Write Firestore document with status: 'ready' immediately
     final readyModel = MaterialModel(
       id: materialId,
       teacherId: teacherId,
@@ -168,68 +207,52 @@ class MaterialService {
 
     await materialDocRef.set(readyModel.toMap());
 
-    // 4. Firebase Storage file upload and download URL persistence
+    // 6. Non-blocking Storage upload resolution:
+    // If the upload finished during text extraction, attach downloadUrl immediately.
+    // Otherwise, let the background worker finalize downloadUrl in Firestore without
+    // delaying the teacher from proceeding to quiz generation.
     String? downloadUrl;
-    try {
+    if (uploadTask != null) {
       final storageRef = _storage.ref().child(storagePath);
-      final metadata = SettableMetadata(
-        contentType: readyModel.contentType,
-        customMetadata: {
-          'teacherId': teacherId,
-          'materialId': materialId,
-          'classId': cleanClassId,
-        },
-      );
 
-      UploadTask? uploadTask;
-      if (resolvedBytes != null) {
-        uploadTask = storageRef.putData(resolvedBytes, metadata);
-      } else if (localFilePath != null && !kIsWeb) {
-        uploadTask = storageRef.putFile(File(localFilePath), metadata);
+      // Fast check if already completed
+      try {
+        final fastSnapshot = await uploadTask.timeout(const Duration(milliseconds: 100));
+        if (fastSnapshot.state == TaskState.success) {
+          downloadUrl = await storageRef.getDownloadURL();
+          await materialDocRef.update({'downloadUrl': downloadUrl});
+          await progressSub?.cancel();
+          onProgress?.call(1.0);
+          return readyModel.copyWith(downloadUrl: downloadUrl);
+        }
+      } catch (_) {
+        // Still transferring in the background; do not block the caller!
       }
 
-      if (uploadTask != null) {
-        StreamSubscription<TaskSnapshot>? progressSub;
-        if (onProgress != null) {
-          progressSub = uploadTask.snapshotEvents.listen(
-            (TaskSnapshot snapshot) {
-              if (snapshot.totalBytes > 0) {
-                final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-                onProgress(progress);
-              }
-            },
-            onError: (err) {
-              debugPrint('Storage upload progress stream error: $err');
-            },
-            cancelOnError: true,
-          );
-        }
-
+      // Background worker to finalize downloadUrl in Firestore without delaying UI
+      unawaited(() async {
         try {
-          final snapshot = await uploadTask.timeout(const Duration(seconds: 15));
+          final snapshot = await uploadTask!.timeout(const Duration(seconds: 45));
           if (snapshot.state == TaskState.success) {
             try {
-              downloadUrl = await storageRef.getDownloadURL();
-              await materialDocRef.update({'downloadUrl': downloadUrl});
+              final url = await storageRef.getDownloadURL();
+              await materialDocRef.update({'downloadUrl': url});
             } catch (urlErr) {
-              debugPrint('Failed to get download URL: $urlErr');
+              debugPrint('Failed to get download URL in background: $urlErr');
             }
           }
+        } catch (storageErr) {
+          debugPrint('Background storage upload note: $storageErr');
         } finally {
           await progressSub?.cancel();
+          onProgress?.call(1.0);
         }
-      }
-    } catch (storageErr) {
-      // Free Spark tier without billing or offline mode:
-      // Firestore document already has status: 'ready' and extractedText populated.
-      debugPrint('Storage upload note: $storageErr');
+      }());
+    } else {
+      onProgress?.call(1.0);
     }
 
-    if (onProgress != null) {
-      onProgress(1.0);
-    }
-
-    return readyModel.copyWith(downloadUrl: downloadUrl);
+    return readyModel;
   }
 
   /// Fetch raw bytes for a material file (via download URL or directly from Storage)

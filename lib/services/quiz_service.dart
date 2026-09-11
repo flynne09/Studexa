@@ -316,23 +316,34 @@ MANDATORY ASSESSMENT DIRECTIVES:
 1. CORE CONCEPTS & DEFINITIONS FIRST:
    - Identify the central principles, key definitions, primary mechanisms, and functional relationships in the material.
    - Every question must assess a core concept that an instructor would legitimately evaluate on a comprehensive final exam.
-2. STRICTLY FORBID TRIVIA & DOCUMENT METADATA:
-   - NEVER ask about: dates of publication, author names, page numbers, chapter/slide numbers, figure or table numbers, course codes, syllabus announcements, file names, or incidental, isolated trivia.
-3. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
+2. STRICTLY FORBID IRRELEVANT, FILLER & NON-ACADEMIC CONTENT:
+   - NEVER generate questions from, and completely ignore:
+     a) Copyright notices, license text, and "all rights reserved" (e.g. "© 2024", "Creative Commons", "All rights reserved").
+     b) Author, professor, or instructor details: names, academic titles, departments, affiliations, email addresses, phone numbers, and author bios.
+     c) Document metadata: file names, slide numbers ("Slide 1", "Slide 10"), page numbers, dates of publication, semesters, edition numbers, and timestamps.
+     d) Boilerplate phrases and lecture transitions: "Welcome to...", "In this lecture...", "Today we will discuss...", "As seen in the previous slide...", "Thank you for listening", "Any questions?", "Summary of today's class", "References", "Further Reading", "Acknowledgments".
+     e) Administrative & course management content: course codes (e.g. "CS 101", "BIO 204"), prerequisites, grading policies, office hours, exam schedules, syllabus policies, submission guidelines, homework assignments, or platform links.
+   - Questions and answers MUST test substantive academic concepts, theories, principles, processes, or core mechanisms only.
+3. STRICTLY FORBID TABLE/COLUMN HEADERS & STRUCTURAL LABELS:
+   - NEVER generate questions based on table or column headers, table row numbers, or data grid structural labels (e.g., 'Column A', 'Column B', 'Header 1', 'Header 2', 'Attribute', 'Value', 'No.', 'Field', 'Item', 'Category', 'Description', 'Remarks', 'Date', 'Type').
+   - NEVER ask what a column, row, or header is named, what is listed under a specific column/header, or test the visual layout/structure of tables, charts, or diagrams.
+   - When the study material includes tables, focus EXCLUSIVELY on the academic concepts, facts, mechanisms, and relationships described within the table cells — NOT the table structure itself.
+   - NEVER produce answer choices or distractors that are column headers or structural labels (e.g. options like 'A. Column A', 'B. Header 1', 'C. Attribute', 'D. Value' are strictly forbidden).
+4. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
    - For multipleChoice questions, all 3 incorrect distractors MUST be plausible, academically meaningful terms in the EXACT SAME conceptual category/domain as the correct answer.
    - NEVER produce joke, nonsensical, or obviously absurd options.
-4. FACTUAL GROUNDING:
+5. FACTUAL GROUNDING:
    - Every question, answer option, and explanation must be 100% grounded in and verifiable against the provided text. Do not invent or assume unstated facts.
-5. ANTI-REDUNDANCY:
+6. ANTI-REDUNDANCY:
    - Every question MUST test a DIFFERENT concept, definition, or mechanism.
    - NEVER generate duplicate questions, rephrased copies of another question, or questions with identical stems or answers.
-6. QUESTION FORMAT CONSTRAINTS:
+7. QUESTION FORMAT CONSTRAINTS:
    - multipleChoice: Provide exactly 4 options labeled 'A.', 'B.', 'C.', 'D.'. correctAnswer must match the full option string (e.g. 'A. Mitochondria').
    - trueFalse: options must be exactly ['True', 'False']. correctAnswer must be either 'True' or 'False'. Negations must test a core concept or mechanism, not trivial phrasing tricks.
-   - fillInTheBlank: The question prompt must contain '_______' where the single primary keyword or concept belongs. correctAnswer must be that exact term.
+   - fillInTheBlank: The question stem MUST contain exactly one blank indicated by '_______' (7 underscores). The blank MUST target a single, specific, unambiguous key term (1 to 2 words maximum; such as a proper noun, technical term, or core domain vocabulary word, e.g. 'Mitochondria', 'Virtual Memory', 'Polymorphism'). The sentence must provide rich and complete context so that ONLY that single specific term makes logical sense. NEVER blank out generic verbs, adjectives, or filler words. The correctAnswer MUST be the exact word or 2-word term that fills the blank, with NO surrounding quotation marks, punctuation, or leading articles ('the', 'a', 'an') unless strictly part of a formal proper name.
    - identification: The question provides a clear, precise definition or functional description WITHOUT giving away the term in the prompt. correctAnswer is the exact term.
    - enumeration: The question asks to list 2 to 5 specific items, stages, components, or characteristics. enumerationAnswers must be an array of strings representing the expected items. correctAnswer must be a comma-separated list of those items.
-${!isActual && sourceQuizContext != null && sourceQuizContext.isNotEmpty ? "7. DISTINCT PHRASING FOR PRACTICE: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME core concepts using scenario-based framing, inverse questions, or applied contexts." : ""}
+${!isActual && sourceQuizContext != null && sourceQuizContext.isNotEmpty ? "8. DISTINCT PHRASING FOR PRACTICE: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME core concepts using scenario-based framing, inverse questions, or applied contexts." : ""}
 
 $batchNote
 
@@ -418,16 +429,25 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
             ? rawEnum.map((e) => e.toString()).toList()
             : <String>[];
 
-        questions.add(QuizQuestion(
+        var rawAnswer = (qMap['correctAnswer'] as String?) ?? '';
+        if (qType == QuizQuestionType.fillInTheBlank ||
+            qType == QuizQuestionType.identification) {
+          rawAnswer = cleanFillInTheBlankAnswer(rawAnswer);
+        }
+
+        final qCandidate = QuizQuestion(
           id: 'b${batchIndex}_q_${i + 1}',
           type: qType,
           question: (qMap['question'] as String?) ?? 'Question ${i + 1}',
           options: optionsList,
-          correctAnswer: (qMap['correctAnswer'] as String?) ?? '',
+          correctAnswer: rawAnswer,
           enumerationAnswers: enumList,
           explanation: (qMap['explanation'] as String?) ?? '',
           points: (qMap['points'] as num?)?.toDouble() ?? 1.0,
-        ));
+        );
+        if (!isTableHeaderQuestion(qCandidate) && !isFillerOrBoilerplateQuestion(qCandidate)) {
+          questions.add(qCandidate);
+        }
       }
 
       return questions.isNotEmpty ? questions : null;
@@ -435,6 +455,101 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
       debugPrint('Gemini batch $batchIndex generation error: $e');
       return null;
     }
+  }
+
+  /// Cleans and sanitizes Fill-in-the-Blank and Identification expected answers
+  /// ensuring they do not contain extraneous punctuation, surrounding quotes, or leading articles.
+  static String cleanFillInTheBlankAnswer(String raw) {
+    var cleaned = ScoringUtils.cleanExpectedAnswer(raw).trim();
+    cleaned = cleaned.replaceAll(RegExp(r'^(the|a|an)\s+', caseSensitive: false), '').trim();
+    bool changed = true;
+    while (changed) {
+      final prev = cleaned;
+      cleaned = cleaned.replaceAll(RegExp(r'''^["']|["']$'''), '').trim();
+      cleaned = cleaned.replaceAll(RegExp(r'[\.,;:!]$'), '').trim();
+      changed = cleaned != prev;
+    }
+    return cleaned;
+  }
+
+  /// Detects whether a question tests table/column structural headers or has a
+  /// structural label as its expected answer or options.
+  static bool isTableHeaderQuestion(QuizQuestion q) {
+    final prompt = q.question.toLowerCase().trim();
+    final answer = ScoringUtils.normalizeText(
+      ScoringUtils.cleanExpectedAnswer(q.correctAnswer),
+    );
+
+    // Prompt tests table/column structure
+    final tablePromptPattern = RegExp(
+      r'\b(in\s+(?:the\s+)?(?:table|column|row)|which\s+column|what\s+is\s+(?:the\s+)?(?:header|column|attribute)|listed\s+in\s+column|under\s+column|title\s+of\s+column)\b',
+      caseSensitive: false,
+    );
+    if (tablePromptPattern.hasMatch(prompt)) return true;
+
+    // Prompt asks about Column A, Header 1, etc.
+    if (RegExp(r'\b(?:column|header|col|row)\s+[a-z0-9]+\b', caseSensitive: false).hasMatch(prompt)) {
+      if (prompt.contains('what') || prompt.contains('which') || prompt.contains('identify')) {
+        return true;
+      }
+    }
+
+    // Answer is a structural header
+    final structuralAnswerPattern = RegExp(
+      r'^(?:column\s+[a-z0-9]+|header\s+[a-z0-9]+|row\s+[a-z0-9]+|col\s+[a-z0-9]+|attribute|attributes|value|values|field|fields|no\.?|num\.?|number|description|remarks|category|type)$',
+      caseSensitive: false,
+    );
+    if (structuralAnswerPattern.hasMatch(answer)) return true;
+
+    // Options contain purely structural labels (e.g. MCQ options: Column A, Column B...)
+    if (q.type == QuizQuestionType.multipleChoice) {
+      int structuralOptions = 0;
+      for (final opt in q.options) {
+        final cleanOpt = ScoringUtils.normalizeText(ScoringUtils.cleanExpectedAnswer(opt));
+        if (structuralAnswerPattern.hasMatch(cleanOpt)) {
+          structuralOptions++;
+        }
+      }
+      if (structuralOptions >= 2) return true;
+    }
+
+    return false;
+  }
+
+  /// Detects whether a question tests trivial, filler, or non-academic content
+  /// such as copyright notices, author/instructor info, slide/page metadata,
+  /// lecture boilerplate ("Welcome to...", "Thank you..."), or administrative syllabus policies.
+  static bool isFillerOrBoilerplateQuestion(QuizQuestion q) {
+    final prompt = q.question.toLowerCase().trim();
+    final answer = ScoringUtils.normalizeText(
+      ScoringUtils.cleanExpectedAnswer(q.correctAnswer),
+    );
+
+    final fillerPromptPattern = RegExp(
+      r'(?:\b(?:copyright|all\s+rights\s+reserved|creative\s+commons|licensed\s+under|authors?|written\s+by|who\s+is\s+the\s+author|who\s+is\s+the\s+instructor|who\s+is\s+the\s+professor|instructors?|emails?|office\s+hours|syllabus|grading\s+policy|course\s+code|prerequisite|homework\s+assignment|due\s+date|welcome\s+to|in\s+this\s+lecture|today\x27s\s+lecture|previous\s+slide|next\s+slide|thank\s+you\s+for\s+(?:listening|attending)|summary\s+of\s+today|slide\s+\d+|page\s+\d+|figure\s+\d+|table\s+\d+|chapter\s+\d+|\d+(?:st|nd|rd|th)?\s+edition|edition|references|acknowledgments?)\b|any\s+questions\?)',
+      caseSensitive: false,
+    );
+    if (fillerPromptPattern.hasMatch(prompt)) return true;
+
+    if (RegExp(r'\b(?:on slide|in chapter|on page|published in|publication date|file name)\b', caseSensitive: false).hasMatch(prompt)) {
+      return true;
+    }
+
+    final fillerAnswerPattern = RegExp(
+      r'^(?:all rights reserved|copyright|creative commons|welcome|thank you|any questions|dr\.\s+\w+|prof\.\s+\w+|professor|instructor|syllabus|office hours|slide\s+\d+|page\s+\d+|chapter\s+\d+|https?://\S+|www\.\S+|\S+@\S+)$',
+      caseSensitive: false,
+    );
+    if (fillerAnswerPattern.hasMatch(answer)) return true;
+
+    if (answer.contains('@') || answer.contains('http://') || answer.contains('https://') || answer.contains('www.')) {
+      return true;
+    }
+    if (RegExp(r'^(?:19|20)\d\d$').hasMatch(answer) &&
+        (prompt.contains('published') || prompt.contains('copyright') || prompt.contains('year'))) {
+      return true;
+    }
+
+    return false;
   }
 
   /// Computes the word-level Jaccard similarity coefficient between two strings.
@@ -496,6 +611,9 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
       if (q.question.trim().isEmpty || q.correctAnswer.trim().isEmpty) {
         return false;
       }
+      if (isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q)) {
+        return false;
+      }
       switch (q.type) {
         case QuizQuestionType.multipleChoice:
           if (q.options.length < 2) return false;
@@ -516,6 +634,9 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
           break;
         case QuizQuestionType.fillInTheBlank:
           if (q.correctAnswer.trim().length < 2) return false;
+          if (!q.question.contains('_______') && !q.question.contains('___')) return false;
+          final fibWords = q.correctAnswer.trim().split(RegExp(r'\s+'));
+          if (fibWords.length > 3) return false;
           break;
         case QuizQuestionType.identification:
           if (q.correctAnswer.trim().length < 2) return false;
@@ -770,14 +891,15 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
         .where((s) => s.length >= 25 && s.length <= 280)
         .toList();
 
-    // Filter out trivia, formatting artifacts, and metadata
+    // Filter out trivia, formatting artifacts, metadata, and lecture boilerplate
     final metadataRegex = RegExp(
-      r'\b(course|syllabus|page\s+\d+|figure\s+\d+|table\s+\d+|chapter\s+\d+|copyright|all rights reserved|email:|author:|https?://|www\.|isbn|instructor|university|college|professor|lecture\s+\d+|slide\s+\d+|homework|due date|welcome to|fall\s+\d{4}|spring\s+\d{4}|summer\s+\d{4})\b',
+      r'(?:\b(?:course|syllabus|page\s+\d+|figure\s+\d+|table\s+\d+|chapter\s+\d+|slide\s+\d+|\d+(?:st|nd|rd|th)?\s+edition|edition|copyright|all\s+rights\s+reserved|creative\s+commons|license|licensed\s+under|emails?|authors?|https?://\S+|www\.\S+|isbn|instructor|university|college|professor|lecture\s+\d+|homework|due\s+date|welcome\s+to|in\s+this\s+lecture|thank\s+you\s+for\s+(?:listening|attending)|summary\s+of\s+today|references|further\s+reading|acknowledgments?|office\s+hours|grading\s+policy|fall\s+\d{4}|spring\s+\d{4}|summer\s+\d{4}|column\s+[a-z0-9]+|header\s+[a-z0-9]+|row\s+[a-z0-9]+)\b|any\s+questions\?|attribute\s*\||no\.\s+name\b|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})',
       caseSensitive: false,
     );
 
     final cleanSentences = rawSentences.where((s) {
       if (metadataRegex.hasMatch(s)) return false;
+      if (RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+:?$', caseSensitive: false).hasMatch(s)) return false;
       if (s.endsWith('?')) return false;
       if (RegExp(r'^\d+\.?\s*$').hasMatch(s)) return false;
       return true;
@@ -806,6 +928,19 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
         ? cleanSentences
         : [...cleanSentences, ...fallbackCoreSentences];
 
+    // Structural blacklist to prevent column/table labels, metadata, and filler words from becoming candidate terms
+    const structuralBlacklist = {
+      'column', 'header', 'attribute', 'attributes', 'value', 'values',
+      'field', 'fields', 'table', 'tables', 'row', 'rows', 'item', 'items',
+      'category', 'categories', 'no', 'number', 'type', 'types',
+      'description', 'remarks', 'date', 'col',
+      'copyright', 'reserved', 'author', 'authors', 'professor', 'instructor', 'syllabus',
+      'lecture', 'slide', 'page', 'chapter', 'university', 'college', 'homework',
+      'summary', 'reference', 'references', 'license', 'acknowledgment',
+      'acknowledgments', 'welcome', 'reading', 'hours', 'grading', 'policy',
+      'edition', 'editions', 'email', 'emails', 'isbn',
+    };
+
     // 2. Extract defined concepts and key academic terms
     final defRegex = RegExp(
       r'([A-Z][a-zA-Z0-9\s\-]{2,30})\s+(?:is defined as|refers to|is a|is an|are defined as|is known as|is called|serves as|functions as|consists of)\s+([^.!?]+)',
@@ -823,7 +958,11 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
       if (m != null) {
         final term = m.group(1)?.trim() ?? '';
         final def = m.group(2)?.trim() ?? '';
-        if (term.length >= 3 && def.length >= 8 && !candidateTerms.contains(term)) {
+        if (term.length >= 3 &&
+            def.length >= 8 &&
+            !candidateTerms.contains(term) &&
+            !structuralBlacklist.contains(term.toLowerCase()) &&
+            !RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$', caseSensitive: false).hasMatch(term)) {
           candidateTerms.add(term);
           conceptDefinitions[term] = def;
         }
@@ -832,7 +971,11 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
       if (cm != null) {
         final term = cm.group(1)?.trim() ?? '';
         final def = cm.group(2)?.trim() ?? '';
-        if (term.length >= 3 && def.length >= 8 && !candidateTerms.contains(term)) {
+        if (term.length >= 3 &&
+            def.length >= 8 &&
+            !candidateTerms.contains(term) &&
+            !structuralBlacklist.contains(term.toLowerCase()) &&
+            !RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$', caseSensitive: false).hasMatch(term)) {
           candidateTerms.add(term);
           conceptDefinitions[term] = def;
         }
@@ -847,6 +990,8 @@ Generate exactly $batchCount unique questions testing core concepts and definiti
         if (clean.length >= 4 &&
             words[i].startsWith(RegExp(r'[A-Z]')) &&
             !candidateTerms.contains(clean) &&
+            !structuralBlacklist.contains(clean.toLowerCase()) &&
+            !RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$', caseSensitive: false).hasMatch(clean) &&
             !RegExp(r'^(These|Those|There|Their|Which|After|Before|Because|However|When|Where|While|Since|Both|Each|Every)$')
                 .hasMatch(clean)) {
           candidateTerms.add(clean);

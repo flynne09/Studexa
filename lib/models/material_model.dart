@@ -87,8 +87,11 @@ class MaterialModel {
   }
 
   /// Standard MIME type for Firebase Storage upload metadata
-  String get contentType {
-    switch (fileType.toLowerCase()) {
+  String get contentType => contentTypeForExtension(fileType);
+
+  /// Map extension to MIME type for Storage upload metadata
+  static String contentTypeForExtension(String extension) {
+    switch (extension.toLowerCase().replaceAll('.', '').trim()) {
       case 'pdf':
         return 'application/pdf';
       case 'docx':

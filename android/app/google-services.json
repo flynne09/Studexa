@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "669223676992",
+    "firebase_url": "https://studexa-b5e55-default-rtdb.asia-southeast1.firebasedatabase.app",
     "project_id": "studexa-b5e55",
     "storage_bucket": "studexa-b5e55.firebasestorage.app"
   },
@@ -12,7 +13,20 @@
           "package_name": "com.example.studexa"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "669223676992-g7u8qq708io31rm0ia2vjc65dbj9r0tj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.studexa",
+            "certificate_hash": "ba62af9716d1a41d1bb2c9471f0497af967b173b"
+          }
+        },
+        {
+          "client_id": "669223676992-tn4l6k5tnh5n7lr6hs8imtphd0i7grhd.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDGq6dzJJyHLnzpvR_X6hji5p9H0wIvO6w"
@@ -20,7 +34,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "669223676992-tn4l6k5tnh5n7lr6hs8imtphd0i7grhd.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "669223676992-t7r234bgk9t73qb0jimcn8cqb7pkroic.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.studexa"
+              }
+            }
+          ]
         }
       }
     }
