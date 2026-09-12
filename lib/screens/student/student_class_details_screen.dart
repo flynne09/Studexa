@@ -9,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
 import '../../services/material_service.dart';
 import '../../services/quiz_service.dart';
+import '../../theme/app_theme.dart';
 import 'answer_quiz_screen.dart';
 import '../materials/material_viewer_screen.dart';
 
@@ -21,8 +22,19 @@ import '../materials/material_viewer_screen.dart';
 /// - People tab with instructor info and classmates.
 class StudentClassDetailsScreen extends StatefulWidget {
   final ClassModel classModel;
+  final Stream<ClassModel?>? initialClassStream;
+  final Stream<List<MaterialModel>>? initialMaterialsStream;
+  final Stream<List<QuizModel>>? initialQuizzesStream;
+  final Stream<List<ClassMember>>? initialPeopleStream;
 
-  const StudentClassDetailsScreen({super.key, required this.classModel});
+  const StudentClassDetailsScreen({
+    super.key,
+    required this.classModel,
+    this.initialClassStream,
+    this.initialMaterialsStream,
+    this.initialQuizzesStream,
+    this.initialPeopleStream,
+  });
 
   @override
   State<StudentClassDetailsScreen> createState() =>
@@ -31,14 +43,14 @@ class StudentClassDetailsScreen extends StatefulWidget {
 
 class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     with SingleTickerProviderStateMixin {
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _darkNavy = Color(0xFF000666);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _darkNavy = AppTheme.darkNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   late TabController _tabController;
   final MaterialService _materialService = MaterialService();
@@ -229,7 +241,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<ClassModel?>(
-      stream: _classService.streamClass(widget.classModel.id),
+      stream: widget.initialClassStream ??
+          _classService.streamClass(widget.classModel.id),
       initialData: widget.classModel,
       builder: (context, classSnapshot) {
         final liveClass = classSnapshot.data ?? widget.classModel;
@@ -246,135 +259,150 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
               ),
             ),
             child: SafeArea(
-              child: Column(
-                children: [
-                  // ── Top Navigation Bar ────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back,
-                            color: _textPrimary,
-                          ),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            liveClass.name,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: _textPrimary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: AppTheme.maxContentWidthTablet,
                   ),
-
-                  // ── Google Classroom Header Banner ────────────
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_primaryNavy, _darkNavy],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+                  child: Column(
+                    children: [
+                      // ── Top Navigation Bar ────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.arrow_back,
+                                color: _textPrimary,
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                liveClass.name,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: _textPrimary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _primaryNavy.withValues(alpha: 0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          liveClass.name,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        if (liveClass.teacherName.isNotEmpty)
-                          Text(
-                            'Instructor: ${liveClass.teacherName}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            'Class Code: ${liveClass.joinCode}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
 
-                  const SizedBox(height: 12),
+                      // ── Google Classroom Header Banner ────────────
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [_primaryNavy, _darkNavy],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: AppTheme.borderRadiusLg,
+                          boxShadow: AppTheme.cardShadow,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              liveClass.name,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            if (liveClass.teacherName.isNotEmpty)
+                              Text(
+                                'Instructor: ${liveClass.teacherName}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                ),
+                              ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                'Class Code: ${liveClass.joinCode}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
 
-                  // ── Segmented Tabs ───────────────────────────
-                  TabBar(
-                    controller: _tabController,
-                    labelColor: _primaryNavy,
-                    unselectedLabelColor: _textSecondary,
-                    indicatorColor: _primaryNavy,
-                    indicatorWeight: 3,
-                    tabs: const [
-                      Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
-                      Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
-                      Tab(icon: Icon(Icons.people_outline), text: 'Class Info'),
+                      const SizedBox(height: 12),
+
+                      // ── Segmented Tabs ───────────────────────────
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: AppTheme.borderRadiusMd,
+                          border: Border.all(color: _outlineVariant),
+                        ),
+                        child: TabBar(
+                          controller: _tabController,
+                          labelColor: _primaryNavy,
+                          unselectedLabelColor: _textSecondary,
+                          indicator: BoxDecoration(
+                            color: _primaryNavy.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          dividerColor: Colors.transparent,
+                          tabs: const [
+                            Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
+                            Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
+                            Tab(icon: Icon(Icons.people_outline), text: 'Class Info'),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // ── Tab Views ────────────────────────────────
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            // 1. Materials Tab
+                            _buildMaterialsTab(liveClass),
+
+                            // 2. Practice Quizzes Tab
+                            _buildQuizzesTab(liveClass),
+
+                            // 3. Class Info & People Tab
+                            _buildPeopleTab(liveClass),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-
-                  // ── Tab Views ────────────────────────────────
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        // 1. Materials Tab
-                        _buildMaterialsTab(liveClass),
-
-                        // 2. Practice Quizzes Tab
-                        _buildQuizzesTab(liveClass),
-
-                        // 3. Class Info & People Tab
-                        _buildPeopleTab(liveClass),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -386,7 +414,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   // ── Materials Tab View ─────────────────────────────────────────
   Widget _buildMaterialsTab(ClassModel liveClass) {
     return StreamBuilder<List<MaterialModel>>(
-      stream: _materialService.streamClassMaterials(liveClass.id),
+      stream: widget.initialMaterialsStream ??
+          _materialService.streamClassMaterials(liveClass.id),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -438,19 +467,13 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: _surfaceWhite,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: AppTheme.borderRadiusLg,
                 border: Border.all(color: _outlineVariant),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                boxShadow: AppTheme.cardShadow,
               ),
               child: Material(
                 color: Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: AppTheme.borderRadiusLg,
                 clipBehavior: Clip.antiAlias,
                 child: ListTile(
                   contentPadding: const EdgeInsets.symmetric(
@@ -491,7 +514,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     final currentUserId = AuthService().currentUser?.uid ?? '';
 
     return StreamBuilder<List<QuizModel>>(
-      stream: _quizService.streamClassQuizzes(liveClass.id, type: 'practice'),
+      stream: widget.initialQuizzesStream ??
+          _quizService.streamClassQuizzes(liveClass.id, type: 'practice', publishedOnly: true),
       builder: (context, quizSnapshot) {
         if (quizSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -577,15 +601,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
                         color: _surfaceWhite,
-                        borderRadius: BorderRadius.circular(14),
+                        borderRadius: AppTheme.borderRadiusLg,
                         border: Border.all(color: _outlineVariant),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
+                        boxShadow: AppTheme.cardShadow,
                       ),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
@@ -693,130 +711,136 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                             const SizedBox(height: 14),
                             SizedBox(
                               width: double.infinity,
-                              child: (isClosed || isExpired)
-                                  ? ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: Colors.grey[300],
-                                        foregroundColor: Colors.grey[700],
-                                        elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                      ),
-                                      onPressed: () {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              isClosed
-                                                  ? 'This quiz has been closed by your teacher.'
-                                                  : 'The deadline for this quiz has passed.',
-                                            ),
-                                            backgroundColor: Colors.redAccent,
-                                          ),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.lock_outline, size: 18),
-                                      label: Text(
-                                        isClosed ? 'Closed by Instructor' : 'Deadline Passed',
-                                        style: const TextStyle(fontWeight: FontWeight.w600),
-                                      ),
-                                    )
-                                  : attemptCount >= 2
+                              child: (isClosed || isExpired) && attemptCount > 0
                                   ? OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: _primaryNavy,
-                                        side: const BorderSide(color: _primaryNavy),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                      ),
                                       onPressed: () => _showAttemptReview(attempt!, quiz),
-                                      icon: const Icon(Icons.assessment_outlined, size: 18),
-                                      label: const Text(
-                                        'Review Results & Feedback (2/2 Used)',
-                                        style: TextStyle(fontWeight: FontWeight.w600),
-                                      ),
+                                      icon: const Icon(Icons.assessment_outlined),
+                                      label: const Text('Review Results & Feedback'),
                                     )
-                                  : attemptCount == 1
-                                  ? Row(
-                                      children: [
-                                        Expanded(
-                                          child: OutlinedButton.icon(
-                                            style: OutlinedButton.styleFrom(
-                                              foregroundColor: _primaryNavy,
-                                              side: const BorderSide(color: _primaryNavy),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              padding: const EdgeInsets.symmetric(vertical: 10),
-                                            ),
-                                            onPressed: () => _showAttemptReview(attempt!, quiz),
-                                            icon: const Icon(Icons.assessment_outlined, size: 16),
-                                            label: const Text(
-                                              'Review #1',
-                                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: ElevatedButton.icon(
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: _primaryNavy,
-                                              foregroundColor: Colors.white,
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              padding: const EdgeInsets.symmetric(vertical: 10),
-                                            ),
-                                            onPressed: () {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (context) => AnswerQuizScreen(
-                                                    quiz: quiz,
-                                                    attemptNumber: 2,
-                                                  ),
-                                                ),
-                                              );
-                                            },
-                                            icon: const Icon(Icons.shuffle_rounded, size: 16),
-                                            label: const Text(
-                                              'Retake #2',
-                                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : ElevatedButton.icon(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: _primaryNavy,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        padding: const EdgeInsets.symmetric(vertical: 10),
-                                      ),
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => AnswerQuizScreen(
-                                              quiz: quiz,
-                                              attemptNumber: 1,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                                      label: const Text(
-                                        'Start Practice Quiz',
-                                        style: TextStyle(fontWeight: FontWeight.w600),
-                                      ),
-                                    ),
+                                   : (isClosed || isExpired)
+                                   ? ElevatedButton.icon(
+                                       style: ElevatedButton.styleFrom(
+                                         backgroundColor: Colors.grey[300],
+                                         foregroundColor: Colors.grey[700],
+                                         elevation: 0,
+                                         shape: RoundedRectangleBorder(
+                                           borderRadius: AppTheme.borderRadiusMd,
+                                         ),
+                                         padding: const EdgeInsets.symmetric(vertical: 10),
+                                       ),
+                                       onPressed: () {
+                                         ScaffoldMessenger.of(context).showSnackBar(
+                                           SnackBar(
+                                             content: Text(
+                                               isClosed
+                                                   ? 'This quiz has been closed by your teacher.'
+                                                   : 'The deadline for this quiz has passed.',
+                                             ),
+                                             backgroundColor: Colors.redAccent,
+                                           ),
+                                         );
+                                       },
+                                       icon: const Icon(Icons.lock_outline, size: 18),
+                                       label: Text(
+                                         isClosed ? 'Closed by Instructor' : 'Deadline Passed',
+                                         style: const TextStyle(fontWeight: FontWeight.w600),
+                                       ),
+                                     )
+                                   : attemptCount >= 2
+                                   ? OutlinedButton.icon(
+                                       style: OutlinedButton.styleFrom(
+                                         foregroundColor: _primaryNavy,
+                                         side: const BorderSide(color: _primaryNavy),
+                                         shape: RoundedRectangleBorder(
+                                           borderRadius: AppTheme.borderRadiusMd,
+                                         ),
+                                         padding: const EdgeInsets.symmetric(vertical: 10),
+                                       ),
+                                       onPressed: () => _showAttemptReview(attempt!, quiz),
+                                       icon: const Icon(Icons.assessment_outlined, size: 18),
+                                       label: const Text(
+                                         'Review Results & Feedback (2/2 Used)',
+                                         style: TextStyle(fontWeight: FontWeight.w600),
+                                       ),
+                                     )
+                                   : attemptCount == 1
+                                   ? Row(
+                                       children: [
+                                         Expanded(
+                                           child: OutlinedButton.icon(
+                                             style: OutlinedButton.styleFrom(
+                                               foregroundColor: _primaryNavy,
+                                               side: const BorderSide(color: _primaryNavy),
+                                               shape: RoundedRectangleBorder(
+                                                 borderRadius: AppTheme.borderRadiusMd,
+                                               ),
+                                               padding: const EdgeInsets.symmetric(vertical: 10),
+                                             ),
+                                             onPressed: () => _showAttemptReview(attempt!, quiz),
+                                             icon: const Icon(Icons.assessment_outlined, size: 16),
+                                             label: const Text(
+                                               'Review #1',
+                                               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                             ),
+                                           ),
+                                         ),
+                                         const SizedBox(width: 8),
+                                         Expanded(
+                                           child: ElevatedButton.icon(
+                                             style: ElevatedButton.styleFrom(
+                                               backgroundColor: _primaryNavy,
+                                               foregroundColor: Colors.white,
+                                               shape: RoundedRectangleBorder(
+                                                 borderRadius: AppTheme.borderRadiusMd,
+                                               ),
+                                               padding: const EdgeInsets.symmetric(vertical: 10),
+                                             ),
+                                             onPressed: () {
+                                               Navigator.push(
+                                                 context,
+                                                 MaterialPageRoute(
+                                                   builder: (context) => AnswerQuizScreen(
+                                                     quiz: quiz,
+                                                     attemptNumber: 2,
+                                                   ),
+                                                 ),
+                                               );
+                                             },
+                                             icon: const Icon(Icons.shuffle_rounded, size: 16),
+                                             label: const Text(
+                                               'Retake #2',
+                                               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                             ),
+                                           ),
+                                         ),
+                                       ],
+                                     )
+                                   : ElevatedButton.icon(
+                                       style: ElevatedButton.styleFrom(
+                                         backgroundColor: _primaryNavy,
+                                         foregroundColor: Colors.white,
+                                         shape: RoundedRectangleBorder(
+                                           borderRadius: AppTheme.borderRadiusMd,
+                                         ),
+                                         padding: const EdgeInsets.symmetric(vertical: 10),
+                                       ),
+                                       onPressed: () {
+                                         Navigator.push(
+                                           context,
+                                           MaterialPageRoute(
+                                             builder: (context) => AnswerQuizScreen(
+                                               quiz: quiz,
+                                               attemptNumber: 1,
+                                             ),
+                                           ),
+                                         );
+                                       },
+                                       icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                                       label: const Text(
+                                         'Start Practice Quiz',
+                                         style: TextStyle(fontWeight: FontWeight.w600),
+                                       ),
+                                     ),
                             ),
                           ],
                         ),
@@ -1040,7 +1064,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   // ── People & Class Info Tab View ───────────────────────────────
   Widget _buildPeopleTab(ClassModel liveClass) {
     return StreamBuilder<List<ClassMember>>(
-      stream: _classService.getClassMembersStream(liveClass.id),
+      stream: widget.initialPeopleStream ??
+          _classService.getClassMembersStream(liveClass.id),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -1068,19 +1093,13 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
             Container(
               decoration: BoxDecoration(
                 color: _surfaceWhite,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: AppTheme.borderRadiusLg,
                 border: Border.all(color: _outlineVariant),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+                boxShadow: AppTheme.cardShadow,
               ),
               child: Material(
                 color: Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: AppTheme.borderRadiusLg,
                 clipBehavior: Clip.antiAlias,
                 child: ListTile(
                   leading: CircleAvatar(
@@ -1125,8 +1144,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: _surfaceWhite,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: AppTheme.borderRadiusLg,
                   border: Border.all(color: _outlineVariant),
+                  boxShadow: AppTheme.cardShadow,
                 ),
                 child: const Text(
                   'You are the first student in this class!',
@@ -1142,19 +1162,13 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppTheme.borderRadiusLg,
                     border: Border.all(color: _outlineVariant),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    boxShadow: AppTheme.cardShadow,
                   ),
                   child: Material(
                     color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppTheme.borderRadiusLg,
                     clipBehavior: Clip.antiAlias,
                     child: ListTile(
                       leading: CircleAvatar(

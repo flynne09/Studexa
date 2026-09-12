@@ -40,6 +40,9 @@ class MaterialService {
     required int byteLength,
   }) {
     final cleanExt = extension.toLowerCase().replaceAll('.', '').trim();
+    if (fileName.trim().isEmpty || fileName.contains('/') || fileName.contains('\\')) {
+      throw const MaterialValidationException('Choose a document with a valid file name.');
+    }
 
     if (!supportedExtensions.contains(cleanExt)) {
       throw MaterialValidationException(
@@ -119,6 +122,14 @@ class MaterialService {
       }
     }
 
+    if (teacherId.trim().isEmpty) {
+      throw const MaterialValidationException('Please sign in before uploading a document.');
+    }
+    if (resolvedBytes == null) {
+      throw const MaterialValidationException('The file could not be opened. Select it again and check that it is still accessible.');
+    }
+    validateFile(fileName: fileName, extension: cleanExt, byteLength: resolvedBytes.length);
+
     // 2. Prepare Firestore document ID and storage path up front
     final materialDocRef = _firestore.collection('materials').doc();
     final materialId = materialDocRef.id;
@@ -138,13 +149,9 @@ class MaterialService {
         },
       );
 
-      if (resolvedBytes != null) {
-        uploadTask = storageRef.putData(resolvedBytes, metadata);
-      } else if (localFilePath != null && !kIsWeb) {
-        uploadTask = storageRef.putFile(File(localFilePath), metadata);
-      }
+      uploadTask = storageRef.putData(resolvedBytes, metadata);
 
-      if (uploadTask != null && onProgress != null) {
+      if (onProgress != null) {
         progressSub = uploadTask.snapshotEvents.listen(
           (TaskSnapshot snapshot) {
             if (snapshot.totalBytes > 0) {
@@ -167,7 +174,7 @@ class MaterialService {
     String? errorReason;
     bool isExtracted = false;
 
-    if (resolvedBytes != null && resolvedBytes.isNotEmpty) {
+    if (resolvedBytes.isNotEmpty) {
       try {
         final extractionResult = await DocumentTextExtractor.extract(
           bytes: resolvedBytes,
@@ -202,32 +209,27 @@ class MaterialService {
       extractedText: extractedText,
       conversionStatus: cleanExt == 'pdf' ? 'completed' : 'pending',
       createdAt: DateTime.now(),
-      fileSizeBytes: byteLength,
+      fileSizeBytes: resolvedBytes.length,
     );
 
-    await materialDocRef.set(readyModel.toMap());
+    try {
+      await materialDocRef.set({
+        ...readyModel.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+        if (isExtracted) 'extractedAt': FieldValue.serverTimestamp(),
+      }).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      await progressSub?.cancel();
+      if (uploadTask != null) {
+        unawaited(uploadTask.cancel().then<void>((_) {}, onError: (Object _) {}));
+      }
+      throw const MaterialValidationException('Could not save this material. Check your Internet connection and try again.');
+    }
 
-    // 6. Non-blocking Storage upload resolution:
-    // If the upload finished during text extraction, attach downloadUrl immediately.
-    // Otherwise, let the background worker finalize downloadUrl in Firestore without
-    // delaying the teacher from proceeding to quiz generation.
-    String? downloadUrl;
+    // 6. Resolve Storage in the background, including URL/metadata requests.
+    // Ready text never waits for Storage or download URL resolution.
     if (uploadTask != null) {
       final storageRef = _storage.ref().child(storagePath);
-
-      // Fast check if already completed
-      try {
-        final fastSnapshot = await uploadTask.timeout(const Duration(milliseconds: 100));
-        if (fastSnapshot.state == TaskState.success) {
-          downloadUrl = await storageRef.getDownloadURL();
-          await materialDocRef.update({'downloadUrl': downloadUrl});
-          await progressSub?.cancel();
-          onProgress?.call(1.0);
-          return readyModel.copyWith(downloadUrl: downloadUrl);
-        }
-      } catch (_) {
-        // Still transferring in the background; do not block the caller!
-      }
 
       // Background worker to finalize downloadUrl in Firestore without delaying UI
       unawaited(() async {
@@ -235,8 +237,8 @@ class MaterialService {
           final snapshot = await uploadTask!.timeout(const Duration(seconds: 45));
           if (snapshot.state == TaskState.success) {
             try {
-              final url = await storageRef.getDownloadURL();
-              await materialDocRef.update({'downloadUrl': url});
+              final url = await storageRef.getDownloadURL().timeout(const Duration(seconds: 10));
+              await materialDocRef.update({'downloadUrl': url}).timeout(const Duration(seconds: 10));
             } catch (urlErr) {
               debugPrint('Failed to get download URL in background: $urlErr');
             }
@@ -277,7 +279,7 @@ class MaterialService {
         final bytes = await _storage
             .ref()
             .child(material.fileRef)
-            .getData(maxFileSizeBytes);
+            .getData(maxFileSizeBytes).timeout(const Duration(seconds: 15));
         if (bytes != null && bytes.isNotEmpty) {
           return bytes;
         }
@@ -313,7 +315,7 @@ class MaterialService {
         final bytes = await _storage
             .ref()
             .child(material.convertedPdfRef!)
-            .getData(maxFileSizeBytes);
+            .getData(maxFileSizeBytes).timeout(const Duration(seconds: 15));
         if (bytes != null && bytes.isNotEmpty) {
           return bytes;
         }

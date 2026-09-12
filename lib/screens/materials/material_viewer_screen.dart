@@ -5,6 +5,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../models/material_model.dart';
 import '../../services/material_service.dart';
+import '../../theme/app_theme.dart';
 
 /// Screen and handler for viewing study materials.
 /// - PDF: Rendered in-app with Syncfusion PDF Viewer.
@@ -152,10 +153,10 @@ class MaterialViewerScreen extends StatefulWidget {
 }
 
 class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
-  static const Color _primaryNavy = Color(0xFF1A237E);
-  static const Color _surfaceWhite = Color(0xFFFBF9F8);
-  static const Color _textPrimary = Color(0xFF1E293B);
-  static const Color _textSecondary = Color(0xFF64748B);
+  static const Color _primaryNavy = AppTheme.primaryNavy;
+  static const Color _surfaceWhite = AppTheme.surfaceWhite;
+  static const Color _textPrimary = AppTheme.textPrimary;
+  static const Color _textSecondary = AppTheme.textSecondary;
 
   late MaterialModel _material;
   late final MaterialService _materialService;
@@ -163,6 +164,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
 
   late bool _showExtractedText;
   bool _isLoadingPdf = true;
+  bool _previewStarted = false;
   String? _pdfLoadError;
   Uint8List? _pdfBytes;
 
@@ -178,7 +180,17 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     _showExtractedText = widget.initialShowExtractedText ||
         (!isNativePdf && !hasPreview && !_material.isConverting && !_material.conversionFailed);
 
-    if (isNativePdf || hasPreview) {
+    if (_showExtractedText) {
+      _isLoadingPdf = false;
+    } else {
+      _startPreview();
+    }
+  }
+
+  void _startPreview() {
+    if (_previewStarted) return;
+    _previewStarted = true;
+    if (_material.fileType.toLowerCase() == 'pdf' || _material.hasConvertedPdf) {
       _loadPdf();
     } else if (_material.isConverting) {
       _listenForConversion();
@@ -317,6 +329,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                 setState(() {
                   _showExtractedText = !_showExtractedText;
                 });
+                if (!_showExtractedText) _startPreview();
               },
               icon: Icon(
                 _showExtractedText
@@ -402,78 +415,89 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
       color: _surfaceWhite,
       padding: const EdgeInsets.all(24),
       alignment: Alignment.center,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: isFailed ? Colors.amber.shade50 : Colors.indigo.shade50,
-              shape: BoxShape.circle,
-            ),
-            child: isFailed
-                ? Icon(Icons.warning_amber_rounded, size: 40, color: Colors.amber.shade900)
-                : const CircularProgressIndicator(
-                    color: _primaryNavy,
-                    strokeWidth: 3,
-                  ),
-          ),
-          const SizedBox(height: 24),
-          Text(
-            isFailed ? 'Preview Conversion Failed' : 'Generating In-App Preview',
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: _textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            isFailed
-                ? 'Could not generate an in-app preview for "${_material.fileName}". You can open the original file with your device\'s app or view the extracted text.'
-                : 'Converting "${_material.fileName}" to a high-fidelity in-app preview PDF. This will take a few seconds.',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 14, color: _textSecondary),
-          ),
-          const SizedBox(height: 28),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            alignment: WrapAlignment.center,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidthMobile),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              OutlinedButton.icon(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: _primaryNavy,
-                  side: const BorderSide(color: _primaryNavy),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: isFailed ? Colors.amber.shade50 : Colors.indigo.shade50,
+                  shape: BoxShape.circle,
                 ),
-                onPressed: () {
-                  MaterialViewerScreen.openExternal(
-                    context: context,
-                    material: _material,
-                    materialService: _materialService,
-                  );
-                },
-                icon: const Icon(Icons.open_in_new, size: 18),
-                label: Text('Open Original (${_material.fileType.toUpperCase()})'),
+                child: isFailed
+                    ? Icon(Icons.warning_amber_rounded, size: 40, color: Colors.amber.shade900)
+                    : const CircularProgressIndicator(
+                        color: _primaryNavy,
+                        strokeWidth: 3,
+                      ),
               ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _primaryNavy,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              const SizedBox(height: 24),
+              Text(
+                isFailed ? 'Preview Conversion Failed' : 'Generating In-App Preview',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: _textPrimary,
                 ),
-                onPressed: () {
-                  setState(() {
-                    _showExtractedText = true;
-                  });
-                },
-                icon: const Icon(Icons.text_snippet, size: 18),
-                label: const Text('View Extracted Text'),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isFailed
+                    ? 'Could not generate an in-app preview for "${_material.fileName}". You can open the original file with your device\'s app or view the extracted text.'
+                    : 'Converting "${_material.fileName}" to a high-fidelity in-app preview PDF. This will take a few seconds.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 14, color: _textSecondary),
+              ),
+              const SizedBox(height: 28),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _primaryNavy,
+                      side: const BorderSide(color: _primaryNavy),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onPressed: () {
+                      MaterialViewerScreen.openExternal(
+                        context: context,
+                        material: _material,
+                        materialService: _materialService,
+                      );
+                    },
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                    label: Text('Open Original (${_material.fileType.toUpperCase()})'),
+                  ),
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primaryNavy,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _showExtractedText = true;
+                      });
+                    },
+                    icon: const Icon(Icons.text_snippet, size: 18),
+                    label: const Text('View Extracted Text'),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -482,75 +506,80 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     return Container(
       color: _surfaceWhite,
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_pdfLoadError != null)
-            Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.shade300),
-              ),
-              child: Row(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (_pdfLoadError != null)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline,
+                          color: Colors.amber.shade900, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _pdfLoadError!,
+                          style:
+                              TextStyle(color: Colors.amber.shade900, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Row(
                 children: [
-                  Icon(Icons.info_outline,
-                      color: Colors.amber.shade900, size: 20),
+                  const Icon(Icons.description, color: _primaryNavy, size: 20),
                   const SizedBox(width: 8),
-                  Expanded(
+                  const Expanded(
                     child: Text(
-                      _pdfLoadError!,
-                      style:
-                          TextStyle(color: Colors.amber.shade900, fontSize: 12),
+                      'Extracted Material Text',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (widget.material.fileSizeBytes != null) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      widget.material.formattedFileSize,
+                      style: const TextStyle(fontSize: 12, color: _textSecondary),
+                    ),
+                  ],
                 ],
               ),
-            ),
-          Row(
-            children: [
-              const Icon(Icons.description, color: _primaryNavy, size: 20),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Extracted Material Text',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
+              const SizedBox(height: 12),
+              const Divider(),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    widget.material.extractedText.isNotEmpty
+                        ? widget.material.extractedText
+                        : 'No text was extractable from this document.',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.6,
+                      color: _textPrimary,
+                    ),
                   ),
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (widget.material.fileSizeBytes != null) ...[
-                const SizedBox(width: 8),
-                Text(
-                  widget.material.formattedFileSize,
-                  style: const TextStyle(fontSize: 12, color: _textSecondary),
-                ),
-              ],
             ],
           ),
-          const SizedBox(height: 12),
-          const Divider(),
-          const SizedBox(height: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              child: SelectableText(
-                widget.material.extractedText.isNotEmpty
-                    ? widget.material.extractedText
-                    : 'No text was extractable from this document.',
-                style: const TextStyle(
-                  fontSize: 14,
-                  height: 1.6,
-                  color: _textPrimary,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

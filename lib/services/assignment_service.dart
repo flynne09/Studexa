@@ -123,7 +123,10 @@ class AssignmentService {
   }
 
   /// Submits a student's graded quiz attempt after verifying availability.
-  Future<QuizAttemptModel> submitAttempt(QuizAttemptModel attempt) async {
+  Future<QuizAttemptModel> submitAttempt(QuizAttemptModel attempt) =>
+      _submitAttempt(attempt).timeout(const Duration(seconds: 20));
+
+  Future<QuizAttemptModel> _submitAttempt(QuizAttemptModel attempt) async {
     if (!useFirestore) {
       return QuizAttemptModel(
         id: 'mock_attempt_${DateTime.now().millisecondsSinceEpoch}',
@@ -142,6 +145,7 @@ class AssignmentService {
     }
 
     // 1. Availability validation: check if an assignment exists
+    String? assignmentId = attempt.assignmentId;
     final assignmentSnapshot = await _assignmentsCollection
         .where('classId', isEqualTo: attempt.classId)
         .where('quizId', isEqualTo: attempt.quizId)
@@ -151,6 +155,7 @@ class AssignmentService {
     if (assignmentSnapshot.docs.isNotEmpty) {
       final assignment =
           QuizAssignmentModel.fromFirestore(assignmentSnapshot.docs.first);
+      assignmentId = assignment.id;
       if (assignment.isClosed) {
         throw const QuizUnavailableException(
           'This quiz has been closed by the instructor. New submissions are no longer accepted.',
@@ -179,12 +184,12 @@ class AssignmentService {
       }
     }
 
-    // 3. Persist attempt
-    final docRef = _attemptsCollection.doc();
+    // Stable IDs prevent duplicate writes after a timeout or rapid retry.
+    final docRef = _attemptsCollection.doc(attempt.id.isEmpty ? null : attempt.id);
     final savedAttempt = QuizAttemptModel(
       id: docRef.id,
       quizId: attempt.quizId,
-      assignmentId: attempt.assignmentId,
+      assignmentId: assignmentId,
       classId: attempt.classId,
       studentId: attempt.studentId,
       studentName: attempt.studentName,
@@ -237,9 +242,11 @@ class AssignmentService {
         .where('studentId', isEqualTo: studentId)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
+      final attempts = snapshot.docs
           .map((doc) => QuizAttemptModel.fromFirestore(doc))
           .toList();
+      attempts.sort((a, b) => (b.submittedAt ?? DateTime(1970)).compareTo(a.submittedAt ?? DateTime(1970)));
+      return attempts;
     });
   }
 

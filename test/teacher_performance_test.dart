@@ -59,6 +59,47 @@ void main() {
   );
 
   group('Task 6 — Teacher Performance & Non-blocking Operations Tests', () {
+    testWidgets('Quiz query errors show retry instead of an empty class', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: TeacherClassDetailsScreen(
+          classModel: testClass,
+          initialMaterialsStream: Stream.value([]),
+          initialQuizzesStream: Stream<List<QuizModel>>.error(
+            StateError('permission-denied'),
+          ),
+        ),
+      ));
+      await tester.tap(find.text('Quizzes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Unable to load quizzes. Check your connection and try again.'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+      expect(find.text('No Quizzes Created Yet'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Teacher class shows Actual drafts and published Practice', (tester) async {
+      final actualQuiz = QuizModel(
+        id: 'actual_visibility', classId: testClass.id,
+        teacherId: testClass.teacherId, materialId: 'material_visibility',
+        title: 'Actual draft exam', type: 'actual', status: 'draft', questions: [],
+      );
+      await tester.pumpWidget(MaterialApp(
+        home: TeacherClassDetailsScreen(
+          classModel: testClass,
+          initialMaterialsStream: Stream.value([]),
+          initialQuizzesStream: Stream.value([actualQuiz, testQuiz]),
+        ),
+      ));
+      await tester.tap(find.text('Quizzes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Actual draft exam'), findsOneWidget);
+      expect(find.text(testQuiz.title), findsOneWidget);
+      expect(find.text('No Quizzes Created Yet'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('1. TeacherClassDetailsScreen renders cached streams, header info, and keep-alive tabs', (tester) async {
       await tester.pumpWidget(
         MaterialApp(

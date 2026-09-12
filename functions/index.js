@@ -1,6 +1,10 @@
 const { onObjectFinalized } = require("firebase-functions/v2/storage");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
+const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { defineSecret } = require("firebase-functions/params");
+const { generateQuizQuestions, QuizGenerationError, validateRequest } = require("./quiz_generator");
+const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -269,6 +273,7 @@ function isFillerOrBoilerplateQuestion(q) {
  */
 exports.extractText = onObjectFinalized(
   {
+    region: "us-east1",
     cpu: 1,
     memory: "1GiB",
     timeoutSeconds: 300,
@@ -302,7 +307,7 @@ exports.extractText = onObjectFinalized(
 
     console.log(`Processing file: ${fileName} (materialId: ${materialId}, teacherId: ${teacherId})`);
 
-    const firestore = admin.firestore();
+    const firestore = getFirestore(process.env.FIRESTORE_DATABASE_ID || "default");
     const materialRef = firestore.collection("materials").doc(materialId);
 
     // Map extension to supported fileType: "pdf" | "pptx" | "docx"
@@ -398,7 +403,7 @@ exports.extractText = onObjectFinalized(
         {
           status: "ready",
           extractedText: trimmedText,
-          extractedAt: admin.firestore.FieldValue.serverTimestamp(),
+          extractedAt: FieldValue.serverTimestamp(),
           fileRef: filePath,
           fileType: fileType,
         },
@@ -430,7 +435,7 @@ exports.extractText = onObjectFinalized(
               conversionStatus: "completed",
               convertedPdfRef: conversionResult.convertedPdfRef,
               convertedPdfUrl: conversionResult.convertedPdfUrl || null,
-              convertedAt: admin.firestore.FieldValue.serverTimestamp(),
+              convertedAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
           );
@@ -717,235 +722,49 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
 }
 
 /**
- * Gemini AI Quiz Generator.
- * Invokes Gemini API via HTTPS with strict JSON schema and output enforcement.
- */
-async function generateGeminiQuiz(extractedText, questionTypes, questionCount, isActual, sourceQuizContext, apiKey) {
-  const targetCount = questionCount || 10;
-  const typesDesc = (questionTypes && questionTypes.length > 0)
-    ? questionTypes.join(", ")
-    : "Multiple Choice, True/False, Fill-in-the-Blank, Identification, Enumeration";
-
-  const systemInstruction = `You are an expert pedagogical assessment designer for Studexa.
-Your primary objective is to evaluate student mastery of CORE CONCEPTS, KEY DEFINITIONS, and FUNDAMENTAL MECHANISMS from the provided study material.
-
-MANDATORY ASSESSMENT DIRECTIVES:
-1. CORE CONCEPTS & DEFINITIONS FIRST:
-   - Identify the central principles, key definitions, primary mechanisms, and functional relationships in the material.
-   - Every question must assess a core concept that an instructor would legitimately evaluate on a comprehensive final exam.
-2. STRICTLY FORBID IRRELEVANT, FILLER & NON-ACADEMIC CONTENT:
-   - NEVER generate questions from, and completely ignore:
-     a) Copyright notices, license text, and "all rights reserved" (e.g. "© 2024", "Creative Commons", "All rights reserved").
-     b) Author, professor, or instructor details: names, academic titles, departments, affiliations, email addresses, phone numbers, and author bios.
-     c) Document metadata: file names, slide numbers ("Slide 1", "Slide 10"), page numbers, dates of publication, semesters, edition numbers, and timestamps.
-     d) Boilerplate phrases and lecture transitions: "Welcome to...", "In this lecture...", "Today we will discuss...", "As seen in the previous slide...", "Thank you for listening", "Any questions?", "Summary of today's class", "References", "Further Reading", "Acknowledgments".
-     e) Administrative & course management content: course codes (e.g. "CS 101", "BIO 204"), prerequisites, grading policies, office hours, exam schedules, syllabus policies, submission guidelines, homework assignments, or platform links.
-   - Questions and answers MUST test substantive academic concepts, theories, principles, processes, or core mechanisms only.
-3. STRICTLY FORBID TABLE/COLUMN HEADERS & STRUCTURAL LABELS:
-   - NEVER generate questions based on table or column headers, table row numbers, or data grid structural labels (e.g., "Column A", "Column B", "Header 1", "Header 2", "Attribute", "Value", "No.", "Field", "Item", "Category", "Description", "Remarks", "Date", "Type").
-   - NEVER ask what a column, row, or header is named, what is listed under a specific column/header, or test the visual layout/structure of tables, charts, or diagrams.
-   - When the study material includes tables, focus EXCLUSIVELY on the academic concepts, facts, mechanisms, and relationships described within the table cells — NOT the table structure itself.
-   - NEVER produce answer choices or distractors that are column headers or structural labels (e.g. options like "A. Column A", "B. Header 1", "C. Attribute", "D. Value" are strictly forbidden).
-4. PLAUSIBLE, CATEGORICALLY PARALLEL DISTRACTORS:
-   - For multiple_choice questions, all 3 incorrect distractors MUST be plausible, academically meaningful terms in the EXACT SAME conceptual category/domain as the correct answer.
-   - NEVER produce joke, nonsensical, or obviously absurd options.
-5. FACTUAL GROUNDING:
-   - Every question, answer option, and explanation must be 100% grounded in and verifiable against the provided text.
-6. ANTI-REDUNDANCY:
-   - Every question MUST test a DIFFERENT concept, definition, or mechanism.
-   - NEVER generate duplicate questions, rephrased copies of another question, or questions with identical stems or answers.
-7. QUESTION FORMAT CONSTRAINTS:
-    - multiple_choice: exactly 4 options labeled "A. ...", "B. ...", "C. ...", "D. ...", and correctAnswer must match the full option string.
-    - true_false: options must be ["True", "False"], correctAnswer must be "True" or "False". Test a core concept, not a tricky technicality.
-    - fill_blank: The question stem MUST contain "_______" (7 underscores). The blank MUST target a single, specific, unambiguous key term (1-2 words max, ideally a proper noun, technical term, or core vocabulary word). The sentence must provide enough context so that ONLY that specific term makes logical sense. NEVER blank out generic verbs, adjectives, or filler words. The correctAnswer MUST be the exact word/term that fills the blank, with NO surrounding quotation marks, punctuation, or leading articles ("the", "a", "an") unless strictly part of a formal proper name.
-    - identification: question provides a precise description WITHOUT giving away the term, correctAnswer is the term.
-    - enumeration: question asks to enumerate 2 to 5 specific items, enumerationAnswers must be an array of expected string items, and correctAnswer can be a comma-separated list of those items.
-${!isActual && sourceQuizContext ? `8. DISTINCT PHRASING REQUIREMENT: A reference Actual Quiz is provided. Do NOT copy question sentences verbatim. Test the SAME underlying concepts using ALTERNATIVE phrasing, application scenarios, or inverted questions.` : ""}
-
-Output Schema:
-{
-  "title": "Descriptive title for the quiz",
-  "questions": [
-    {
-      "id": "q_1",
-      "type": "multiple_choice" | "true_false" | "fill_blank" | "identification" | "enumeration",
-      "question": "Clear question testing a core concept",
-      "options": ["A. ...", "B. ...", "C. ...", "D. ..."],
-      "correctAnswer": "Answer string",
-      "enumerationAnswers": ["item1", "item2"],
-      "explanation": "Why this answer is correct",
-      "points": 1.0
-    }
-  ]
-}`;
-
-  const promptContent = `STUDY MATERIAL EXTRACTED TEXT:
-${extractedText.substring(0, 15000)}
-
-${!isActual && sourceQuizContext ? `REFERENCE ACTUAL QUIZ CONTEXT:\n${sourceQuizContext}\n` : ""}
-
-Generate exactly ${targetCount} questions matching the specified types and strict JSON schema.`;
-
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${systemInstruction}\n\n${promptContent}` }],
-        },
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3,
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Gemini API responded with status ${response.status}: ${errorBody.substring(0, 200)}`);
-  }
-
-  const responseJson = await response.json();
-  const textOutput = responseJson?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!textOutput) {
-    throw new Error("Gemini returned empty candidate content.");
-  }
-
-  const parsed = JSON.parse(textOutput);
-  if (!parsed.questions || !Array.isArray(parsed.questions) || parsed.questions.length === 0) {
-    throw new Error("Gemini output missing valid questions array.");
-  }
-
-  // Filter out table header questions and normalize questions
-  const filteredQuestions = parsed.questions.filter((q) => {
-    if (isTableHeaderQuestion(q)) {
-      console.warn(`Filtered out table header question from Gemini: "${q.question}"`);
-      return false;
-    }
-    if (isFillerOrBoilerplateQuestion(q)) {
-      console.warn(`Filtered out filler/boilerplate question from Gemini: "${q.question}"`);
-      return false;
-    }
-    return true;
-  });
-
-  let normalizedQuestions = filteredQuestions.map((q, idx) => {
-    const qType = normalizeQuestionType(q.type);
-    let cleanAnswer = (q.correctAnswer || "").trim();
-    if (qType === "fill_blank" || qType === "identification") {
-      cleanAnswer = cleanAnswer.replace(/^(the|a|an)\s+/i, "").trim();
-      let prev;
-      do {
-        prev = cleanAnswer;
-        cleanAnswer = cleanAnswer.replace(/^["']|["']$/g, "").replace(/[\.,;:!]$/g, "").trim();
-      } while (cleanAnswer !== prev);
-    }
-    return {
-      id: q.id || `q_${idx + 1}`,
-      type: qType,
-      question: q.question || `Question ${idx + 1}`,
-      options: Array.isArray(q.options) ? q.options : [],
-      correctAnswer: cleanAnswer,
-      enumerationAnswers: Array.isArray(q.enumerationAnswers) ? q.enumerationAnswers : [],
-      explanation: q.explanation || "",
-      points: typeof q.points === "number" ? q.points : 1.0,
-    };
-  });
-
-  // If questions were filtered out and count fell below targetCount, backfill
-  if (normalizedQuestions.length < targetCount) {
-    const backfill = generateFallbackQuizQuestions(extractedText, questionTypes, targetCount, isActual);
-    for (const bq of backfill) {
-      if (normalizedQuestions.length >= targetCount) break;
-      if (!normalizedQuestions.some((eq) => eq.question === bq.question) &&
-          !isTableHeaderQuestion(bq) &&
-          !isFillerOrBoilerplateQuestion(bq)) {
-        normalizedQuestions.push(bq);
-      }
-    }
-  }
-
-  return {
-    title: parsed.title || (isActual ? "Generated Actual Quiz" : "Generated Practice Quiz"),
-    questions: normalizedQuestions,
-  };
-}
-
-/**
- * Core processor orchestrating quiz generation with fallback and Firestore persistence.
+ * Core processor authorizing quiz generation and persisting only validated AI output.
  */
 async function processQuizGeneration({ teacherId, classId, materialId, quizType, questionTypes, questionCount, sourceQuizId }) {
-  if (!teacherId) throw new Error("Teacher ID is required.");
-  if (!classId) throw new Error("Class ID is required.");
-  if (!materialId) throw new Error("Material ID is required.");
-
-  const firestore = admin.firestore();
-  const materialDoc = await firestore.collection("materials").doc(materialId).get();
-
-  if (!materialDoc.exists) {
-    throw new Error(`Study material '${materialId}' was not found.`);
+  const validId = (value) => typeof value === "string" && value.trim().length > 0 && !value.includes("/") && value.length <= 1500;
+  if (![teacherId, classId, materialId].every(validId) ||
+      !["actual", "practice"].includes(quizType) || (sourceQuizId != null && !validId(sourceQuizId))) {
+    throw new QuizGenerationError("invalid-argument", "Choose a class, material, and valid quiz type.");
   }
-
+  const firestore = getFirestore(process.env.FIRESTORE_DATABASE_ID || "default");
+  const [profileDoc, classDoc, materialDoc] = await Promise.all([
+    firestore.collection("users").doc(teacherId).get(),
+    firestore.collection("classes").doc(classId).get(),
+    firestore.collection("materials").doc(materialId).get(),
+  ]);
+  if (!materialDoc.exists || !classDoc.exists) throw new QuizGenerationError("not-found", "The selected class or material no longer exists.");
   const materialData = materialDoc.data();
+  if (profileDoc.data()?.role !== "teacher" || classDoc.data().teacherId !== teacherId ||
+      materialData.teacherId !== teacherId || materialData.classId !== classId) {
+    throw new QuizGenerationError("permission-denied", "Only the teacher who owns this class and material may generate its quizzes.");
+  }
   const extractedText = (materialData.extractedText || "").trim();
-
-  if (extractedText.length < 20) {
-    throw new Error("The selected study material has no extracted text. Please wait for text extraction to finish or retry extraction.");
-  }
-
-  const isActual = (quizType || "actual").toLowerCase() === "actual";
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  let sourceQuizContext = null;
-  if (!isActual && sourceQuizId) {
-    try {
-      const sourceDoc = await firestore.collection("quizzes").doc(sourceQuizId).get();
-      if (sourceDoc.exists) {
-        const sData = sourceDoc.data();
-        sourceQuizContext = JSON.stringify((sData.questions || []).map((q) => ({
-          type: q.type,
-          question: q.question,
-          correctAnswer: q.correctAnswer,
-        })));
-      }
-    } catch (err) {
-      console.warn(`Could not load source quiz ${sourceQuizId}:`, err);
+  validateRequest({ extractedText, questionTypes, questionCount });
+  if (materialData.status !== "ready") throw new QuizGenerationError("failed-precondition", "Wait for document text extraction to finish.");
+  const isActual = quizType === "actual";
+  let sourceQuizContext;
+  if (sourceQuizId) {
+    const sourceDoc = await firestore.collection("quizzes").doc(sourceQuizId).get();
+    const source = sourceDoc.data();
+    if (isActual || !source || source.type !== "actual" || source.classId !== classId ||
+        source.teacherId !== teacherId || source.materialId !== materialId) {
+      throw new QuizGenerationError("invalid-argument", "Choose the Actual quiz generated from this material as the practice reference.");
     }
+    sourceQuizContext = JSON.stringify(source.questions.map(({ question, correctAnswer }) => ({ question, correctAnswer })));
   }
-
-  let generatedTitle = isActual
-    ? `${materialData.fileName.replace(/\.[^/.]+$/, "")} - Exam`
-    : `${materialData.fileName.replace(/\.[^/.]+$/, "")} - Practice Quiz`;
-  let questions = [];
-  let generationMethod = "gemini";
-
-  if (apiKey && apiKey.trim().length > 0) {
-    try {
-      console.log(`Attempting Gemini AI quiz generation for materialId: ${materialId}`);
-      const geminiResult = await generateGeminiQuiz(
-        extractedText,
-        questionTypes,
-        questionCount,
-        isActual,
-        sourceQuizContext,
-        apiKey
-      );
-      if (geminiResult.title) generatedTitle = geminiResult.title;
-      questions = geminiResult.questions;
-      generationMethod = "gemini";
-    } catch (geminiError) {
-      console.warn("Gemini generation failed, falling back to deterministic generator:", geminiError.message);
-      questions = generateFallbackQuizQuestions(extractedText, questionTypes, questionCount, isActual);
-      generationMethod = "fallback";
-    }
-  } else {
-    console.log("No GEMINI_API_KEY detected. Using deterministic fallback generator.");
-    questions = generateFallbackQuizQuestions(extractedText, questionTypes, questionCount, isActual);
-    generationMethod = "fallback";
-  }
+  const questions = await generateQuizQuestions({
+    extractedText, questionTypes, questionCount, isActual, sourceQuizContext,
+  }, {
+    apiKey: geminiApiKey.value(),
+    rejectQuestion: (q) => isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q),
+  });
+  const fileTitle = (materialData.fileName || "Study Material").replace(/\.[^/.]+$/, "");
+  const generatedTitle = `${fileTitle} - ${isActual ? "Exam" : "Practice Quiz"}`;
+  const generationMethod = "gemini";
 
   const totalPoints = questions.reduce((acc, q) => acc + (q.points || 1.0), 0);
 
@@ -961,8 +780,8 @@ async function processQuizGeneration({ teacherId, classId, materialId, quizType,
     sourceQuizId: sourceQuizId || null,
     questions: questions,
     totalPoints: totalPoints,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
   };
 
   await quizRef.set(quizPayload);
@@ -979,6 +798,15 @@ async function processQuizGeneration({ teacherId, classId, materialId, quizType,
   };
 }
 
+function publicGenerationError(error) {
+  if (!(error instanceof QuizGenerationError)) {
+    console.warn("Quiz backend failure", { kind: error.name, code: error.code || "unknown" });
+  }
+  return error instanceof QuizGenerationError ? error : {
+    code: "unavailable", message: "Could not save or retrieve the quiz. Please check your connection and try again.",
+  };
+}
+
 /**
  * Callable Cloud Function (2nd Gen) for quiz generation.
  */
@@ -986,7 +814,8 @@ exports.generateQuiz = onCall(
   {
     cpu: 1,
     memory: "512MiB",
-    timeoutSeconds: 120,
+    timeoutSeconds: 180,
+    secrets: [geminiApiKey],
   },
   async (request) => {
     if (!request.auth) {
@@ -1007,8 +836,9 @@ exports.generateQuiz = onCall(
         sourceQuizId,
       });
     } catch (error) {
-      console.error("Quiz generation failed:", error);
-      throw new HttpsError("internal", error.message || "Failed to generate quiz.");
+      const failure = publicGenerationError(error);
+      console.warn("Quiz generation failed", { code: failure.code });
+      throw new HttpsError(failure.code, failure.message);
     }
   }
 );
@@ -1020,7 +850,8 @@ exports.generateQuizHttp = onRequest(
   {
     cpu: 1,
     memory: "512MiB",
-    timeoutSeconds: 120,
+    timeoutSeconds: 180,
+    secrets: [geminiApiKey],
     cors: true,
   },
   async (req, res) => {
@@ -1038,14 +869,15 @@ exports.generateQuizHttp = onRequest(
       } catch (tokenErr) {
         return res.status(401).json({ error: "Invalid authorization token." });
       }
-    } else if (req.body.teacherId) {
-      teacherId = req.body.teacherId;
     }
 
     if (!teacherId) {
       return res.status(401).json({ error: "Authentication required." });
     }
 
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+      return res.status(400).json({ error: "Request must contain a JSON object." });
+    }
     try {
       const result = await processQuizGeneration({
         teacherId,
@@ -1058,8 +890,12 @@ exports.generateQuizHttp = onRequest(
       });
       return res.status(200).json(result);
     } catch (error) {
-      console.error("HTTP Quiz generation failed:", error);
-      return res.status(500).json({ error: error.message || "Quiz generation failed." });
+      const failure = publicGenerationError(error);
+      const statuses = { "invalid-argument": 400, "permission-denied": 403, "not-found": 404,
+        "failed-precondition": 412, "data-loss": 422, "resource-exhausted": 429,
+        "deadline-exceeded": 504, unavailable: 503 };
+      console.warn("HTTP quiz generation failed", { code: failure.code });
+      return res.status(statuses[failure.code] || 500).json({ error: failure.message, code: failure.code });
     }
   }
 );

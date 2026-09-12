@@ -344,17 +344,7 @@ The citric acid cycle takes place inside the mitochondrial matrix.
       );
     });
 
-    test('QuizService.callGeminiApi returns null gracefully when apiKey is empty', () async {
-      final result = await QuizService.callGeminiApi(
-        apiKey: '',
-        extractedText: 'Sample text',
-        questionTypes: ['multipleChoice'],
-        questionCount: 5,
-        isActual: false,
-      );
 
-      expect(result, isNull);
-    });
   });
 
   group('QuizService Validation Tests (Issue 1 & 4)', () {

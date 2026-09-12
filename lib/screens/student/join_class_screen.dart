@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
+import '../../theme/app_theme.dart';
 
 /// Screen where students enter a class join code, submit, and see
 /// a confirmation state displaying the joined class details.
@@ -15,13 +16,13 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
   final _codeController = TextEditingController();
 
   // ── Design tokens ───────────────────────────────────────────
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   // ── Local confirmation state ────────────────────────────────
   bool _isLoading = false;
@@ -144,9 +145,16 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: _isJoined ? _buildConfirmationState() : _buildEntryState(),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppTheme.maxContentWidthMobile,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                child: _isJoined ? _buildConfirmationState() : _buildEntryState(),
+              ),
+            ),
           ),
         ),
       ),
@@ -205,7 +213,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Colors.red.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppTheme.borderRadiusMd,
               border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
             ),
             child: Row(
@@ -268,15 +276,15 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
               horizontal: 16,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppTheme.borderRadiusMd,
               borderSide: const BorderSide(color: _outlineVariant),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppTheme.borderRadiusMd,
               borderSide: const BorderSide(color: _outlineVariant),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: AppTheme.borderRadiusMd,
               borderSide: const BorderSide(
                 color: _primaryNavy,
                 width: 1.5,
@@ -297,7 +305,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
               foregroundColor: Colors.white,
               elevation: 1,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: AppTheme.borderRadiusMd,
               ),
             ),
             onPressed: _isLoading ? null : _handleJoin,
@@ -371,15 +379,9 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: _surfaceWhite,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: AppTheme.borderRadiusLg,
             border: Border.all(color: _outlineVariant),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: AppTheme.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -464,7 +466,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
               foregroundColor: Colors.white,
               elevation: 1,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: AppTheme.borderRadiusMd,
               ),
             ),
             onPressed: () => Navigator.pop(context),

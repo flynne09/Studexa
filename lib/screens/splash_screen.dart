@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
 import 'auth/role_selection_screen.dart';
 import 'teacher/teacher_home_screen.dart';
 import 'student/student_home_screen.dart';
@@ -22,11 +23,6 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _fadeAnimation;
   late final Animation<double> _glowAnimation;
   late final Animation<Offset> _slideAnimation;
-
-  // ── Design tokens ───────────────────────────────────────────
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _primaryNavy = Color(0xFF1A237E);
 
   @override
   void initState() {
@@ -78,8 +74,11 @@ class _SplashScreenState extends State<SplashScreen>
     Timer(const Duration(milliseconds: 2800), _navigateToApp);
   }
 
+  bool _isNavigating = false;
+
   Future<void> _navigateToApp() async {
-    if (!mounted) return;
+    if (!mounted || _isNavigating) return;
+    _isNavigating = true;
 
     Widget targetScreen = const RoleSelectionScreen();
     try {
@@ -91,8 +90,15 @@ class _SplashScreenState extends State<SplashScreen>
           targetScreen = const StudentHomeScreen();
         }
       }
-    } catch (_) {
-      targetScreen = const RoleSelectionScreen();
+    } catch (error) {
+      _isNavigating = false;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(AuthService.getErrorMessage(error)),
+          action: SnackBarAction(label: 'Retry', onPressed: _navigateToApp),
+        ));
+      }
+      return;
     }
 
     if (!mounted) return;
@@ -129,11 +135,7 @@ class _SplashScreenState extends State<SplashScreen>
           width: double.infinity,
           height: double.infinity,
           decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [_gradientStart, _gradientEnd],
-            ),
+            gradient: AppTheme.backgroundGradient,
           ),
           child: SafeArea(
             child: Stack(
@@ -151,7 +153,7 @@ class _SplashScreenState extends State<SplashScreen>
                         gradient: RadialGradient(
                           colors: [
                             const Color(0xFF6294FF).withValues(alpha: 0.22),
-                            const Color(0xFF1A237E).withValues(alpha: 0.05),
+                            AppTheme.primaryNavy.withValues(alpha: 0.05),
                             Colors.transparent,
                           ],
                           stops: const [0.0, 0.5, 1.0],
@@ -182,11 +184,11 @@ class _SplashScreenState extends State<SplashScreen>
                         height: 170,
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(28),
+                          color: AppTheme.surfaceWhite,
+                          borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: _primaryNavy.withValues(alpha: 0.12),
+                              color: AppTheme.primaryNavy.withValues(alpha: 0.12),
                               blurRadius: 28,
                               spreadRadius: 2,
                               offset: const Offset(0, 10),
@@ -246,7 +248,7 @@ class _SplashScreenState extends State<SplashScreen>
                               fontSize: 26,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 3.0,
-                              color: _primaryNavy,
+                              color: AppTheme.primaryNavy,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -256,7 +258,7 @@ class _SplashScreenState extends State<SplashScreen>
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: _primaryNavy.withValues(alpha: 0.07),
+                              color: AppTheme.primaryNavy.withValues(alpha: 0.07),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Text(
@@ -265,7 +267,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 letterSpacing: 1.2,
-                                color: Color(0xFF454652),
+                                color: AppTheme.textSecondary,
                               ),
                             ),
                           ),
@@ -294,7 +296,7 @@ class _SplashScreenState extends State<SplashScreen>
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             valueColor: AlwaysStoppedAnimation<Color>(
-                              _primaryNavy.withValues(alpha: 0.6),
+                              AppTheme.primaryNavy.withValues(alpha: 0.6),
                             ),
                           ),
                         ),
@@ -303,8 +305,7 @@ class _SplashScreenState extends State<SplashScreen>
                           'Tap anywhere to start',
                           style: TextStyle(
                             fontSize: 12,
-                            color: const Color(0xFF767683)
-                                .withValues(alpha: 0.8),
+                            color: AppTheme.textTertiary.withValues(alpha: 0.8),
                           ),
                         ),
                       ],

@@ -4,6 +4,7 @@ import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
 import '../../models/user_profile.dart';
 import '../../models/class_model.dart';
+import '../../theme/app_theme.dart';
 import '../auth/role_selection_screen.dart';
 import 'upload_generate_quiz_screen.dart';
 import 'teacher_class_details_screen.dart';
@@ -12,10 +13,12 @@ import 'teacher_class_details_screen.dart';
 /// to create classes or upload materials, and recent quiz activity.
 class TeacherHomeScreen extends StatefulWidget {
   final UserProfile? initialProfile;
+  final Stream<List<ClassModel>>? initialClassesStream;
 
   const TeacherHomeScreen({
     super.key,
     this.initialProfile,
+    this.initialClassesStream,
   });
 
   @override
@@ -24,13 +27,13 @@ class TeacherHomeScreen extends StatefulWidget {
 
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // ── Design tokens ───────────────────────────────────────────
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   UserProfile? _teacherProfile;
   Stream<List<ClassModel>>? _classesStream;
@@ -39,10 +42,13 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   void initState() {
     super.initState();
     _teacherProfile = widget.initialProfile;
-    final currentUid =
-        widget.initialProfile?.uid ?? AuthService().currentUser?.uid;
-    if (currentUid != null) {
-      _classesStream = ClassService().getTeacherClassesStream(currentUid);
+    _classesStream = widget.initialClassesStream;
+    if (_classesStream == null) {
+      final currentUid =
+          widget.initialProfile?.uid ?? AuthService().currentUser?.uid;
+      if (currentUid != null) {
+        _classesStream = ClassService().getTeacherClassesStream(currentUid);
+      }
     }
     if (_teacherProfile == null) {
       _loadTeacherProfile();
@@ -468,9 +474,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: CustomScrollView(
-            slivers: [
-              // ── Header Bar ─────────────────────────────────
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 840),
+              child: CustomScrollView(
+                slivers: [
+                  // ── Header Bar ─────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -936,60 +945,18 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                 },
               ),
 
-              // ── Section: Class Workflow Info ───────────────
-              SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _outlineVariant),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.lightbulb_outline,
-                              size: 20, color: _primaryNavy),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Classroom Workflow',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: _textPrimary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Studexa organizes learning materials and quizzes by class:\n'
-                        '• Tap any class above to view its materials, quizzes, and student roster.\n'
-                        '• Upload study materials directly inside each class (PDF, PPTX, DOCX).\n'
-                        '• Share the unique join code with students to invite them to your class.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 1.5,
-                          color: _textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              // Bottom spacing for visual balance and scroll clearance
+              const SliverToBoxAdapter(
+                child: SizedBox(height: 24),
               ),
             ],
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 }
 
 /// Action card for prominent "Upload Material" or "Create Class" buttons.
@@ -1010,23 +977,19 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const primaryNavy = Color(0xFF1A237E);
-    const surfaceWhite = Color(0xFFFBF9F8);
-    const outlineVariant = Color(0xFFC6C5D4);
-
     return Material(
-      color: isPrimary ? primaryNavy : surfaceWhite,
-      borderRadius: BorderRadius.circular(14),
+      color: isPrimary ? AppTheme.primaryNavy : AppTheme.surfaceWhite,
+      borderRadius: AppTheme.borderRadiusLg,
       elevation: isPrimary ? 2 : 1,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: AppTheme.borderRadiusLg,
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(AppTheme.spacingLg),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: AppTheme.borderRadiusLg,
             border: Border.all(
-              color: isPrimary ? Colors.transparent : outlineVariant,
+              color: isPrimary ? Colors.transparent : AppTheme.outlineVariant,
             ),
           ),
           child: Column(
@@ -1038,13 +1001,13 @@ class _ActionCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: isPrimary
                       ? Colors.white.withValues(alpha: 0.15)
-                      : primaryNavy.withValues(alpha: 0.08),
+                      : AppTheme.primaryNavy.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(
                   icon,
                   size: 22,
-                  color: isPrimary ? Colors.white : primaryNavy,
+                  color: isPrimary ? Colors.white : AppTheme.primaryNavy,
                 ),
               ),
               const SizedBox(height: 12),
@@ -1053,7 +1016,7 @@ class _ActionCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
-                  color: isPrimary ? Colors.white : const Color(0xFF1B1C1C),
+                  color: isPrimary ? Colors.white : AppTheme.textPrimary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1065,7 +1028,7 @@ class _ActionCard extends StatelessWidget {
                   fontSize: 12,
                   color: isPrimary
                       ? Colors.white.withValues(alpha: 0.8)
-                      : const Color(0xFF454652),
+                      : AppTheme.textSecondary,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -1092,32 +1055,20 @@ class _ClassItemCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const primaryNavy = Color(0xFF1A237E);
-    const surfaceWhite = Color(0xFFFBF9F8);
-    const outlineVariant = Color(0xFFC6C5D4);
-    const textPrimary = Color(0xFF1B1C1C);
-    const textSecondary = Color(0xFF454652);
-
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: surfaceWhite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: outlineVariant),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: AppTheme.surfaceWhite,
+        borderRadius: AppTheme.borderRadiusLg,
+        border: Border.all(color: AppTheme.outlineVariant),
+        boxShadow: AppTheme.cardShadow,
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: AppTheme.borderRadiusLg,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: AppTheme.borderRadiusLg,
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -1135,7 +1086,7 @@ class _ClassItemCard extends StatelessWidget {
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: textPrimary,
+                              color: AppTheme.textPrimary,
                             ),
                           ),
                           if (classModel.section.isNotEmpty)
@@ -1143,7 +1094,7 @@ class _ClassItemCard extends StatelessWidget {
                               'Section: ${classModel.section}',
                               style: const TextStyle(
                                 fontSize: 12,
-                                color: textSecondary,
+                                color: AppTheme.textSecondary,
                               ),
                             ),
                         ],
@@ -1157,7 +1108,7 @@ class _ClassItemCard extends StatelessWidget {
                           SnackBar(
                             content: Text(
                                 'Join code ${classModel.joinCode} copied to clipboard!'),
-                            backgroundColor: primaryNavy,
+                            backgroundColor: AppTheme.primaryNavy,
                             duration: const Duration(seconds: 2),
                           ),
                         );
@@ -1169,10 +1120,10 @@ class _ClassItemCard extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: primaryNavy.withValues(alpha: 0.08),
+                          color: AppTheme.primaryNavy.withValues(alpha: 0.08),
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: primaryNavy.withValues(alpha: 0.2),
+                            color: AppTheme.primaryNavy.withValues(alpha: 0.2),
                           ),
                         ),
                         child: Row(
@@ -1181,7 +1132,7 @@ class _ClassItemCard extends StatelessWidget {
                             const Icon(
                               Icons.vpn_key_outlined,
                               size: 13,
-                              color: primaryNavy,
+                              color: AppTheme.primaryNavy,
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -1189,7 +1140,7 @@ class _ClassItemCard extends StatelessWidget {
                               style: const TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
-                                color: primaryNavy,
+                                color: AppTheme.primaryNavy,
                                 letterSpacing: 0.5,
                               ),
                             ),
@@ -1208,7 +1159,7 @@ class _ClassItemCard extends StatelessWidget {
                           const Icon(
                             Icons.people_alt_outlined,
                             size: 15,
-                            color: textSecondary,
+                            color: AppTheme.textSecondary,
                           ),
                           const SizedBox(width: 6),
                           Flexible(
@@ -1216,7 +1167,7 @@ class _ClassItemCard extends StatelessWidget {
                               '${classModel.rosterCount} students enrolled',
                               style: const TextStyle(
                                 fontSize: 13,
-                                color: textSecondary,
+                                color: AppTheme.textSecondary,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -1228,9 +1179,9 @@ class _ClassItemCard extends StatelessWidget {
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: primaryNavy,
+                        foregroundColor: AppTheme.primaryNavy,
                         side: BorderSide(
-                            color: primaryNavy.withValues(alpha: 0.4)),
+                            color: AppTheme.primaryNavy.withValues(alpha: 0.4)),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         shape: RoundedRectangleBorder(
@@ -1247,7 +1198,7 @@ class _ClassItemCard extends StatelessWidget {
                     const Icon(
                       Icons.arrow_forward_ios,
                       size: 13,
-                      color: textSecondary,
+                      color: AppTheme.textSecondary,
                     ),
                   ],
                 ),

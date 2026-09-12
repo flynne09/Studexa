@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import '../../models/class_model.dart';
+import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
-import '../../models/user_profile.dart';
-import '../../models/class_model.dart';
+import '../../theme/app_theme.dart';
 import '../auth/role_selection_screen.dart';
 import 'join_class_screen.dart';
 import 'student_class_details_screen.dart';
@@ -11,10 +12,12 @@ import 'student_class_details_screen.dart';
 /// with explicit availability statuses: open, closed, or past deadline.
 class StudentHomeScreen extends StatefulWidget {
   final UserProfile? initialProfile;
+  final Stream<List<ClassModel>>? initialClassesStream;
 
   const StudentHomeScreen({
     super.key,
     this.initialProfile,
+    this.initialClassesStream,
   });
 
   @override
@@ -23,13 +26,13 @@ class StudentHomeScreen extends StatefulWidget {
 
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   // ── Design tokens ───────────────────────────────────────────
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   UserProfile? _studentProfile;
 
@@ -105,7 +108,12 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           ),
         ),
         child: SafeArea(
-          child: CustomScrollView(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppTheme.maxContentWidthTablet,
+              ),
+              child: CustomScrollView(
             slivers: [
               // ── Header Bar ─────────────────────────────────
               SliverToBoxAdapter(
@@ -170,7 +178,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         tooltip: 'Account options',
                         color: _surfaceWhite,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: AppTheme.borderRadiusMd,
                           side: const BorderSide(color: _outlineVariant),
                         ),
                         onSelected: (val) {
@@ -263,15 +271,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppTheme.borderRadiusLg,
                     border: Border.all(color: _outlineVariant),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    boxShadow: AppTheme.cardShadow,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,7 +381,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: AppTheme.borderRadiusMd,
                             ),
                           ),
                           onPressed: () {
@@ -412,7 +414,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 9),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: AppTheme.borderRadiusMd,
                             ),
                           ),
                           onPressed: _handleLogout,
@@ -433,10 +435,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 
               // ── Class Sections ─────────────────────────────
               StreamBuilder<List<ClassModel>>(
-                stream: _studentProfile != null
-                    ? ClassService()
-                        .getStudentJoinedClassesStream(_studentProfile!.uid)
-                    : const Stream.empty(),
+                stream: widget.initialClassesStream ??
+                    (_studentProfile != null
+                        ? ClassService()
+                            .getStudentJoinedClassesStream(_studentProfile!.uid)
+                        : const Stream.empty()),
                 builder: (context, snapshot) {
                   final joinedClasses = snapshot.data ?? [];
 
@@ -465,8 +468,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
                           color: _surfaceWhite,
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: AppTheme.borderRadiusLg,
                           border: Border.all(color: _outlineVariant),
+                          boxShadow: AppTheme.cardShadow,
                         ),
                         child: Column(
                           children: [
@@ -495,7 +499,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                 backgroundColor: _primaryNavy,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: AppTheme.borderRadiusMd,
                                 ),
                               ),
                               onPressed: () {
@@ -526,21 +530,15 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             margin: const EdgeInsets.only(bottom: 20),
                             decoration: BoxDecoration(
                               color: _surfaceWhite,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: AppTheme.borderRadiusLg,
                               border: Border.all(color: _outlineVariant),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.03),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                              boxShadow: AppTheme.cardShadow,
                             ),
                             child: Material(
                               color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: AppTheme.borderRadiusLg,
                               child: InkWell(
-                                borderRadius: BorderRadius.circular(14),
+                                borderRadius: AppTheme.borderRadiusLg,
                                 onTap: () {
                                   Navigator.push(
                                     context,
@@ -562,7 +560,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                             _primaryNavy.withValues(alpha: 0.04),
                                         borderRadius:
                                             const BorderRadius.vertical(
-                                          top: Radius.circular(13),
+                                          top: Radius.circular(
+                                              AppTheme.radiusLg - 1),
                                         ),
                                         border: const Border(
                                           bottom: BorderSide(
@@ -608,7 +607,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                             decoration: BoxDecoration(
                                               color: _surfaceWhite,
                                               borderRadius:
-                                                  BorderRadius.circular(6),
+                                                  AppTheme.borderRadiusSm,
                                               border: Border.all(
                                                 color: _outlineVariant,
                                               ),
@@ -695,7 +694,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
   }
 }
 

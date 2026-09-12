@@ -84,6 +84,15 @@ class AuthService {
             password: password,
           );
           user = signInCredential.user;
+          if (user != null) {
+            final existing = await _usersCollection.doc(user.uid).get(
+              const GetOptions(source: Source.server),
+            ).timeout(const Duration(seconds: 15));
+            if (existing.exists) {
+              await _auth.signOut();
+              rethrow; // A real duplicate account is not orphan recovery.
+            }
+          }
         } catch (_) {
           // Re-throw original exception if sign-in also fails (e.g. wrong password or real duplicate account)
           rethrow;
@@ -136,7 +145,7 @@ class AuthService {
       await _usersCollection
           .doc(uid)
           .set(profile.toMap(), SetOptions(merge: true))
-          .timeout(const Duration(seconds: 4));
+          .timeout(const Duration(seconds: 15));
     } on TimeoutException {
       throw FirebaseException(
         plugin: 'cloud_firestore',
@@ -154,6 +163,10 @@ class AuthService {
     required String password,
     required String expectedRole,
   }) async {
+    final targetRole = expectedRole.trim().toLowerCase();
+    if (targetRole != 'teacher' && targetRole != 'student') {
+      throw ArgumentError("Choose Teacher or Student before signing in.");
+    }
     final credential = await _auth.signInWithEmailAndPassword(
       email: email.trim(),
       password: password,
@@ -168,10 +181,8 @@ class AuthService {
     }
 
     // Fetch user profile from Cloud Firestore
-    final docSnapshot = await _usersCollection.doc(user.uid).get();
+    final docSnapshot = await _usersCollection.doc(user.uid).get().timeout(const Duration(seconds: 15));
     UserProfile profile;
-
-    final targetRole = expectedRole.trim().toLowerCase();
 
     if (!docSnapshot.exists || docSnapshot.data() == null) {
       // Fallback: If Firestore profile document does not exist yet, create it with the requested role
@@ -183,7 +194,7 @@ class AuthService {
         createdAt: DateTime.now(),
         photoUrl: user.photoURL,
       );
-      await _usersCollection.doc(user.uid).set(profile.toMap());
+      await _saveUserProfile(user.uid, profile);
     } else {
       profile = UserProfile.fromFirestore(docSnapshot);
     }
@@ -235,7 +246,7 @@ class AuthService {
     }
 
     // Check if user profile already exists in Cloud Firestore
-    final docSnapshot = await _usersCollection.doc(user.uid).get();
+    final docSnapshot = await _usersCollection.doc(user.uid).get().timeout(const Duration(seconds: 15));
     UserProfile profile;
 
     if (!docSnapshot.exists || docSnapshot.data() == null) {
@@ -293,15 +304,9 @@ class AuthService {
     final user = _auth.currentUser;
     if (user == null) return null;
 
-    try {
-      final doc = await _usersCollection.doc(user.uid).get();
-      if (!doc.exists || doc.data() == null) {
-        return null;
-      }
-      return UserProfile.fromFirestore(doc);
-    } catch (_) {
-      return null;
-    }
+    final doc = await _usersCollection.doc(user.uid).get().timeout(const Duration(seconds: 15));
+    if (!doc.exists || doc.data() == null) return null;
+    return UserProfile.fromFirestore(doc);
   }
 
   /// Signs out the current user from Firebase Auth and Google Sign-In.
@@ -316,6 +321,9 @@ class AuthService {
   static String getErrorMessage(Object error) {
     if (error is AuthRoleMismatchException) {
       return error.toString();
+    }
+    if (error is TimeoutException) {
+      return 'The connection took too long. Check your Internet connection and try again.';
     }
     if (error is ArgumentError) {
       return error.message?.toString() ?? error.toString();

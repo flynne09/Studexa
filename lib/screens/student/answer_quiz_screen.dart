@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/quiz_attempt_model.dart';
 import '../../models/quiz_model.dart';
 import '../../services/assignment_service.dart';
+import '../../theme/app_theme.dart';
 import '../../utils/scoring_utils.dart';
 import 'student_home_screen.dart';
 
@@ -39,15 +41,17 @@ class AnswerQuizScreen extends StatefulWidget {
 class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   late final AssignmentService _assignmentService;
   // ── Design tokens ───────────────────────────────────────────
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   int _currentIndex = 0;
+  bool _isSubmitting = false;
+  bool _submitted = false;
   final Set<String> _flaggedQuestionIds = {};
   final Map<String, dynamic> _userAnswers = {};
   final Set<String> _pendingSkippedQuestionIds = {};
@@ -105,6 +109,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   }
 
   void _persistDraftAnswers() {
+    if (_submitted || _isSubmitting) return;
     _assignmentService
         .saveDraftAnswers(
           studentId: _studentId,
@@ -122,7 +127,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         quizId: _quizId,
         attemptNumber: widget.attemptNumber,
       );
-      if (drafts != null && mounted) {
+      if (drafts != null && mounted && !_submitted && !_isSubmitting) {
         setState(() {
           for (final entry in drafts.entries) {
             _userAnswers.putIfAbsent(entry.key, () => entry.value);
@@ -148,7 +153,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       return;
     }
 
-    if (widget.quiz != null && widget.quiz!.questions.isNotEmpty) {
+    if (widget.quiz != null) {
       _questions = List<QuizQuestion>.from(widget.quiz!.questions);
     } else {
       // Default fallback demo questions across all 5 types
@@ -445,6 +450,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   }
 
   void _showSubmitConfirmation() {
+    if (_isSubmitting || _submitted) return;
     _saveCurrentAnswer();
 
     if (!_allQuestionsAnswered) {
@@ -466,7 +472,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
         title: const Text(
           'Submit Practice Quiz?',
           style: TextStyle(
@@ -508,7 +514,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
               backgroundColor: _primaryNavy,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               ),
             ),
             onPressed: () {
@@ -522,7 +528,9 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
-  void _evaluateAndShowResults() {
+  Future<void> _evaluateAndShowResults() async {
+    if (_isSubmitting || _submitted) return;
+    setState(() => _isSubmitting = true);
     double totalEarned = 0.0;
     double totalPossible = 0.0;
     final List<Map<String, dynamic>> questionBreakdown = [];
@@ -541,9 +549,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         case QuizQuestionType.trueFalse:
           final cleanUser = (userAns?.toString() ?? '').trim().toLowerCase();
           final cleanExpected = q.correctAnswer.trim().toLowerCase();
-          // Match full option or prefix letter
-          isCorrect = cleanUser == cleanExpected ||
-              (cleanUser.length > 2 && cleanExpected.contains(cleanUser));
+          isCorrect = cleanUser == cleanExpected;
           earned = isCorrect ? q.points : 0.0;
           break;
 
@@ -589,16 +595,23 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     final percentage =
         totalPossible > 0 ? (totalEarned / totalPossible * 100) : 0.0;
 
-    // Persist attempt to Firestore in the background
+    // A displayed result must correspond to an acknowledged saved attempt.
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null && widget.quiz != null) {
+    if (widget.quiz != null && user == null && _assignmentService.useFirestore) {
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Your session has ended. Sign in again before submitting. Your answers have been kept.'),
+      ));
+      return;
+    }
+    if (widget.quiz != null) {
       final attempt = QuizAttemptModel(
-        id: '',
+        id: '${_studentId}_${widget.quiz!.id}_attempt_${widget.attemptNumber}',
         quizId: widget.quiz!.id,
         classId: widget.quiz!.classId,
-        studentId: user.uid,
-        studentName: user.displayName ??
-            (user.email?.split('@').first ?? 'Student'),
+        studentId: _studentId,
+        studentName: user?.displayName ??
+            (user?.email?.split('@').first ?? 'Student'),
         answers: {
           for (int i = 0; i < _questions.length; i++) 'q_$i': _userAnswers[_questions[i].id],
           for (final q in _questions) q.id: _userAnswers[q.id],
@@ -623,24 +636,40 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         }).toList(),
       );
 
-      _assignmentService.submitAttempt(attempt).catchError((err) {
-        debugPrint('Attempt persistence info: $err');
-        return attempt;
-      });
+      try {
+        await _assignmentService.submitAttempt(attempt);
+      } catch (error) {
+        if (!mounted) return;
+        setState(() => _isSubmitting = false);
+        _persistDraftAnswers();
+        final message = error is QuizUnavailableException
+            ? error.message
+            : error is TimeoutException
+                ? 'Saving took too long. Check your connection and history before trying again.'
+                : 'Could not save your result. Check your Internet connection and try again.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('$message Your answers have been kept.'),
+          backgroundColor: Colors.redAccent,
+        ));
+        return;
+      }
     }
 
-    _assignmentService.clearDraftAnswers(
+    _submitted = true;
+    await _assignmentService.clearDraftAnswers(
       studentId: _studentId,
       quizId: _quizId,
       attemptNumber: widget.attemptNumber,
     ).catchError((_) {});
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppTheme.radiusLg)),
         title: Row(
           children: [
             Icon(
@@ -669,7 +698,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                     gradient: const LinearGradient(
                       colors: [_primaryNavy, Color(0xFF000666)],
                     ),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -735,7 +764,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                           : (earned > 0
                               ? Colors.orange.withValues(alpha: 0.05)
                               : Colors.red.withValues(alpha: 0.05)),
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                       border: Border.all(
                         color: isCor
                             ? Colors.green.withValues(alpha: 0.4)
@@ -813,7 +842,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
               foregroundColor: _textSecondary,
               side: const BorderSide(color: _outlineVariant),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               ),
             ),
             onPressed: () {
@@ -827,7 +856,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
               backgroundColor: _primaryNavy,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
               ),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
@@ -878,70 +907,73 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
             ),
           ),
           child: Center(
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
-              child: Card(
-                elevation: 0,
-                color: _surfaceWhite,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: const BorderSide(color: _outlineVariant),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.block_rounded,
-                          size: 56,
-                          color: Colors.redAccent,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Maximum Attempts Reached',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: _textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'You have reached the maximum 2 attempts for this practice quiz. Further attempts are not permitted.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: _textSecondary,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryNavy,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidthMobile),
+                child: Card(
+                  elevation: 0,
+                  color: _surfaceWhite,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                    side: const BorderSide(color: _outlineVariant),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
                           ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
+                          child: const Icon(
+                            Icons.block_rounded,
+                            size: 56,
+                            color: Colors.redAccent,
                           ),
                         ),
-                        onPressed: () => Navigator.pop(context),
-                        icon: const Icon(Icons.arrow_back, size: 18),
-                        label: const Text('Return to Class'),
-                      ),
-                    ],
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Maximum Attempts Reached',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: _textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Text(
+                          'You have reached the maximum 2 attempts for this practice quiz. Further attempts are not permitted.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: _textSecondary,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _primaryNavy,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.arrow_back, size: 18),
+                          label: const Text('Return to Class'),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -956,12 +988,15 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     final isLastQueueItem = _currentIndex == _questionQueue.length - 1;
     final hasSkippedPending = _hasSkippedPending;
     final isSubmitState = isLastQueueItem && !hasSkippedPending;
-    final canSubmit = _allQuestionsAnswered;
+    final canSubmit = !_isSubmitting && !_submitted && (_allQuestionsAnswered ||
+        (_currentQuestion.type == QuizQuestionType.enumeration &&
+         _enumInputController.text.trim().isNotEmpty &&
+         _questions.where((q) => q.id != _currentQuestion.id).every(_isQuestionAnswered)));
     final progress =
         _questions.isEmpty ? 0.0 : (_answeredCount / _questions.length);
 
     return PopScope(
-      canPop: true,
+      canPop: !_isSubmitting,
       onPopInvokedWithResult: (didPop, result) {
         _saveCurrentAnswer();
         _persistDraftAnswers();
@@ -980,14 +1015,17 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.close, color: _primaryNavy),
-            onPressed: () {
+            onPressed: _isSubmitting ? null : () {
               _saveCurrentAnswer();
               _persistDraftAnswers();
               Navigator.pop(context);
             },
           ),
         ),
-      body: Container(
+      body: _isSubmitting ? const Center(child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Saving your result...')],
+      )) : Container(
         width: double.infinity,
         height: double.infinity,
         decoration: const BoxDecoration(
@@ -998,256 +1036,277 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              // ── Top Progress Indicator ─────────────────────
-              LinearProgressIndicator(
-                value: progress,
-                backgroundColor: _outlineVariant.withValues(alpha: 0.3),
-                valueColor: const AlwaysStoppedAnimation<Color>(_primaryNavy),
-                minHeight: 4,
-              ),
-
-              // ── Question Navigation & Status Strip ────────
-              _buildQuestionNavigationStrip(),
-
-              // ── Question Content Area ──────────────────────
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 16,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet),
+              child: Column(
+                children: [
+                  // ── Top Progress Indicator ─────────────────────
+                  LinearProgressIndicator(
+                    value: progress,
+                    backgroundColor: _outlineVariant.withValues(alpha: 0.3),
+                    valueColor: const AlwaysStoppedAnimation<Color>(_primaryNavy),
+                    minHeight: 4,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Question-type badge & progress counter
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
+                  // ── Question Navigation & Status Strip ────────
+                  _buildQuestionNavigationStrip(),
+
+                  // ── Question Content Area ──────────────────────
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _primaryNavy.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              currentQ.type.displayName,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: _primaryNavy,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            'Question ${_currentIndex + 1} of ${_questions.length}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: _textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Question Prompt
-                      Text(
-                        currentQ.question,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: _textPrimary,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // "Flag for review" toggle button
-                      InkWell(
-                        onTap: _toggleFlag,
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 6,
-                            horizontal: 4,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                          // Question-type badge & progress counter
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Icon(
-                                isFlagged
-                                    ? Icons.flag
-                                    : Icons.flag_outlined,
-                                size: 18,
-                                color: isFlagged
-                                    ? Colors.amber[800]
-                                    : _textSecondary,
+                              Flexible(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _primaryNavy.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    currentQ.type.displayName,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: _primaryNavy,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                isFlagged
-                                    ? 'Flagged for review'
-                                    : 'Flag for review',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: isFlagged
-                                      ? Colors.amber[900]
-                                      : _textSecondary,
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'Question ${_currentIndex + 1} of ${_questions.length}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: _textSecondary,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
+                          const SizedBox(height: 16),
 
-                      // ── Interactive Answer Inputs ──────────────────
-                      if (currentQ.type == QuizQuestionType.multipleChoice ||
-                          currentQ.type == QuizQuestionType.trueFalse)
-                        _buildChoiceOptions(currentQ.options)
-                      else if (currentQ.type ==
-                              QuizQuestionType.fillInTheBlank ||
-                          currentQ.type == QuizQuestionType.identification)
-                        _buildTextInput(
-                          currentQ.type == QuizQuestionType.fillInTheBlank
-                              ? 'Enter missing word or term...'
-                              : 'Enter identified concept...',
-                        )
-                      else if (currentQ.type == QuizQuestionType.enumeration)
-                        _buildEnumerationInput(),
-                    ],
-                  ),
-                ),
-              ),
+                          // Question Prompt
+                          Text(
+                            currentQ.question,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              color: _textPrimary,
+                              height: 1.4,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
 
-              // ── Bottom Navigation Controls ─────────────────
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: _surfaceWhite,
-                  border: const Border(
-                    top: BorderSide(color: _outlineVariant),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 8,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        if (_currentIndex > 0) ...[
-                          OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: _textPrimary,
-                              side: const BorderSide(color: _outlineVariant),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
+                          // "Flag for review" toggle button
+                          InkWell(
+                            onTap: _toggleFlag,
+                            borderRadius: BorderRadius.circular(8),
+                            child: Padding(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                                vertical: 6,
+                                horizontal: 4,
                               ),
-                            ),
-                            onPressed: _goToPrevious,
-                            child: const Row(
-                              children: [
-                                Icon(Icons.arrow_back, size: 16),
-                                SizedBox(width: 4),
-                                Text('Previous'),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.orange.shade800,
-                            side: BorderSide(color: Colors.orange.shade400),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                          ),
-                          onPressed: _skipCurrentQuestion,
-                          icon: const Icon(Icons.skip_next, size: 18),
-                          label: const Text('Skip'),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _primaryNavy,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor:
-                                  _primaryNavy.withValues(alpha: 0.35),
-                              disabledForegroundColor: Colors.white70,
-                              elevation: 1,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                            ),
-                            onPressed: isSubmitState
-                                ? (canSubmit ? _showSubmitConfirmation : null)
-                                : _goToNext,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  isSubmitState
-                                      ? 'Submit Quiz'
-                                      : 'Next Question',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isFlagged
+                                        ? Icons.flag
+                                        : Icons.flag_outlined,
+                                    size: 18,
+                                    color: isFlagged
+                                        ? Colors.amber[800]
+                                        : _textSecondary,
                                   ),
-                                ),
-                                const SizedBox(width: 6),
-                                Icon(
-                                  isSubmitState
-                                      ? Icons.check
-                                      : Icons.arrow_forward,
-                                  size: 18,
-                                ),
-                              ],
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    isFlagged
+                                        ? 'Flagged for review'
+                                        : 'Flag for review',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: isFlagged
+                                          ? Colors.amber[900]
+                                          : _textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
+                          const SizedBox(height: 24),
+
+                          // ── Interactive Answer Inputs ──────────────────
+                          if (currentQ.type == QuizQuestionType.multipleChoice ||
+                              currentQ.type == QuizQuestionType.trueFalse)
+                            _buildChoiceOptions(currentQ.options)
+                          else if (currentQ.type ==
+                                  QuizQuestionType.fillInTheBlank ||
+                              currentQ.type == QuizQuestionType.identification)
+                            _buildTextInput(
+                              currentQ.type == QuizQuestionType.fillInTheBlank
+                                  ? 'Enter missing word or term...'
+                                  : 'Enter identified concept...',
+                            )
+                          else if (currentQ.type == QuizQuestionType.enumeration)
+                            _buildEnumerationInput(),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // ── Bottom Navigation Controls ─────────────────
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _surfaceWhite,
+                      border: const Border(
+                        top: BorderSide(color: _outlineVariant),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, -2),
                         ),
                       ],
                     ),
-                    if (isSubmitState && !canSubmit) ...[
-                      const SizedBox(height: 6),
-                      Text(
-                        'Answer all questions to enable submission ($_answeredCount of ${_questions.length} completed)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.orange.shade800,
-                          fontWeight: FontWeight.w600,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            if (_currentIndex > 0) ...[
+                              OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _textPrimary,
+                                  side: const BorderSide(color: _outlineVariant),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 12,
+                                  ),
+                                ),
+                                onPressed: _goToPrevious,
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.arrow_back, size: 16),
+                                    SizedBox(width: 4),
+                                    Text('Previous'),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.orange.shade800,
+                                side: BorderSide(color: Colors.orange.shade400),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                              ),
+                              onPressed: _skipCurrentQuestion,
+                              icon: const Icon(Icons.skip_next, size: 18),
+                              label: const Text('Skip'),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _primaryNavy,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor:
+                                      _primaryNavy.withValues(alpha: 0.35),
+                                  disabledForegroundColor: Colors.white70,
+                                  elevation: 1,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                ),
+                                onPressed: isSubmitState
+                                    ? (canSubmit ? _showSubmitConfirmation : null)
+                                    : _goToNext,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Flexible(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: Text(
+                                          isSubmitState
+                                              ? 'Submit Quiz'
+                                              : 'Next Question',
+                                          style: const TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Icon(
+                                      isSubmitState
+                                          ? Icons.check
+                                          : Icons.arrow_forward,
+                                      size: 18,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ],
-                ),
+                        if (isSubmitState && !canSubmit) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Answer all questions to enable submission ($_answeredCount of ${_questions.length} completed)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.orange.shade800,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1272,7 +1331,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
               });
               _persistDraftAnswers();
             },
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(
@@ -1283,7 +1342,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                 color: isSelected
                     ? _primaryNavy.withValues(alpha: 0.08)
                     : _surfaceWhite,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                 border: Border.all(
                   color: isSelected ? _primaryNavy : _outlineVariant,
                   width: isSelected ? 2 : 1,
@@ -1336,7 +1395,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _surfaceWhite,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         border: Border.all(color: _outlineVariant),
       ),
       child: TextField(
@@ -1372,11 +1431,12 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 14),
                 decoration: BoxDecoration(
                   color: _surfaceWhite,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                   border: Border.all(color: _outlineVariant),
                 ),
                 child: TextField(
                   controller: _enumInputController,
+                  onChanged: (_) => setState(() {}),
                   decoration: const InputDecoration(
                     hintText: 'Type item and tap Add...',
                     hintStyle: TextStyle(fontSize: 13, color: _textSecondary),
@@ -1394,7 +1454,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                 ),
               ),
               onPressed: _addEnumerationItem,
@@ -1483,44 +1543,49 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF2E7D32),
-                      shape: BoxShape.circle,
-                    ),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF2E7D32),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '$_answeredCount answered',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF2E7D32),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF767683),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${_questions.length - _answeredCount} unanswered',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF767683),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '$_answeredCount answered',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF2E7D32),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF767683),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${_questions.length - _answeredCount} unanswered',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF767683),
-                    ),
-                  ),
-                ],
+                ),
               ),
               InkWell(
                 onTap: _showQuestionGridModal,

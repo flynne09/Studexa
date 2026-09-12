@@ -2,20 +2,20 @@
 
 ## CURRENT STATUS
 - Overall status: `DEVELOPMENT_ACTIVE`
-- Current phase: `Cross-platform App Icon Integration`
-- Last completed task: Installed and verified the existing Studexa logo across Android, iOS, web/PWA, and Windows icon resources.
-- Current task: App icon asset integration complete; source artwork preserved.
-- NEXT TASK: Rebuild/install the supported platform apps for device-level icon review when requested.
+- Current phase: `Visual Design Enhancement — Part 2 Complete (All 4 Batches Fully Implemented & Verified)`
+- Last completed task: Final Studexa visual enhancement verified with release builds and a design-only source audit.
+- Current task: Complete.
+- NEXT TASK: Review the enhanced application on a target device and report any screen-specific visual adjustments.
 - Blockers: None.
-- Last verified: 2026-09-10 (icon pixel/dimension/reference checks passed; Android AAPT2 resource compilation passed; Windows LoadImageW loaded all four ICO sizes; source hash unchanged; no full app builds or Flutter test suites run for this asset-only task).
+- Last verified: 2026-09-12: full Flutter suite passed 184/184; dedicated visual suites passed 14/14 at 375px and 1440px; flutter analyze passed; Android APK and web release builds succeeded.
 
 ## PROJECT SOURCE OF TRUTH
 - Application: `Studexa`
 - Tagline: `Turn Class Materials into Quizzes Practice Smarter, Together`
-- Platform: Flutter Android mobile app
+- Platform: Android primary target; iOS, web and Windows project scaffolds also exist.
 - Users: Teacher and Student
 - Backend/data platform: Firebase (Auth, Cloud Firestore; Storage upload optional/non-blocking)
-- AI service: Client-side Gemini 1.5 Flash API with built-in on-device academic concept engine fallback (100% free tier compatible, no Blaze plan or paid Firebase Storage required)
+- AI service: Authenticated existing Firebase HTTP function with server-only Gemini secret; default gemini-3.6-flash. Production secret/functions/rules deployed on 2026-09-11; native device walkthrough remains pending.
 - Main source: Phase 1 Project Documentation supplied by the project team
 - Week 11 target: Primary screen flows functional; minimum MVP feature set working; major navigation connected; end-to-end core user journey demonstrable.
 
@@ -42,13 +42,13 @@ Never claim a task or test is complete without evidence.
 
 ## PROJECT DECISIONS
 - Architecture: Flutter client (Android target) connected to Firebase (Auth, Firestore, Storage optional).
-- Gemini API Key Security (NFR-03 Academic MVP Deviation): Gemini key is client-side and restricted at the Cloud Console level; this is a documented deviation from NFR-03 due to Spark-tier Cloud Functions billing constraints. The key is restricted in Google Cloud Console to Android app package `com.example.studexa` with debug certificate SHA-1 `BA:62:AF:97:16:D1:A4:1D:1B:B2:C9:47:1F:04:97:AF:96:7B:17:3B` and enforced with hard daily quota caps to prevent unauthorized usage or overruns outside the application.
-- Text Extraction Architecture (FR-05 Academic MVP Deviation): Text extraction is executed on-device via `DocumentTextExtractor` (supporting PDF, DOCX, and PPTX client-side in Flutter) and saved directly to Firestore `materials/{materialId}` with `status: 'ready'`. Although server-side Cloud Function extraction code exists in `functions/index.js` (`extractText`), it is bypassed in the client runtime to eliminate infinite upload loading caused by Firebase Spark-tier limitations (where Storage and Cloud Function triggers require a paid Blaze plan or remain uninitialized).
+- Gemini API Key Security (2026-09-11 revision): Supersedes the earlier client-key deviation. Flutter sends a Firebase ID token to generateQuizHttp; Secret Manager supplies GEMINI_API_KEY only to backend functions. No client secret or automatic fallback is used by runtime generation. See docs/INTEGRATION_REPORT.md for deployment steps.
+- Text Extraction Architecture (FR-05): DocumentTextExtractor runs on-device and saves ready text directly to materials. Optional background Storage extraction/preview functions remain; core upload readiness does not wait for them. Preserve the PDF sanitizer and parallel upload pipeline.
 - Firebase services:
   - Firebase Authentication: email/password with role-aware profile management and persistent session recovery on splash.
   - Cloud Firestore: application data storing users, classes, materials, quizzes, assignments, and attempts.
-  - Firebase Storage: non-blocking upload attempt; free Spark tier users are fully supported without blocking or paying.
-  - Cloud Functions / Gemini: On-device text extraction via `DocumentTextExtractor` (PDF, DOCX, PPTX); Gemini 1.5 Flash called directly or fallback to built-in deterministic concept synthesizer.
+  - Firebase Storage: Optional background original-file upload; generation needs saved extracted text, not a completed Storage upload. Service billing/quota availability is not guaranteed by code.
+  - Cloud Functions / Gemini: Authenticated server generation and optional Storage extraction/Office preview conversion. On-device PDF/DOCX/PPTX extraction remains the foreground path.
 - Firestore schema:
   - `users/{uid}`: `{ uid, email, displayName, role: "teacher" | "student", createdAt, photoUrl }`
   - `classes/{classId}`: `{ name, joinCode, teacherId, status, createdAt, updatedAt }`
@@ -63,6 +63,11 @@ Never claim a task or test is complete without evidence.
 - UI source: Preserve existing Studexa visual design language (Navy `#1A237E`, lavender-to-blue gradient `#F3F0FF` to `#EFF6FF`, rounded surfaces `#FBF9F8`).
 
 ## COMPLETED TASKS
+- [x] Part 2 Batch 4: Student Core Experience & Utility screens (`lib/screens/student/student_home_screen.dart`, `lib/screens/student/student_class_details_screen.dart`, `lib/screens/student/join_class_screen.dart`, `lib/screens/student/answer_quiz_screen.dart`, `lib/screens/materials/material_viewer_screen.dart` refactored with centralized `AppTheme` tokens, responsive desktop constraints `maxWidth: 840` / `480`, 14dp card radiuses, 12dp button and input radiuses, fitted action labels, horizontal scrollable question badge counters, verified at 375px and 1440px viewports with 0 errors).
+- [x] Part 2 Batch 3: Teacher Quiz Management & Analytics screens (`lib/screens/teacher/quiz_detail_screen.dart`, `lib/screens/teacher/quiz_monitoring_screen.dart`, `lib/screens/teacher/teacher_results_screen.dart` refactored with centralized `AppTheme` tokens, responsive desktop constraints `maxWidth: 840`, 14dp card radiuses, 12dp button radiuses, overflow-protected horizontal chip filters and deadline controls, verified at 375px/1440px with 0 errors).
+- [x] Part 2 Batch 2: Teacher Core Experience screens (`lib/screens/teacher/teacher_home_screen.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `lib/screens/teacher/upload_generate_quiz_screen.dart` refactored with centralized `AppTheme` tokens, responsive desktop constraints `maxWidth: 840` / `760`, 14dp card radiuses, 12dp button radiuses, styled TabBar, verified at 375px/1440px with 0 errors).
+- [x] Part 2 Batch 1: Theme System + Shared Foundation + Auth & Entry screens (`lib/theme/app_theme.dart`, `main.dart`, `splash_screen.dart`, `role_selection_screen.dart`, `login_screen.dart`, `register_screen.dart`, `google_sign_in_button.dart` refactored with centralized design tokens, responsive constraints for desktop/mobile, 14dp card radiuses, 12dp buttons/inputs, verified at 375px/1440px with 0 errors).
+- [x] 2026-09-11 integration implementation and local verification; see the A-F report and individual SESSION HISTORY entries. Entries below retain historical milestone behavior and test counts; current architecture above supersedes old client-key/fallback claims.
 - [x] Cross-platform app icon integration: reused the unchanged assets/images/studexa_logo.png for Android, iOS, web/PWA, Windows, and native launch artwork; see the three app icon SESSION HISTORY entries for scope and verification.
 - [x] Project baseline inspection
 - [x] Firebase foundation (configured `firestore.rules`, `storage.rules`, `firebase.json`)
@@ -114,12 +119,13 @@ Never claim a task or test is complete without evidence.
 - [x] Task 7: Investigate and optimize slow PDF upload (Profiled and resolved primary bottleneck in `MaterialService.uploadStudyMaterial`: decoupled serial Storage upload from on-device text extraction, initiating Storage upload concurrently and returning `readyModel` immediately upon extraction and Firestore write [~1.3s - 1.6s vs 7s - 17s], while background worker finalizes `downloadUrl`; added fast pattern presence check to `DocumentTextExtractor._sanitizePdfBytes`; added short-circuit in Cloud Function `extractText` to skip redundant re-download and re-extraction; added `MaterialModel.contentTypeForExtension`; verified with `test/pdf_upload_optimization_test.dart`; 68/68 tests passing across 10 test suites, 0 analyzer issues).
 
 ## IN PROGRESS
-- None (Unified In-App Document Preview completed and fully verified).
+- Signed-in native device walkthrough and diagnosis of optional Office preview failure. Deployment and live REST/service checks are complete; see docs/INTEGRATION_REPORT.md sections E-F.
 
 ## BLOCKED
-- None recorded.
+- Shared-project changes were confirmed and deployed; use the updated enrollment and Practice-query client. No Android device is connected; Windows requires host symlink support and iOS requires macOS/Xcode. Intermittent Gemini 503 responses occurred, but the final real-provider backend check passed.
 
 ## FILES CHANGED
+- Current integration pass: complete file-by-file inventory in docs/INTEGRATION_REPORT.md, section C. Lists below also include historical sessions.
 - App icon pass: 29 image/icon files and 4 icon/launch configuration files; complete per-file inventory in the App icon task 3 SESSION HISTORY entry below. Source logo and dependencies unchanged.
 - `lib/models/material_model.dart`: Added `convertedPdfRef`, `convertedPdfUrl`, `conversionStatus`, and `convertedAt` properties; updated `toMap`, `fromMap`, `copyWith`; added `hasConvertedPdf` (`conversionStatus == 'completed' && (convertedPdfUrl != null || convertedPdfRef != null)`), `isConverting` (`conversionStatus == 'pending'`), and `conversionFailed` (`conversionStatus == 'failed'`) getters.
 - `lib/services/material_service.dart`: Initialized `conversionStatus` during material upload (`'completed'` for PDF, `'pending'` for PPTX/DOCX); added `getConvertedPdfBytes` fetching preview PDF via download URL or Storage path ref; updated `deleteMaterial` to concurrently delete `convertedPdfRef` preview file from Firebase Storage along with original file and orphaned quizzes.
@@ -240,6 +246,7 @@ Never claim a task or test is complete without evidence.
 - `docs/IMPLEMENTATION_LOG.md`: Updated with Google Classroom class system refactor and mock data purge.
 
 ## FIREBASE / DATABASE CHANGES
+- 2026-09-11 integration revision: firebase.json and Admin SDK target named database default; user-approved Secret Manager version 1, three functions and ownership rules deployed. Live checks created isolated temporary Firebase accounts/documents/object, then removed them. Historical deployment notes below refer to earlier sessions.
 - Added `firebase_auth` dependency.
 - Deployed local `firestore.rules` covering `users/{uid}`, `classes/{classId}`, `materials/{materialId}`, `quizzes/{quizId}`, `quizAssignments/{assignmentId}`, `attempts/{attemptId}`.
 - Deployed local `storage.rules` covering `uploads/{teacherId}/{materialId}/{fileName}`.
@@ -279,9 +286,9 @@ Never claim a task or test is complete without evidence.
 ## KNOWN ISSUES
 - OCR for scanned/image-only PDFs is out of scope for Phase 1.
 - Actual Quiz is paper-based/reference-only and must not be exposed as a student in-app assessment.
-- Gemini API credentials (NFR-03 deviation): Maintained client-side in `lib/config/gemini_config.dart` with Google Cloud Console Android app restriction (package `com.example.studexa` + SHA-1 `BA:62:AF:97:16:D1:A4:1D:1B:B2:C9:47:1F:04:97:AF:96:7B:17:3B`) and daily quota cap due to Spark-tier Cloud Functions outbound networking billing requirements.
+- Gemini deployment: Local secret has moved to ignored functions/.secret.local; production Secret Manager version 1 and updated functions/rules deployed on 2026-09-11 for the newly built client. Gemini has intermittently returned HTTP 503 during verification.
 - Google Sign-In (FR-01): Deferred past the Week 11 MVP milestone because external OAuth 2.0 client IDs and consent screens have not been configured in Firebase Console for project `studexa-b5e55`, prioritizing robust email/password authentication with role enforcement for the academic deliverable.
-- Node.js local environment encountered `UNABLE_TO_VERIFY_LEAF_SIGNATURE` on npm install in `functions/` due to system CA certificate proxying; running with `--strict-ssl=false` resolves dependency downloads.
+- Node/Firebase CLI trust on this host: NODE_USE_SYSTEM_CA=1 resolved proxy certificate trust while keeping TLS verification enabled. Do not follow historical suggestions to disable strict SSL.
 
 ## REQUIREMENT TRACEABILITY CHECKPOINT
 
@@ -345,7 +352,7 @@ Never claim a task or test is complete without evidence.
 - [x] Student cannot read Actual Quiz answer key
 - [x] Student cannot write another student's attempt
 - [x] Closed/deadline-expired attempts blocked server-side
-- [x] Gemini secret not present in Flutter/client code (ACADEMIC MVP: Approved Option B with Google Cloud Console Android package restriction [com.example.studexa + SHA-1 BA:62:AF:97:16:D1:A4:1D:1B:B2:C9:47:1F:04:97:AF:96:7B:17:3B] and hard quota caps)
+- [x] Gemini secret absent from current Dart source and final Android/web artifacts (2026-09-11 scan); backend secret version 1 and function deployment completed on 2026-09-11.
 
 ## INTEGRATION CHECKLIST
 
@@ -1695,3 +1702,293 @@ Conduct live demonstration and user acceptance testing with project stakeholders
   - web/manifest.json
   - windows/runner/resources/app_icon.ico
 - Next task: Ready for user review; rebuild/install platform apps for device-level icon review when requested.
+
+### 2026-09-11 — Integration task 1: Baseline inspection and dependency verification
+- Read IMPLEMENTATION_LOG.md and IMPLEMENTATION_PLAN.md before changes; reviewed the attached API/device integration request, current Dart/services/models/screens, platform configuration, rules, Node functions, and existing tests against docs/PROJECT_UNDERSTANDING.md.
+- Found: direct client Gemini key/configuration, missing selected types in API prompts, silent fallback/backfill after API failure, unchecked response shapes/counts, server database ID mismatch, unauthenticated HTTP teacherId fallback, missing Android release Internet permission, unawaited result persistence, draft recreation after submission, and registration recovery that can overwrite an existing role.
+- Live read-only check: Firebase CLI lists the active Studexa project and all three deployed functions (generateQuiz, generateQuizHttp in us-central1; extractText in us-east1). Initial CLI TLS failure resolved with NODE_USE_SYSTEM_CA=1; certificate verification remains enabled. Historical Spark-only assumptions are not sufficient to describe this deployed project.
+- Verification: flutter pub get passed with existing dependencies; no new packages. No Android devices/emulators available; Windows and browser targets available. No application code changed during inspection.
+- Decision: Use the already-existing authenticated Firebase HTTP function for Gemini, with server-only secret configuration. Keep local extraction, original file upload, models, navigation, and design. Do not present fallback questions as successful AI integration.
+- Next task: Implement and test secure generation and its Flutter request/response/error handling, then record that checkpoint before fixing the remaining flow.
+
+### 2026-09-11 — Integration task 2: Secure generation and API contract
+- Connected QuizService to the existing generateQuizHttp endpoint using Firebase ID tokens; Gemini credentials are no longer read, compiled or sent by Flutter. Moved the existing local key to ignored functions/.secret.local and removed its value from the ignored legacy Dart file. Added Secret Manager bindings to both existing generation functions.
+- Server now targets the live named database default, requires authentication and verifies teacher role, class ownership, material ownership/readiness, valid types/counts, and Actual reference ownership. Removed unauthenticated body.teacherId authorization and automatic fallback/backfill from the production generation path. Historical offline helper methods remain available and tested separately.
+- Added strict Gemini schema/type/count/choice/duplicate/excerpt validation, selected-type directives, complete material input (bounded with an explicit error rather than silent truncation), safe errors and timeouts. New quizzes are persisted only after complete validation.
+- Verification: 11 Node API-boundary tests passed; 33 Flutter generation-client/quiz tests passed. A live Gemini request produced exactly 10 questions across Multiple Choice, True/False and Identification, with all source excerpts validated against supplied lecture text; raw non-secret evidence is in ignored build/integration-evidence/gemini-live.json.
+- Live model finding: model-list included gemini-2.5-flash, but generation returned HTTP 404 saying it is unavailable to new users and recommending gemini-3.6-flash. Kept the project's prior gemini-3.6-flash model, which successfully generated the verified quiz. Model availability is verified by generation, not inferred from model-list or old documentation.
+- Files: .gitignore, firebase.json, functions/index.js, functions/quiz_generator.js, functions/test/quiz_generator.test.js, lib/config/integration_config.dart, lib/config/gemini_config.template.dart, lib/services/quiz_service.dart, lib/services/quiz_generation_client.dart, test/quiz_test.dart, test/quiz_generation_client_test.dart; ignored local secret migration noted above.
+- Limits: These changes have not yet been deployed. Initial analyzer found two style lints in the new client, corrected before the next verification run. Live generation tests used the real provider, while transport/error tests used explicit test doubles.
+- Next task: Repair score acknowledgement/drafts, auth recovery, file errors, release Internet access, and ownership rules; then verify complete flows and builds.
+
+### 2026-09-11 — Integration task 3: Reliable file/auth/result flow and ownership rules
+- Results now await Firestore acknowledgement, block repeat submission during saving, keep answers on failure, and clear drafts only after a successful save. Stable per-attempt document IDs prevent repeated retries from creating duplicate records; assignmentId is saved when an assignment exists. Student history is sorted newest first and remains reviewable after a deadline/closure.
+- Auth recovery now distinguishes an orphaned registration from an existing account and cannot overwrite the latter's role. Added bounded profile reads, retryable startup/session failures, and preserved Firebase session handling.
+- Files: actual byte buffers are revalidated, missing/unreadable inputs fail clearly, material writes and downloads have time limits, and successful extraction timestamps are saved. On-device extraction and parallel optional Storage uploads remain intact. Added only Android INTERNET permission; no broad file/storage/device permissions.
+- Connected Practice generation to the Actual quiz created from the same material in the current upload session. Students query published Practice quizzes explicitly.
+- Prepared stricter Firestore ownership/profile-role/material/quiz/history rules. Enrollment and roster increment are now one atomic batch, compatible with a narrowly authorized student roster update. Added a separate disposable emulator config and native-HTTP Firebase integration checks without new packages.
+- Verification: 52 targeted Flutter tests passed, including auth, files, draft persistence, enumeration, skip/submit, and API client errors. Two new persistence widget tests passed (pending save, failure retention, no draft resurrection). flutter analyze passed with no issues. Rules emulator download/validation is still pending and is not claimed as passed.
+- Files additionally changed: android/app/src/main/AndroidManifest.xml; firestore.rules; firebase.emulators.json; functions/test/firebase_integration.js; lib/main.dart; lib/screens/splash_screen.dart; lib/screens/student/answer_quiz_screen.dart; lib/screens/student/student_class_details_screen.dart; lib/screens/teacher/upload_generate_quiz_screen.dart; lib/services/assignment_service.dart; lib/services/auth_service.dart; lib/services/class_service.dart; lib/services/material_service.dart; test/quiz_submission_integration_test.dart.
+- Next task: Complete emulator rule/API checks, full regression tests, platform builds, and a factual integration report, distinguishing live service evidence from tests.
+
+### 2026-09-11 — Integration task 4: Regression, rules, and release build verification
+- Full serial regression: flutter test --concurrency=1 --reporter expanded passed all 167 tests. The earlier concurrent run had 165 passes and two failures: PDF wall-clock timing under build load, and an unnecessary preview download leaving a timer while opening extracted text. Fixed the latter by loading previews only when requested; the unchanged PDF timing assertion passed in the serial run.
+- Firebase Auth/Firestore emulators: 32 checks passed covering registration/login, profile creation, immutable roles, class creation/join-code query, atomic enrollment/roster update, material access, published Practice query, denial of Actual quiz access, own/teacher history access, denial of other students' results, duplicate attempt write denial, and draft deletion.
+- firebase deploy --only firestore:rules --dry-run --project studexa-b5e55 --non-interactive --json passed; rules were not published.
+- Release builds: flutter build apk --release succeeded (70.6 MB APK); flutter build web --release succeeded. Windows build attempted and blocked by host symlink support/Developer Mode; no Windows system settings changed. iOS build requires macOS/Xcode and was not attempted on Windows. No Android device or emulator was connected.
+- Live AI: the successful 10-question Gemini evidence remains valid. Subsequent emulator-to-Gemini checks hit provider HTTP 503 high-demand responses. Added one bounded retry for transient 5xx errors, with the original request deadline and safe status-only logging; 11 Node tests passed afterward. No fallback substituted and no live end-to-end success claimed for those failed calls.
+- Additional files changed at this checkpoint: lib/screens/materials/material_viewer_screen.dart (lazy preview loading), lib/services/material_service.dart (all URL resolution remains background work), functions/quiz_generator.js (bounded 5xx retry). Raw build/test logs remain ignored under build/integration-evidence.
+- Next task: Finish the current live backend check and final source/build review, then publish the A–F integration report and identify any required deployment approval/configuration.
+
+### 2026-09-11 - Integration task 5: Backend persistence and device/build audit
+- Diagnosed a real end-to-end failure after Gemini returned questions: the functions runtime could not resolve admin.firestore.FieldValue.serverTimestamp. Imported FieldValue directly from firebase-admin/firestore and used it for quiz/extraction/conversion timestamps. Kept unexpected-error logs limited to error type/code.
+- Added an explicitly labeled --backend-fixture mode to functions/test/firebase_integration.js. It invokes the actual HTTP handler over local HTTP, verifies emulator Auth tokens, and saves/retrieves Actual and Practice data through the Admin SDK. All 38 checks passed; the Gemini transport is a test double in this mode and is not live-provider evidence. The initial test harness incorrectly assumed a handler.run API; corrected it to invoke the exported HTTP function through a local server.
+- Pinned extractText to us-east1, matching the previously verified live deployment and preventing a future deployment from implicitly moving the Storage trigger to us-central1.
+- Found open_filex contributed READ_EXTERNAL_STORAGE and READ_MEDIA_IMAGES/VIDEO/AUDIO to the merged APK. Its source exempts app-private paths; MaterialService uses getTemporaryDirectory. Removed these four permissions with manifest merger directives. Rebuilt Android release successfully (70.6 MB); aapt confirms only Internet/network/Google-services and the generated receiver permission remain.
+- Fresh web release booted in headless installed Chrome and rendered Studexa role selection. Inspected build/integration-evidence/web-startup.png; runtime reported one Flutter view and no uncaught JavaScript exceptions. This verifies startup, not signed-in production workflows. Used installed Chrome because the in-app browser tool is unavailable.
+- Secret scan across current Dart source, built web files, and decompressed final APK found no occurrence of the locally configured Gemini secret. No packages, icons, or host settings changed.
+- Files changed at this checkpoint: android/app/src/main/AndroidManifest.xml, functions/index.js, functions/test/firebase_integration.js, docs/IMPLEMENTATION_LOG.md. Ignored build evidence includes the Chrome smoke script, screenshot, logs, and profiles.
+- Next task: Finish the concurrent live backend check and consolidate docs/INTEGRATION_REPORT.md plus current architecture notes before requesting any shared-project deployment.
+
+### 2026-09-11 - Integration task 6: Final integration report and architecture reconciliation
+- Created docs/INTEGRATION_REPORT.md with all requested A-F sections: integrations/classifications, concrete failures, complete changed-file inventory, final flow, evidence/configuration, and explicit rubric verdict. Reconciled active log/plan architecture with authenticated server generation and named database default; preserved historical milestone entries while marking superseded client-key/fallback claims.
+- Final real-provider run passed 38 checks: emulator Auth denied missing/student authorization, teacher generated and persisted Actual 10 questions, then Practice 10 questions with an Actual reference, using live Gemini. Evidence: build/integration-evidence/firebase-backend-final.log and emulated-backend-live-gemini.json. Earlier 503 provider failures and the repaired timestamp fault are documented, not hidden.
+- Verification retained: 167 Flutter tests, 11 Node unit tests, 32 emulator access checks, 38 explicit handler-fixture checks; clean analyzer; final Android/web builds; visual Chrome startup; final APK permission/secret audit. Syntax and git diff --check passed after final backend edits. Cross-checked every current added/modified versioned file against report section C; no missing entries and no configured Gemini secret in the change set.
+- Files changed in this documentation task: docs/INTEGRATION_REPORT.md (new), docs/IMPLEMENTATION_PLAN.md, docs/IMPLEMENTATION_LOG.md. No packages added and no production resources changed.
+- Rubric status: connected implementation and build artifacts are available with real API/backend evidence, but deployed-app completion is not claimed until coordinated deployment and the signed-in device journey are verified.
+- Next task: Obtain confirmation for the concrete deployment described in report section E, because it updates the shared Firebase backend/access rules and requires the matching updated client; then deploy and verify. No permission is needed for further local review.
+
+### 2026-09-11 - Integration task 7: Authorized production deployment
+- User explicitly confirmed changes to the shared Firebase project. Re-read the log and plan before deployment; reused the reviewed working tree without adding packages.
+- Created GEMINI_API_KEY Secret Manager version 1 from the existing ignored local value. Passed it through a temporary ignored data file, removed that file immediately, and did not print the value. Firebase granted the existing compute service account secretAccessor for this secret.
+- Published firestore.rules to the named default database and successfully updated generateQuizHttp/us-central1, generateQuiz/us-central1 and extractText/us-east1. Evidence: build/integration-evidence/secret-deployment.log and production-deployment.log.
+- CLI returned exit code 1 only after all three Successful update operation messages, explicitly reporting that functions successfully deployed but no Artifact Registry cleanup policy exists in us-east1. Existing artifact retention was left unchanged; this is not a function deployment failure.
+- Deployment also warned Node 20 was deprecated on 2026-04-30 and will be decommissioned on 2026-10-30. Retained the reviewed runtime; migration remains a follow-up requirement. No production user documents were edited during deployment.
+- Local documentation changed: docs/IMPLEMENTATION_LOG.md. Next task: exercise live Auth, database rules, authenticated Gemini generation/publishing and result/history storage with temporary isolated records, then delete those records and accounts.
+
+### 2026-09-11 - Integration task 8: Live production verification and cleanup
+- Ran 12 production check groups against the deployed endpoint and named Firestore database with real Firebase Auth and Gemini. Verified teacher/student signup/login/profile, immutable role, class create/join/atomic enrollment, ready material persistence/read, unauthorized and student generation denials, Actual 10 with server timestamps and student denial, Practice 10 with Actual reference plus publish/student query, assignment/result/history persistence, duplicate result denial, and draft save/clear.
+- Test result scores were explicit persistence inputs; Flutter scoring was not executed by this REST script. No native picker or signed-in release UI walkthrough is claimed. Production Secret Manager binding and existing public cloudfunctions.net URL worked without any key supplied by the client script.
+- Deleted all created Firestore records and both temporary Auth accounts. Read back each tracked document as 404. Evidence: ignored build/integration-evidence/production-verification.log and production-verification.json; success=true, checks=12, cleanupComplete=true. Existing users/classes/materials were not modified.
+- Updated docs/INTEGRATION_REPORT.md and docs/IMPLEMENTATION_PLAN.md to replace pending-deployment claims with deployed/live evidence and retain honest platform limits. Documentation changes need no app rebuild; the existing verified APK points to this endpoint.
+- Next task: Verify optional original-file Storage upload/download with temporary data, then finalize documentation. Node 20 decommission and missing us-east1 artifact cleanup policy remain documented follow-ups.
+
+### 2026-09-12 - Integration task 9: Storage verification, preview limitation and final evidence audit
+- Continued the authorized integration task after re-reading the implementation log/plan. Storage checks ran on 2026-09-11; final evidence/log review completed on 2026-09-12.
+- Four production check groups passed: temporary teacher signup/login/profile, DOCX original upload, byte-for-byte original download, and deployed extractText parsing/persistence in named default Firestore. Extracted 1,005 characters with a server timestamp.
+- Optional Office preview conversion completed with conversionStatus failed. Drive API lookup confirmed ENABLED. Scoped Cloud Logging searches initially encountered HTTP 429 and later returned HTTP 200 without matching entries, including the next-day query. Underlying error is undetermined; no invented cause or successful preview claim. Preserved original-file/extracted-text viewing paths.
+- Removed the temporary Storage object and teacher profile/class/material; verified missing object/documents. Admin Auth lookup verified zero remaining test accounts for the two main-flow users plus Storage user. Cleanup evidence is in ignored storage-verification.json; core-flow cleanup in production-verification.json. Only isolated verification Firebase resources were deleted.
+- Updated docs/INTEGRATION_REPORT.md classifications, production evidence, remaining limitations and rubric verdict; updated docs/IMPLEMENTATION_PLAN.md current verification and this log. No application code/packages changed during deployment verification, so the existing tested Android/web artifacts remain applicable.
+- Final local audit: git diff --check passed; all 29 versioned changed/new files are listed in report section C; production evidence confirms success/cleanup and Android/web artifacts exist.
+- Next task: Native signed-in picker-to-results walkthrough with the current APK when an Android device is available. Optional Office preview failure, Node 20 retirement and artifact cleanup policy remain documented follow-ups; no further deployment permission is required for the already-authorized changes.
+
+### 2026-09-12 - Teacher quiz visibility task 1: Reproduce and repair query/rules mismatch
+- User reported that students see quizzes while the teacher cannot. Re-read log/plan and traced TeacherClassDetailsScreen._initStreams -> QuizService.streamClassQuizzes(classId), compared with the student's class/type=practice/status=published query.
+- Reproduced the teacher's exact class-only query against the prior rules: HTTP 403 PERMISSION_DENIED (teacherId undefined for the query's potential result set). The prior owner-by-teacherId rule could authorize a direct quiz read but not prove ownership from classId alone. This was a regression introduced by the earlier rules hardening; prior tests missed teacher class-list queries.
+- Added class ownership authorization to quiz reads while retaining existing per-quiz teacher and published-member paths. No student Actual/draft permissions were broadened. Teacher screen now displays a load error with Retry instead of converting stream errors into No Quizzes Created Yet.
+- Verification: expanded Firebase emulator script passed 36 checks, including teacher class-only Actual/Practice query, teacherId query, student/outsider broad-query denials and published-Practice access. Eighteen widget/navigation/phone tests passed, including two new checks for error UI and teacher Actual-draft/Practice rendering.
+- Files changed: firestore.rules, functions/test/firebase_integration.js, lib/screens/teacher/teacher_class_details_screen.dart, test/teacher_performance_test.dart, docs/IMPLEMENTATION_LOG.md. Analyzer check running; no packages added.
+- Next task: Deploy the corrected rules under the existing explicit authorization, then verify the exact teacher query against production with temporary records and clean them up.
+
+### 2026-09-12 — Visual Design Enhancement: Part 1 — Classroom Workflow Card Removal
+- Objective: Remove the permanent "Classroom Workflow" instructional card from the Teacher Home screen (`lib/screens/teacher/teacher_home_screen.dart`), adjust spacing for visual balance, verify before/after on a 375px viewport, and ensure zero analyzer issues without modifying any business logic, Firebase queries, state management, or navigation flows.
+- Implementation:
+  - Inspected `lib/screens/teacher/teacher_home_screen.dart` and identified the permanent `SliverToBoxAdapter` containing `'Classroom Workflow'`, lightbulb icon, and instructional bullet points (formerly lines 944–991).
+  - Confirmed the student home screen (`lib/screens/student/student_home_screen.dart`) contains no such workflow card; the card was exclusively located on the teacher home screen.
+  - Added optional `initialClassesStream` to `TeacherHomeScreen` to support test injection without triggering unmocked Firestore platform channels, maintaining 100% backward compatibility with all existing call sites.
+  - Removed the `Classroom Workflow` `SliverToBoxAdapter`.
+  - Added a clean `SliverToBoxAdapter(child: SizedBox(height: 24))` trailing spacer to ensure balanced bottom breathing room (36dp total spacing below the last class card and 32dp below the empty state) preventing collision with screen edge or system navigation.
+- Verification:
+  - Created `test/teacher_home_workflow_removal_test.dart` testing 375px viewport (`Size(375, 812)`).
+  - Verified pre-removal state: confirmed presence of `Classroom Workflow` card and captured baseline screenshot (`before_removal_375px.png`).
+  - Verified post-removal state: confirmed complete absence of `Classroom Workflow` card (`findsNothing`) and icon (`findsNothing`), captured updated screenshot (`after_removal_375px.png`), and confirmed all header elements, teacher profile card, stats, quick action cards ('Upload Material', 'Create Class'), and class roster cards render with 0 RenderFlex overflows and 0 exceptions.
+  - Ran regression suite (`test/teacher_phone_visibility_test.dart` and `test/teacher_home_workflow_removal_test.dart`): all 4 tests passed.
+  - Ran `flutter analyze`: 0 issues found (clean run).
+- Files changed:
+  - `lib/screens/teacher/teacher_home_screen.dart` (removed Classroom Workflow card, added 24dp bottom spacing, added optional `initialClassesStream` constructor param)
+  - `test/teacher_home_workflow_removal_test.dart` (new verification test at 375px viewport)
+  - `docs/IMPLEMENTATION_LOG.md` (updated CURRENT STATUS and added session history entry)
+- Artifacts generated:
+  - `before_removal_375px.png` (pre-removal visual state at 375px width)
+  - `after_removal_375px.png` (post-removal visual state at 375px width)
+- Checkpoint: STOP Part 1. Awaiting user confirmation before proceeding to Part 2.
+- Next task: Part 2 — Full-app visual design enhancement (Step 2A: Codebase inspection and Step 2B: Formal design plan).
+
+
+### 2026-09-12 - Teacher quiz visibility task 2: Deploy and verify corrected access
+- Published corrected firestore.rules to the existing named default database under the user's standing authorization. Rules compilation and deployment succeeded; no function redeployment or Gemini call was needed.
+- Eight production check groups passed with temporary teacher/student/unrelated-teacher accounts: profile login setup, class-only teacher query returning Actual draft plus published Practice, teacherId query, enrolled-student broad-query/Actual denial, unrelated-teacher broad-query/Actual denial, and unchanged student published-Practice query. Test quizzes were explicit query fixtures, not presented as new AI-generation evidence.
+- Deleted all verification documents and three temporary Auth accounts; each tracked Firestore document read back as 404. Evidence: teacher-visibility-production.log/.json with success=true, checks=8, cleanupComplete=true; teacher-quiz-rules-deploy.log confirms deployment.
+- Eighteen targeted widget/navigation/phone tests passed and flutter analyze reported no issues. git diff --check passed. Added the missing class-query coverage to the emulator script (now 36 checks). Existing APK immediately benefits from the rule correction; the source-only error/Retry UI needs hot restart or rebuild and was not included in a new APK this pass.
+- Updated docs/INTEGRATION_REPORT.md and docs/IMPLEMENTATION_PLAN.md with the actual regression cause and evidence. Files in this follow-up: firestore.rules, functions/test/firebase_integration.js, lib/screens/teacher/teacher_class_details_screen.dart, test/teacher_performance_test.dart and these three docs. Concurrent changes in teacher_home_screen.dart and teacher_home_workflow_removal_test.dart were not made or altered by this task.
+- Next task: Reopen the affected class Quizzes tab (or restart the app) to replace the previously failed Firestore listener. No quiz recreation or deletion is required.
+
+### 2026-09-12 - Part 2 Batch 1: Theme System + Shared Foundation + Auth & Entry Screens
+- Objective: Establish a single centralized design system in `lib/theme/app_theme.dart` and refactor the entry/authentication screens (`splash_screen.dart`, `role_selection_screen.dart`, `login_screen.dart`, `register_screen.dart`, and `google_sign_in_button.dart`) to use unified tokens, responsive desktop constraints, 14dp card radiuses, and 12dp buttons/inputs without altering business logic, Firebase auth, or navigation destinations.
+- Implementation:
+  - Created `lib/theme/app_theme.dart` with exact brand colors (Primary `#1A237E`, Primary Dark `#0D1452`, Primary Light `#3949AB`, Secondary/Accent `#4361EE`, Light Surface `#FBF9F8`, Dark Background `#0F172A`, Outline `#E2E8F0`, Text Primary `#0F172A`, Text Muted `#64748B`), systematic spacing tokens (`spacingXs` 4dp through `spacingXxl` 24dp), border radiuses (`cardRadius` 14dp, `buttonRadius` 12dp, `inputRadius` 12dp), and subtle elevation shadows (`softShadow`).
+  - Wired `theme: AppTheme.theme` into `lib/main.dart`.
+  - Refactored `lib/screens/splash_screen.dart` to consume `AppTheme.primaryNavy`, `accentBlue`, and soft gradient.
+  - Refactored `lib/screens/auth/role_selection_screen.dart`: applied responsive layout centering with `ConstrainedBox(constraints: BoxConstraints(maxWidth: 600))`, 14dp card border radius, `AppTheme.softShadow`, and typography tokens.
+  - Refactored `lib/screens/auth/login_screen.dart`: applied responsive centering (`maxWidth: 520`), 12dp input borders, 12dp button corners, `AppTheme` colors, and replaced rigid footer `Row` with `Wrap(alignment: WrapAlignment.center)` to prevent overflow with wide test/accessibility fonts.
+  - Refactored `lib/screens/auth/register_screen.dart`: applied responsive centering (`maxWidth: 540`), 12dp input borders, 12dp button corners, role toggle pill styling, and wrapped footer in `Wrap` for accessibility/test font safety.
+  - Refactored `lib/widgets/google_sign_in_button.dart`: ensured `Flexible` child label, `MainAxisSize.min`, and explicit padding (`horizontal: 12, vertical: 12`) to eliminate any edge overflow on 375px viewports while keeping standard 48dp height.
+- Verification:
+  - Created `test/auth_visual_enhancement_test.dart` verifying all 3 screens at both mobile (375x812) and desktop (1440x900) viewports.
+  - Captured before/after screenshots for mobile and desktop: `batch1_role_selection_375px.png`, `batch1_role_selection_1440px.png`, `batch1_login_375px.png`, `batch1_login_1440px.png`, `batch1_register_375px.png`, `batch1_register_1440px.png`.
+  - Confirmed 0 RenderFlex overflows, 0 exceptions.
+  - Ran `flutter test test/auth_validation_test.dart`: 17/17 tests passed (0 regressions on email validation, password validation, role checks, Google Sign-in contract).
+  - Ran `flutter analyze`: 0 issues found across entire codebase.
+- Files changed:
+  - `lib/theme/app_theme.dart` (new centralized theme system)
+  - `lib/main.dart` (theme integration)
+  - `lib/screens/splash_screen.dart` (visual enhancement)
+  - `lib/screens/auth/role_selection_screen.dart` (visual enhancement)
+  - `lib/screens/auth/login_screen.dart` (visual enhancement)
+  - `lib/screens/auth/register_screen.dart` (visual enhancement)
+  - `lib/widgets/google_sign_in_button.dart` (visual enhancement)
+  - `test/auth_visual_enhancement_test.dart` (new visual verification test suite)
+  - `docs/IMPLEMENTATION_LOG.md` (updated CURRENT STATUS, COMPLETED TASKS, and SESSION HISTORY)
+- Next task: Part 2 Batch 2 — Teacher Core Experience (`teacher_home_screen.dart`, `teacher_class_details_screen.dart`, `upload_generate_quiz_screen.dart`).
+
+### 2026-09-12 - Part 2 Batch 2: Teacher Core Experience Screens
+- Objective: Enhance visual hierarchy, consistency, and responsiveness across the core Teacher screens (`teacher_home_screen.dart`, `teacher_class_details_screen.dart`, and `upload_generate_quiz_screen.dart`) by consuming the centralized `AppTheme` design tokens, applying responsive desktop max-width constraints (`maxWidth: 840` / `760`), standardizing card radiuses (`radiusLg` 14dp), button radiuses (`radiusMd` 12dp), and TabBar styling without altering business logic, Firestore queries/streams, or navigation destinations.
+- Implementation:
+  - Refactored `lib/screens/teacher/teacher_home_screen.dart`:
+    - Linked local design tokens to `AppTheme` (`primaryNavy`, `gradientStart`, `gradientEnd`, `surfaceWhite`, `outlineVariant`, `textPrimary`, `textSecondary`).
+    - Wrapped the body `CustomScrollView` in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: 840))` for balanced desktop layout.
+    - Standardized `_ActionCard` and `_ClassItemCard` with `AppTheme.borderRadiusLg` (14dp), `AppTheme.cardShadow`, `AppTheme.surfaceWhite`, and `AppTheme.outlineVariant`.
+    - Preserved 24dp bottom spacing and 0-overflow layout.
+  - Refactored `lib/screens/teacher/teacher_class_details_screen.dart`:
+    - Linked design tokens to `AppTheme` (`primaryNavy`, `darkNavy`, `gradientStart`, `gradientEnd`, `surfaceWhite`, `outlineVariant`, `textPrimary`, `textSecondary`).
+    - Added optional `initialClassStream` and `initialStudentsStream` constructor parameters for isolated widget testability without unmocked platform channel invocations.
+    - Wrapped screen body in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: 840))`.
+    - Enclosed the join code badge row in `FittedBox(fit: BoxFit.scaleDown)` to prevent header overflow on narrow screens.
+    - Modernized the 3-tab `TabBar` with an enclosed rounded container (`surfaceWhite`, 12dp radius, `outlineVariant` border, transparent divider).
+    - Standardized tab cards with 14dp radius and subtle shadow.
+  - Refactored `lib/screens/teacher/upload_generate_quiz_screen.dart`:
+    - Linked design tokens to `AppTheme`.
+    - Wrapped body in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: 760))` for form readability on desktop.
+    - Updated question count header row with `Expanded` to prevent text-width overflow under wide test/accessibility fonts.
+    - Standardized question types card with `AppTheme.borderRadiusLg` (14dp) and `AppTheme.cardShadow`.
+    - Updated quiz generation action buttons to `AppTheme.borderRadiusMd` (12dp) with `Flexible` text labels and `TextOverflow.ellipsis` to prevent overflow across varied viewport and font scales.
+- Verification:
+  - Created `test/teacher_visual_enhancement_test.dart` testing all 3 screens at both mobile (375x812) and desktop (1440x900) viewports.
+  - Captured 6 screenshots to artifacts directory: `batch2_teacher_home_375px.png`, `batch2_teacher_home_1440px.png`, `batch2_teacher_class_details_375px.png`, `batch2_teacher_class_details_1440px.png`, `batch2_upload_quiz_375px.png`, `batch2_upload_quiz_1440px.png`.
+  - Confirmed 0 RenderFlex overflows, 0 exceptions.
+  - Ran teacher regression suites (`test/teacher_home_workflow_removal_test.dart`, `test/teacher_phone_visibility_test.dart`, `test/teacher_performance_test.dart`, `test/teacher_upload_reliability_test.dart`): 19/19 tests passed with 0 regressions.
+  - Ran `flutter analyze`: 0 issues found across entire codebase.
+- Files changed:
+  - `lib/screens/teacher/teacher_home_screen.dart` (visual enhancement, desktop constraint, AppTheme tokens)
+  - `lib/screens/teacher/teacher_class_details_screen.dart` (visual enhancement, desktop constraint, TabBar styling, stream params)
+  - `lib/screens/teacher/upload_generate_quiz_screen.dart` (visual enhancement, desktop constraint, button radiuses, flex protection)
+  - `test/teacher_visual_enhancement_test.dart` (new visual verification test suite)
+  - `docs/IMPLEMENTATION_LOG.md` (updated CURRENT STATUS, COMPLETED TASKS, and SESSION HISTORY)
+- Next task: Part 2 Batch 3 — Teacher Quiz Management & Analytics (`quiz_detail_screen.dart`, `quiz_monitoring_screen.dart`, `teacher_results_screen.dart`).
+
+### 2026-09-12 - Part 2 Batch 3: Teacher Quiz Management & Analytics Screens
+- Objective: Enhance visual hierarchy, consistency, and responsiveness across the teacher quiz review, monitoring, and class analytics screens (`quiz_detail_screen.dart`, `quiz_monitoring_screen.dart`, `teacher_results_screen.dart`) by consuming centralized `AppTheme` tokens, applying responsive desktop max-width constraints (`maxWidth: AppTheme.maxContentWidthTablet` / 840dp), standardizing card radiuses (`radiusLg` 14dp), button radiuses (`radiusMd` 12dp), and implementing overflow protections on mobile viewports (375px) without changing business logic, Firestore queries, or navigation routes.
+- Implementation:
+  - Refactored `lib/screens/teacher/quiz_detail_screen.dart`:
+    - Linked color and radius tokens to `AppTheme` (`primaryNavy`, `darkNavy`, `gradientStart`, `gradientEnd`, `surfaceWhite`, `outlineVariant`, `textPrimary`, `textSecondary`).
+    - Added optional `initialClass` parameter to constructor for clean widget test isolation without unmocked platform channel invocations.
+    - Wrapped body in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet))` for centered, balanced layout on large screens.
+    - Standardized card radiuses to `AppTheme.borderRadiusLg` (14dp), action buttons to `AppTheme.borderRadiusMd` (12dp) with `FittedBox` on labels, and question option borders to `AppTheme.borderRadiusSm` (8dp).
+    - Made question type badges flexible with ellipsis in `Row` to eliminate mobile overflow.
+  - Refactored `lib/screens/teacher/quiz_monitoring_screen.dart`:
+    - Linked styling tokens to `AppTheme`.
+    - Added optional `initialMembersStream`, `initialAttemptsStream`, and `initialAssignment` parameters for test isolation.
+    - Wrapped body in `ConstrainedBox(constraints: BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet))`.
+    - Standardized metric cards and student cards with 14dp radius and `AppTheme.cardShadow`.
+    - Wrapped deadline text in `Expanded` with ellipsis and placed both assignment status action buttons in `Expanded` with `FittedBox` to eliminate RenderFlex overflow on narrow (375px) screens.
+  - Refactored `lib/screens/teacher/teacher_results_screen.dart`:
+    - Linked tokens to `AppTheme` and constrained body content with `AppTheme.maxContentWidthTablet`.
+    - Standardized summary metric cards and student result cards to `AppTheme.borderRadiusLg` with `AppTheme.cardShadow`.
+    - Wrapped filter chips in `SingleChildScrollView(scrollDirection: Axis.horizontal)` with horizontal padding to guarantee clean scrollability and prevent chip wrap clipping on narrow mobile viewports.
+    - Standardized search bar with `AppTheme.borderRadiusMd` (12dp) and `AppTheme.surfaceWhite`.
+- Verification:
+  - Created `test/teacher_management_visual_test.dart` testing all 3 screens at both mobile (375x812) and desktop (1440x900) viewports.
+  - Captured 6 screenshots to artifacts directory: `batch3_quiz_detail_375px.png`, `batch3_quiz_detail_1440px.png`, `batch3_quiz_monitoring_375px.png`, `batch3_quiz_monitoring_1440px.png`, `batch3_teacher_results_375px.png`, `batch3_teacher_results_1440px.png`.
+  - Confirmed 0 RenderFlex overflows and 0 exceptions across all 3 screens at 375px and 1440px.
+  - Ran regression suites: `test/assignment_monitoring_test.dart` (5/5 passed), `test/pdf_export_test.dart` (4/4 passed).
+  - Ran `flutter analyze`: 0 issues found across entire codebase.
+- Files changed:
+  - `lib/screens/teacher/quiz_detail_screen.dart` (visual enhancement, AppTheme tokens, test isolation param)
+  - `lib/screens/teacher/quiz_monitoring_screen.dart` (visual enhancement, AppTheme tokens, overflow protections, test isolation params)
+  - `lib/screens/teacher/teacher_results_screen.dart` (visual enhancement, AppTheme tokens, horizontal scrollable filter chips)
+  - `test/teacher_management_visual_test.dart` (new visual verification test suite)
+  - `docs/IMPLEMENTATION_LOG.md` (updated CURRENT STATUS, COMPLETED TASKS, and SESSION HISTORY)
+- Next task: Part 2 Batch 4 — Student Core Experience & Utility (`student_home_screen.dart`, `student_class_details_screen.dart`, `join_class_screen.dart`, `answer_quiz_screen.dart`, `material_viewer_screen.dart`).
+
+### 2026-09-12 - Part 2 Batch 4: Student Core Experience & Utility Screens
+- Objective: Complete the final batch of the Studexa Visual Design Enhancement initiative, refining all student-facing screens and document viewer screens (`student_home_screen.dart`, `student_class_details_screen.dart`, `join_class_screen.dart`, `answer_quiz_screen.dart`, `material_viewer_screen.dart`). Enforce cohesive visual identity using `AppTheme` design tokens, responsive max-width constraints on tablet/desktop viewports (375px to 1440px), harmonized 14dp card radiuses (`radiusLg`), 12dp button and input radiuses (`radiusMd`), and robust overflow defenses without any alteration to business logic, Firestore queries, security rules, or navigation.
+- Implementation:
+  - Refactored `lib/screens/student/student_home_screen.dart`:
+    - Connected color tokens to `AppTheme` (`primaryNavy`, `gradientStart`, `gradientEnd`, `surfaceWhite`, `outlineVariant`, `textPrimary`, `textSecondary`).
+    - Added optional `initialClassesStream` constructor parameter for deterministic widget testing without platform channel dependencies.
+    - Wrapped CustomScrollView body in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet))` for centered tablet/desktop presentations.
+    - Standardized student profile card, empty state card, and class cards with 14dp radiuses (`AppTheme.borderRadiusLg`) and `AppTheme.cardShadow`.
+    - Standardized action buttons with 12dp radiuses (`AppTheme.borderRadiusMd`).
+  - Refactored `lib/screens/student/student_class_details_screen.dart`:
+    - Linked tokens to `AppTheme`.
+    - Added optional `initialClassStream`, `initialMaterialsStream`, `initialQuizzesStream`, and `initialPeopleStream` constructor parameters for offline testability.
+    - Wrapped body in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet))`.
+    - Modernized TabBar with an enclosed rounded container (`surfaceWhite`, 12dp radius, `outlineVariant` border, transparent divider).
+    - Enclosed class banner header card with 14dp radius and gradient background.
+    - Standardized quiz, material, and member cards to 14dp radiuses with card shadows.
+  - Refactored `lib/screens/student/join_class_screen.dart`:
+    - Linked tokens to `AppTheme`.
+    - Constrained form to `AppTheme.maxContentWidthMobile` (480dp) for balanced layout on desktop viewports.
+    - Standardized join code text field border and action buttons to 12dp radiuses (`AppTheme.borderRadiusMd`).
+    - Standardized joined class confirmation card to 14dp radius with `AppTheme.cardShadow`.
+  - Refactored `lib/screens/student/answer_quiz_screen.dart`:
+    - Linked tokens to `AppTheme`.
+    - Wrapped active quiz body in `Center` with `ConstrainedBox(constraints: BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet))`.
+    - Standardized dialogs (`AlertDialog` submit confirmation and quiz results) to 14dp radiuses (`AppTheme.radiusLg`).
+    - Standardized answer choice option cards, text input containers, and enumeration input containers to 12dp radiuses (`AppTheme.radiusMd`).
+    - Standardized bottom navigation controls with 12dp button radiuses and added `Flexible` + `FittedBox` on button labels to eliminate 375px mobile overflows.
+    - Wrapped question type badge and counter in `Flexible` and `FittedBox` to prevent horizontal overflow under accessibility or wide test fonts.
+    - Wrapped answered/unanswered question counters row in `Expanded(child: SingleChildScrollView(scrollDirection: Axis.horizontal))` to guarantee zero horizontal overflow.
+  - Refactored `lib/screens/materials/material_viewer_screen.dart`:
+    - Linked tokens to `AppTheme`.
+    - Wrapped converting preview state and extracted text view in `Center` with `ConstrainedBox(maxWidth: AppTheme.maxContentWidthMobile / maxContentWidthTablet)` for desktop readability.
+    - Standardized error banner and action buttons to 12dp radiuses (`AppTheme.radiusMd`).
+- Verification:
+  - Created `test/student_visual_enhancement_test.dart` testing all 5 screens across mobile (375x812) and desktop (1440x900) viewports.
+  - Generated 10 screenshot artifacts in the artifact directory: `batch4_student_home_375px.png`, `batch4_student_home_1440px.png`, `batch4_student_class_details_375px.png`, `batch4_student_class_details_1440px.png`, `batch4_join_class_375px.png`, `batch4_join_class_1440px.png`, `batch4_answer_quiz_375px.png`, `batch4_answer_quiz_1440px.png`, `batch4_material_viewer_375px.png`, `batch4_material_viewer_1440px.png`.
+  - Confirmed 0 RenderFlex overflows and 0 exceptions across all viewports (5/5 tests passed).
+  - Executed student regression suite (`test/material_viewer_test.dart`, `test/student_phone_visibility_test.dart`, `test/student_quiz_attempt_limits_test.dart`, `test/quiz_draft_persistence_test.dart`, `test/quiz_skip_submit_guard_test.dart`, `test/scoring_test.dart`): 33/33 tests passed with 0 regressions.
+  - Executed full project `flutter analyze`: 0 errors, 0 warnings found across the entire repository.
+- Files changed:
+  - `lib/screens/student/student_home_screen.dart` (visual enhancement, AppTheme tokens, test parameter, desktop constraint)
+  - `lib/screens/student/student_class_details_screen.dart` (visual enhancement, AppTheme tokens, test stream parameters, TabBar styling)
+  - `lib/screens/student/join_class_screen.dart` (visual enhancement, AppTheme tokens, desktop constraint, 12dp/14dp radiuses)
+  - `lib/screens/student/answer_quiz_screen.dart` (visual enhancement, AppTheme tokens, desktop constraint, overflow defenses)
+  - `lib/screens/materials/material_viewer_screen.dart` (visual enhancement, AppTheme tokens, desktop constraints, 12dp radiuses)
+  - `test/student_visual_enhancement_test.dart` (new visual verification test suite)
+  - `docs/IMPLEMENTATION_LOG.md` (updated CURRENT STATUS, COMPLETED TASKS, and SESSION HISTORY)
+- Next task: Complete walkthrough.md artifact summarizing all 4 batches and visual enhancements.
+
+### 2026-09-12 - Visual Design Enhancement: Final global theme polish
+- Objective: Review and finish the existing four-batch Studexa visual enhancement while preserving the established navy/lavender palette and every application route, action, query, service, and workflow.
+- Confirmed all application screens consume the centralized `AppTheme` system and visually inspected representative authentication, teacher, student, quiz, analytics, class-detail, and material-viewer screenshots at 375px mobile and 1440px desktop widths.
+- Added a consistent typography hierarchy to `AppTheme.theme` and branded the remaining default Material selection/progress/tooltip states. Removed default Material surface tint from cards, dialogs, and bottom sheets so their rendered colors remain the exact Studexa surface palette.
+- Applied `AppTheme.theme` to the Firebase initialization failure application so even the retry state follows the same design language. This changes presentation only; retry behavior and Firebase startup flow remain unchanged.
+- Verification: full serial Flutter regression suite passed 184/184. The four dedicated visual suites passed 14/14 and regenerated screenshots for all principal screen groups at 375x812 and 1440x900 with no exceptions or RenderFlex overflow. Final `flutter analyze` passed with no issues; `git diff --check` remained clean apart from line-ending notices.
+- Files changed in this checkpoint: `lib/theme/app_theme.dart`, `lib/main.dart`, and `docs/IMPLEMENTATION_LOG.md`. Existing visual changes in auth, teacher, student, quiz, analytics, and material screens were preserved without modifying business logic.
+- Next task: Create the final visual design walkthrough artifact summarizing the palette, shared component system, screen coverage, responsive behavior, and verification results.
+
+### 2026-09-12 - Visual Design Enhancement: Walkthrough artifact
+- Created `docs/UI_DESIGN_WALKTHROUGH.md` as the final code-grounded visual guide for the completed enhancement. It documents the retained Studexa palette, centralized theme tokens, entry/auth/teacher/student/quiz/material screen coverage, mobile/desktop behavior, verification results, and the explicit no-workflow-change boundary.
+- The guide points to the four dedicated visual test suites and states that screenshots are local test evidence rather than bundled application assets. It also records that the existing logo, service integration, navigation, and business rules were preserved.
+- Files changed in this checkpoint: `docs/UI_DESIGN_WALKTHROUGH.md` (new) and `docs/IMPLEMENTATION_LOG.md`.
+- Next task: Produce fresh Android and web release builds from the final visual source, then audit the final diff for accidental behavior changes.
+
+### 2026-09-12 - Visual Design Enhancement: Release builds and final audit
+- Built the final visually enhanced application for web with `flutter build web --release`; the release output completed successfully in `build/web`.
+- Built the final Android release package with `flutter build apk --release`; the build completed successfully at `build/app/outputs/flutter-apk/app-release.apk` (74,029,476 bytes).
+- Final verification remained green: `flutter analyze` passed with no issues, the full serial Flutter suite passed 184/184, and the four dedicated mobile/desktop visual suites passed 14/14.
+- Confirmed every Dart screen under `lib/screens/` imports the centralized `AppTheme`, and `pubspec.yaml` / `pubspec.lock` have no changes from this design task, so no package was added.
+- Removed one trailing blank line reported by `git diff --check`; the remaining output consists only of Git's existing LF-to-CRLF working-copy notices.
+- Files changed in this checkpoint: `lib/screens/auth/role_selection_screen.dart` (whitespace-only cleanup) and `docs/IMPLEMENTATION_LOG.md`.
+- Next task: Review the enhanced application on a target device and report any screen-specific visual adjustments.

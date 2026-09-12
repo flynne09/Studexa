@@ -5,17 +5,24 @@ import '../../models/quiz_attempt_model.dart';
 import '../../models/quiz_model.dart';
 import '../../services/assignment_service.dart';
 import '../../services/class_service.dart';
+import '../../theme/app_theme.dart';
 
 /// Teacher screen for monitoring class quiz submissions, reviewing individual student scores,
 /// managing assignment status (open/close/deadline), and viewing class summary analytics.
 class QuizMonitoringScreen extends StatefulWidget {
   final QuizModel quiz;
   final String className;
+  final Stream<List<ClassMember>>? initialMembersStream;
+  final Stream<List<QuizAttemptModel>>? initialAttemptsStream;
+  final QuizAssignmentModel? initialAssignment;
 
   const QuizMonitoringScreen({
     super.key,
     required this.quiz,
     this.className = 'Class',
+    this.initialMembersStream,
+    this.initialAttemptsStream,
+    this.initialAssignment,
   });
 
   @override
@@ -23,14 +30,14 @@ class QuizMonitoringScreen extends StatefulWidget {
 }
 
 class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _darkNavy = Color(0xFF000666);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _darkNavy = AppTheme.darkNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   final AssignmentService _assignmentService = AssignmentService();
   final ClassService _classService = ClassService();
@@ -43,15 +50,21 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   void initState() {
     super.initState();
     _initStreams();
-    _loadAssignment();
+    if (widget.initialAssignment != null) {
+      _assignment = widget.initialAssignment;
+    } else {
+      _loadAssignment();
+    }
   }
 
   void _initStreams() {
-    _membersStream = _classService.getClassMembersStream(widget.quiz.classId);
-    _attemptsStream = _assignmentService.streamClassQuizAttempts(
-      widget.quiz.classId,
-      widget.quiz.id,
-    );
+    _membersStream = widget.initialMembersStream ??
+        _classService.getClassMembersStream(widget.quiz.classId);
+    _attemptsStream = widget.initialAttemptsStream ??
+        _assignmentService.streamClassQuizAttempts(
+          widget.quiz.classId,
+          widget.quiz.id,
+        );
   }
 
   @override
@@ -64,6 +77,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   }
 
   Future<void> _loadAssignment() async {
+    if (widget.initialAssignment != null) return;
     final assign = await _assignmentService.getAssignmentForQuiz(
       widget.quiz.classId,
       widget.quiz.id,
@@ -179,7 +193,9 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
       isScrollControlled: true,
       backgroundColor: _surfaceWhite,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppTheme.radiusXl),
+        ),
       ),
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.7,
@@ -242,7 +258,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                     color: isCor
                         ? Colors.green.withValues(alpha: 0.05)
                         : Colors.red.withValues(alpha: 0.05),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: AppTheme.borderRadiusMd,
                     border: Border.all(
                       color: isCor
                           ? Colors.green.withValues(alpha: 0.3)
@@ -316,207 +332,223 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
           ),
         ),
         child: SafeArea(
-          child: StreamBuilder<List<ClassMember>>(
-            stream: _membersStream,
-            builder: (context, membersSnapshot) {
-              final allMembers = membersSnapshot.data ?? [];
-              final students =
-                  allMembers.where((m) => m.role == 'student').toList();
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppTheme.maxContentWidthTablet,
+              ),
+              child: StreamBuilder<List<ClassMember>>(
+                stream: _membersStream,
+                builder: (context, membersSnapshot) {
+                  final allMembers = membersSnapshot.data ?? [];
+                  final students =
+                      allMembers.where((m) => m.role == 'student').toList();
 
-              return StreamBuilder<List<QuizAttemptModel>>(
-                stream: _attemptsStream,
-                builder: (context, attemptsSnapshot) {
-                  final attempts = attemptsSnapshot.data ?? [];
+                  return StreamBuilder<List<QuizAttemptModel>>(
+                    stream: _attemptsStream,
+                    builder: (context, attemptsSnapshot) {
+                      final attempts = attemptsSnapshot.data ?? [];
 
-                  // Map studentId -> latest attempt
-                  final Map<String, QuizAttemptModel> studentAttempts = {};
-                  for (final att in attempts) {
-                    if (!studentAttempts.containsKey(att.studentId)) {
-                      studentAttempts[att.studentId] = att;
-                    }
-                  }
+                      // Map studentId -> latest attempt
+                      final Map<String, QuizAttemptModel> studentAttempts = {};
+                      for (final att in attempts) {
+                        if (!studentAttempts.containsKey(att.studentId)) {
+                          studentAttempts[att.studentId] = att;
+                        }
+                      }
 
-                  // Class analytics calculations
-                  final totalStudents = students.length;
-                  final completedStudents = studentAttempts.length;
-                  final completionRate = totalStudents > 0
-                      ? (completedStudents / totalStudents * 100)
-                      : 0.0;
+                      // Class analytics calculations
+                      final totalStudents = students.length;
+                      final completedStudents = studentAttempts.length;
+                      final completionRate = totalStudents > 0
+                          ? (completedStudents / totalStudents * 100)
+                          : 0.0;
 
-                  double avgPercentage = 0.0;
-                  double highestScore = 0.0;
-                  if (completedStudents > 0) {
-                    final totalP = studentAttempts.values
-                        .fold<double>(0.0, (acc, a) => acc + a.percentage);
-                    avgPercentage = totalP / completedStudents;
-                    highestScore = studentAttempts.values
-                        .map((a) => a.percentage)
-                        .reduce((a, b) => a > b ? a : b);
-                  }
+                      double avgPercentage = 0.0;
+                      double highestScore = 0.0;
+                      if (completedStudents > 0) {
+                        final totalP = studentAttempts.values
+                            .fold<double>(0.0, (acc, a) => acc + a.percentage);
+                        avgPercentage = totalP / completedStudents;
+                        highestScore = studentAttempts.values
+                            .map((a) => a.percentage)
+                            .reduce((a, b) => a > b ? a : b);
+                      }
 
-                  return ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      // ── Header Card ──────────────────────────────
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [_primaryNavy, _darkNavy],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _primaryNavy.withValues(alpha: 0.2),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.quiz.title,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Class: ${widget.className} • ${widget.quiz.questionCount} Questions (${widget.quiz.totalPoints.toStringAsFixed(0)} pts)',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.white.withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // ── Assignment Status & Controls ─────────────
-                      Container(
+                      return ListView(
                         padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: _surfaceWhite,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: _outlineVariant),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          // ── Header Card ──────────────────────────────
+                          Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [_primaryNavy, _darkNavy],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: AppTheme.borderRadiusLg,
+                              boxShadow: AppTheme.cardShadow,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Assignment Status',
-                                  style: TextStyle(
-                                    fontSize: 14,
+                                Text(
+                                  widget.quiz.title,
+                                  style: const TextStyle(
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
-                                    color: _textPrimary,
+                                    color: Colors.white,
                                   ),
                                 ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: (_assignment?.isAvailable ?? true)
-                                        ? Colors.green.withValues(alpha: 0.1)
-                                        : Colors.red.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: (_assignment?.isAvailable ?? true)
-                                          ? Colors.green
-                                          : Colors.red,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _assignment?.formattedStatus ?? 'Open',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: (_assignment?.isAvailable ?? true)
-                                          ? Colors.green[800]
-                                          : Colors.red[800],
-                                    ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Class: ${widget.className} • ${widget.quiz.questionCount} Questions (${widget.quiz.totalPoints.toStringAsFixed(0)} pts)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white.withValues(alpha: 0.8),
                                   ),
                                 ),
                               ],
                             ),
-                            if (_assignment?.deadline != null) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  const Icon(Icons.schedule,
-                                      size: 14, color: _textSecondary),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Deadline: ${_assignment!.deadline!.month}/${_assignment!.deadline!.day}/${_assignment!.deadline!.year} at ${_assignment!.deadline!.hour}:${_assignment!.deadline!.minute.toString().padLeft(2, '0')}',
-                                    style: const TextStyle(
-                                        fontSize: 12, color: _textSecondary),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // ── Assignment Status & Controls ─────────────
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: _surfaceWhite,
+                              borderRadius: AppTheme.borderRadiusLg,
+                              border: Border.all(color: _outlineVariant),
+                              boxShadow: AppTheme.cardShadow,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Assignment Status',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: _textPrimary,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: (_assignment?.isAvailable ?? true)
+                                            ? Colors.green.withValues(alpha: 0.1)
+                                            : Colors.red.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: (_assignment?.isAvailable ?? true)
+                                              ? Colors.green
+                                              : Colors.red,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _assignment?.formattedStatus ?? 'Open',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: (_assignment?.isAvailable ?? true)
+                                              ? Colors.green[800]
+                                              : Colors.red[800],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (_assignment?.deadline != null) ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.schedule,
+                                          size: 14, color: _textSecondary),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          'Deadline: ${_assignment!.deadline!.month}/${_assignment!.deadline!.day}/${_assignment!.deadline!.year} at ${_assignment!.deadline!.hour}:${_assignment!.deadline!.minute.toString().padLeft(2, '0')}',
+                                          style: const TextStyle(
+                                              fontSize: 12, color: _textSecondary),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
-                              ),
-                            ],
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor:
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor:
+                                              (_assignment?.isClosed ?? false)
+                                                  ? Colors.green
+                                                  : Colors.red[700],
+                                          side: BorderSide(
+                                            color: (_assignment?.isClosed ?? false)
+                                                ? Colors.green
+                                                : Colors.red.shade300,
+                                          ),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                AppTheme.borderRadiusMd,
+                                          ),
+                                        ),
+                                        onPressed: _toggleAssignmentStatus,
+                                        icon: Icon(
                                           (_assignment?.isClosed ?? false)
-                                              ? Colors.green
-                                              : Colors.red[700],
-                                      side: BorderSide(
-                                        color: (_assignment?.isClosed ?? false)
-                                            ? Colors.green
-                                            : Colors.red.shade300,
+                                              ? Icons.lock_open
+                                              : Icons.lock_outline,
+                                          size: 16,
+                                        ),
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            (_assignment?.isClosed ?? false)
+                                                ? 'Reopen Quiz'
+                                                : 'Close Submissions',
+                                          ),
+                                        ),
                                       ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius:
-                                            BorderRadius.circular(8),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: _primaryNavy,
+                                          side: const BorderSide(color: _primaryNavy),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: AppTheme.borderRadiusMd,
+                                          ),
+                                        ),
+                                        onPressed: _setDeadline,
+                                        icon: const Icon(Icons.calendar_month,
+                                            size: 16),
+                                        label: const FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text('Set Deadline'),
+                                        ),
                                       ),
                                     ),
-                                    onPressed: _toggleAssignmentStatus,
-                                    icon: Icon(
-                                      (_assignment?.isClosed ?? false)
-                                          ? Icons.lock_open
-                                          : Icons.lock_outline,
-                                      size: 16,
-                                    ),
-                                    label: Text(
-                                      (_assignment?.isClosed ?? false)
-                                          ? 'Reopen Quiz'
-                                          : 'Close Submissions',
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: _primaryNavy,
-                                    side: const BorderSide(color: _primaryNavy),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                  ),
-                                  onPressed: _setDeadline,
-                                  icon: const Icon(Icons.calendar_month,
-                                      size: 16),
-                                  label: const Text('Set Deadline'),
+                                  ],
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
+                          ),
+                          const SizedBox(height: 14),
 
                       // ── Analytics Summary Cards ──────────────────
                       Row(
@@ -562,7 +594,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                           padding: const EdgeInsets.all(24),
                           decoration: BoxDecoration(
                             color: _surfaceWhite,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: AppTheme.borderRadiusMd,
                             border: Border.all(color: _outlineVariant),
                           ),
                           child: const Center(
@@ -582,23 +614,17 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                             margin: const EdgeInsets.only(bottom: 8),
                             decoration: BoxDecoration(
                               color: _surfaceWhite,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: AppTheme.borderRadiusLg,
                               border: Border.all(
                                 color: hasCompleted
                                     ? Colors.green.withValues(alpha: 0.3)
                                     : _outlineVariant,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.03),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                              boxShadow: AppTheme.cardShadow,
                             ),
                             child: Material(
                               color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: AppTheme.borderRadiusLg,
                               clipBehavior: Clip.antiAlias,
                               child: ListTile(
                                 contentPadding: const EdgeInsets.symmetric(
@@ -651,7 +677,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                                               horizontal: 10, vertical: 4),
                                           shape: RoundedRectangleBorder(
                                             borderRadius:
-                                                BorderRadius.circular(8),
+                                                AppTheme.borderRadiusMd,
                                           ),
                                         ),
                                         onPressed: () =>
@@ -685,8 +711,10 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   Widget _buildMetricCard({
     required String label,
@@ -699,15 +727,9 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: AppTheme.borderRadiusLg,
           border: Border.all(color: color.withValues(alpha: 0.3)),
-          boxShadow: [
-            BoxShadow(
-              color: color.withValues(alpha: 0.04),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          boxShadow: AppTheme.cardShadow,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -728,6 +750,8 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
             Text(
               label,
               style: const TextStyle(fontSize: 11, color: _textSecondary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

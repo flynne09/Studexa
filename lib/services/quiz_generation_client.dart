@@ -1,0 +1,175 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+
+import '../config/integration_config.dart';
+import '../models/quiz_model.dart';
+
+class QuizGenerationException implements Exception {
+  const QuizGenerationException(this.message);
+  final String message;
+  @override
+  String toString() => message;
+}
+
+/// Calls the existing Firebase HTTP function using a Firebase ID token.
+/// The server validates ownership, calls Gemini, and persists the complete quiz.
+class QuizGenerationClient {
+  QuizGenerationClient({
+    this.client,
+    Future<String?> Function()? tokenProvider,
+    this.endpoint = IntegrationConfig.quizGenerationUrl,
+    this.timeout = const Duration(seconds: 150),
+  }) : _tokenProvider =
+           tokenProvider ??
+           (() async => FirebaseAuth.instance.currentUser?.getIdToken());
+
+  final http.Client? client;
+  final Future<String?> Function() _tokenProvider;
+  final String endpoint;
+  final Duration timeout;
+
+  Future<QuizModel> generate({
+    required String teacherId,
+    required String classId,
+    required String materialId,
+    required bool isActual,
+    required List<String> questionTypes,
+    required int questionCount,
+    String? sourceQuizId,
+  }) async {
+    final types = questionTypes
+        .map((type) => QuizQuestionType.fromString(type).value)
+        .toSet()
+        .toList();
+    if (teacherId.trim().isEmpty ||
+        classId.trim().isEmpty ||
+        materialId.trim().isEmpty) {
+      throw const QuizGenerationException(
+        'Sign in and choose a class and study material first.',
+      );
+    }
+    if (questionCount < 1 ||
+        questionCount > 50 ||
+        types.isEmpty ||
+        types.length > questionCount) {
+      throw const QuizGenerationException(
+        'Choose 1–50 questions and at least one question per selected type.',
+      );
+    }
+    final uri = Uri.tryParse(endpoint);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        uri.hasQuery) {
+      throw const QuizGenerationException(
+        'Quiz generation is not configured correctly. Contact your administrator.',
+      );
+    }
+    final httpClient = client ?? http.Client();
+    try {
+      final token = await _tokenProvider().timeout(const Duration(seconds: 15));
+      if (token == null || token.isEmpty) {
+        throw const QuizGenerationException(
+          'Your session has ended. Sign in again to generate a quiz.',
+        );
+      }
+      final response = await httpClient
+          .post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({
+              'classId': classId,
+              'materialId': materialId,
+              'quizType': isActual ? 'actual' : 'practice',
+              'questionTypes': types,
+              'questionCount': questionCount,
+              'sourceQuizId': ?sourceQuizId,
+            }),
+          )
+          .timeout(timeout);
+      if (response.statusCode != 200) {
+        const messages = {
+          400:
+              'Check the selected document, question types and question count.',
+          401: 'Your session has ended. Sign in again to generate a quiz.',
+          403:
+              'Only the teacher who owns this class and material can generate its quizzes.',
+          404:
+              'The material or quiz service could not be found. Refresh and try again.',
+          412:
+              'Quiz generation is not ready. Check that the material has readable text and ask your administrator to verify the AI configuration.',
+          422:
+              'The AI returned incomplete or unsupported questions. Try again with fewer questions.',
+          429:
+              'The AI service has reached its request limit. Please try again later.',
+          504: 'Quiz generation took too long. Try again with fewer questions.',
+        };
+        throw QuizGenerationException(
+          messages[response.statusCode] ??
+              'The quiz service is temporarily unavailable. Please try again.',
+        );
+      }
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final id = body['quizId'];
+      final data = body['quiz'] as Map<String, dynamic>;
+      final raw = data['questions'] as List<dynamic>;
+      if (body['success'] != true ||
+          id is! String ||
+          id.isEmpty ||
+          data['generationMethod'] != 'gemini' ||
+          data['teacherId'] != teacherId ||
+          data['classId'] != classId ||
+          data['materialId'] != materialId ||
+          data['type'] != (isActual ? 'actual' : 'practice') ||
+          raw.length != questionCount ||
+          raw.any((q) => q is! Map || !types.contains(q['type']))) {
+        throw const FormatException('Invalid quiz response contract');
+      }
+      final quiz = QuizModel.fromMap(data, id: id);
+      if (quiz.questions.map((q) => q.id).toSet().length != questionCount ||
+          quiz.questions.any(
+            (q) =>
+                q.id.isEmpty ||
+                q.question.trim().isEmpty ||
+                q.correctAnswer.trim().isEmpty,
+          ) ||
+          types.any(
+            (type) => !quiz.questions.any((q) => q.type.value == type),
+          )) {
+        throw const FormatException('Invalid questions');
+      }
+      return quiz;
+    } on QuizGenerationException {
+      rethrow;
+    } on TimeoutException {
+      throw const QuizGenerationException(
+        'Quiz generation took too long. Check your connection and try again with fewer questions.',
+      );
+    } on FirebaseAuthException {
+      throw const QuizGenerationException(
+        'Could not verify your session. Check your connection and sign in again.',
+      );
+    } on http.ClientException {
+      throw const QuizGenerationException(
+        'Could not connect to the quiz service. Check your Internet connection and try again.',
+      );
+    } on FormatException {
+      throw const QuizGenerationException(
+        'The quiz service returned an invalid response. Please try again.',
+      );
+    } on TypeError {
+      throw const QuizGenerationException(
+        'The quiz service returned an invalid response. Please try again.',
+      );
+    } finally {
+      if (client == null) httpClient.close();
+    }
+  }
+}

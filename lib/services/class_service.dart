@@ -224,17 +224,11 @@ class ClassService {
         'joinedAt': FieldValue.serverTimestamp(),
       });
 
+      batch.update(classDoc.reference, {
+        'rosterCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       await batch.commit();
-
-      // 4. Update roster count on class doc (gracefully isolated from enrollment)
-      try {
-        await classDoc.reference.update({
-          'rosterCount': FieldValue.increment(1),
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-      } catch (_) {
-        // Teacher rules may restrict class doc modifications; member list is source of truth
-      }
 
       return targetClass.copyWith(rosterCount: targetClass.rosterCount + 1);
     } on ClassJoinException {

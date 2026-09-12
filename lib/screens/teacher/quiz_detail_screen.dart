@@ -1,29 +1,36 @@
 import 'package:flutter/material.dart';
+import '../../models/class_model.dart';
 import '../../models/quiz_model.dart';
 import '../../services/class_service.dart';
 import '../../services/pdf_export_service.dart';
 import '../../services/quiz_service.dart';
+import '../../theme/app_theme.dart';
 import 'quiz_monitoring_screen.dart';
 
 /// Screen allowing a teacher to review, edit, finalize, and publish a generated quiz.
 class QuizDetailScreen extends StatefulWidget {
   final QuizModel quiz;
+  final ClassModel? initialClass;
 
-  const QuizDetailScreen({super.key, required this.quiz});
+  const QuizDetailScreen({
+    super.key,
+    required this.quiz,
+    this.initialClass,
+  });
 
   @override
   State<QuizDetailScreen> createState() => _QuizDetailScreenState();
 }
 
 class _QuizDetailScreenState extends State<QuizDetailScreen> {
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _darkNavy = Color(0xFF000666);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _darkNavy = AppTheme.darkNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   final QuizService _quizService = QuizService();
   final PdfExportService _pdfExportService = PdfExportService();
@@ -38,10 +45,16 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
   void initState() {
     super.initState();
     _currentQuiz = widget.quiz;
-    _loadClassDetails();
+    if (widget.initialClass != null) {
+      _className = widget.initialClass?.name;
+      _teacherName = widget.initialClass?.teacherName;
+    } else {
+      _loadClassDetails();
+    }
   }
 
   Future<void> _loadClassDetails() async {
+    if (widget.initialClass != null) return;
     if (_currentQuiz.classId.isNotEmpty) {
       final cls = await _classService.getClassById(_currentQuiz.classId);
       if (cls != null && mounted) {
@@ -58,7 +71,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: AppTheme.borderRadiusXl),
         title: const Text('Publish Practice Quiz?'),
         content: Text(
           'Enrolled students in this class will immediately see and be able to take "${_currentQuiz.title}".',
@@ -73,6 +86,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: _primaryNavy,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppTheme.borderRadiusMd,
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Publish Now'),
@@ -169,7 +185,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: AppTheme.borderRadiusXl),
         title: const Text('Edit Quiz Title'),
         content: TextField(
           controller: titleController,
@@ -188,6 +204,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: _primaryNavy,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppTheme.borderRadiusMd,
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, titleController.text.trim()),
             child: const Text('Save'),
@@ -216,7 +235,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: AppTheme.borderRadiusXl),
         title: Text('Edit Question ${index + 1} (${q.type.displayName})'),
         content: SingleChildScrollView(
           child: Column(
@@ -255,6 +274,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: _primaryNavy,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppTheme.borderRadiusMd,
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Save Changes'),
@@ -281,7 +303,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: AppTheme.borderRadiusXl),
         title: const Text('Delete Quiz?'),
         content: const Text(
           'Are you sure you want to permanently delete this quiz? This action cannot be undone.',
@@ -296,6 +318,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppTheme.borderRadiusMd,
+              ),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
@@ -365,7 +390,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
             return AlertDialog(
               backgroundColor: _surfaceWhite,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: AppTheme.borderRadiusXl,
               ),
               title: const Row(
                 children: [
@@ -393,7 +418,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: AppTheme.borderRadiusMd,
                       border: Border.all(color: _outlineVariant),
                     ),
                     padding: const EdgeInsets.symmetric(
@@ -402,7 +427,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                     ),
                     child: Material(
                       color: Colors.transparent,
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: AppTheme.borderRadiusMd,
                       clipBehavior: Clip.antiAlias,
                       child: SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -437,7 +462,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                     backgroundColor: _primaryNavy,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: AppTheme.borderRadiusMd,
                     ),
                   ),
                   onPressed: () => Navigator.pop(ctx, true),
@@ -514,199 +539,212 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
           ),
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              // ── Header Banner ──────────────────────────────────
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [_primaryNavy, _darkNavy],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _primaryNavy.withValues(alpha: 0.2),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _currentQuiz.title,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(
-                            Icons.edit,
-                            color: Colors.white70,
-                            size: 20,
-                          ),
-                          onPressed: _editTitle,
-                          tooltip: 'Edit Title',
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: [
-                        _buildBadge(
-                          label: _currentQuiz.isActual
-                              ? 'Actual Quiz (Exam)'
-                              : 'Practice Quiz',
-                          color: _currentQuiz.isActual
-                              ? Colors.purpleAccent
-                              : Colors.blueAccent,
-                        ),
-                        _buildBadge(
-                          label: _currentQuiz.formattedStatus,
-                          color: _currentQuiz.isPublished
-                              ? Colors.greenAccent
-                              : (_currentQuiz.isFinalized
-                                    ? Colors.tealAccent
-                                    : Colors.amberAccent),
-                        ),
-                        _buildBadge(
-                          label: _currentQuiz.isGeminiGenerated
-                              ? 'AI Generated'
-                              : (_currentQuiz.isFallbackGenerated
-                                    ? 'Auto Generated'
-                                    : 'Manual'),
-                          color: Colors.orangeAccent,
-                        ),
-                        _buildBadge(
-                          label: '${_currentQuiz.questionCount} Questions',
-                          color: Colors.white70,
-                        ),
-                        _buildBadge(
-                          label:
-                              '${_currentQuiz.totalPoints.toStringAsFixed(0)} Pts',
-                          color: Colors.white70,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: AppTheme.maxContentWidthTablet,
               ),
-
-              // ── Action Bar (Publish / Finalize / Monitor) ────────────────
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
-                ),
-                child: Row(
-                  children: [
-                    if (_currentQuiz.isDraft && _currentQuiz.isPractice)
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green[700],
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: _isSaving ? null : _publishQuiz,
-                          icon: const Icon(Icons.send_rounded, size: 18),
-                          label: const Text('Publish to Class'),
-                        ),
+              child: Column(
+                children: [
+                  // ── Header Banner ──────────────────────────────────
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [_primaryNavy, _darkNavy],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    if (_currentQuiz.isPublished && _currentQuiz.isPractice)
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryNavy,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    QuizMonitoringScreen(quiz: _currentQuiz),
+                      borderRadius: AppTheme.borderRadiusLg,
+                      boxShadow: AppTheme.cardShadow,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _currentQuiz.title,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.analytics_outlined, size: 18),
-                          label: const Text('Monitor Submissions'),
-                        ),
-                      ),
-                    if (_currentQuiz.isDraft && _currentQuiz.isActual)
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryNavy,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: _isSaving ? null : _finalizeQuiz,
-                          icon: const Icon(
-                            Icons.check_circle_outline,
-                            size: 18,
-                          ),
-                          label: const Text('Finalize Reference Exam'),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.edit,
+                                color: Colors.white70,
+                                size: 20,
+                              ),
+                              onPressed: _editTitle,
+                              tooltip: 'Edit Title',
+                            ),
+                          ],
                         ),
-                      ),
-                    const SizedBox(width: 8),
-                    OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _primaryNavy,
-                        side: const BorderSide(color: _primaryNavy),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            _buildBadge(
+                              label: _currentQuiz.isActual
+                                  ? 'Actual Quiz (Exam)'
+                                  : 'Practice Quiz',
+                              color: _currentQuiz.isActual
+                                  ? Colors.purpleAccent
+                                  : Colors.blueAccent,
+                            ),
+                            _buildBadge(
+                              label: _currentQuiz.formattedStatus,
+                              color: _currentQuiz.isPublished
+                                  ? Colors.greenAccent
+                                  : (_currentQuiz.isFinalized
+                                        ? Colors.tealAccent
+                                        : Colors.amberAccent),
+                            ),
+                            _buildBadge(
+                              label: _currentQuiz.isGeminiGenerated
+                                  ? 'AI Generated'
+                                  : (_currentQuiz.isFallbackGenerated
+                                        ? 'Auto Generated'
+                                        : 'Manual'),
+                              color: Colors.orangeAccent,
+                            ),
+                            _buildBadge(
+                              label: '${_currentQuiz.questionCount} Questions',
+                              color: Colors.white70,
+                            ),
+                            _buildBadge(
+                              label:
+                                  '${_currentQuiz.totalPoints.toStringAsFixed(0)} Pts',
+                              color: Colors.white70,
+                            ),
+                          ],
                         ),
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 12,
-                          horizontal: 14,
-                        ),
-                      ),
-                      onPressed: _exportOrPrintExam,
-                      icon: const Icon(Icons.print_outlined, size: 18),
-                      label: const Text('Print Exam'),
+                      ],
                     ),
-                  ],
-                ),
-              ),
+                  ),
 
-              const SizedBox(height: 8),
+                  // ── Action Bar (Publish / Finalize / Monitor) ────────────────
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      children: [
+                        if (_currentQuiz.isDraft && _currentQuiz.isPractice)
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green[700],
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: AppTheme.borderRadiusMd,
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: _isSaving ? null : _publishQuiz,
+                              icon: const Icon(Icons.send_rounded, size: 18),
+                              label: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Publish to Class'),
+                              ),
+                            ),
+                          ),
+                        if (_currentQuiz.isPublished && _currentQuiz.isPractice)
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _primaryNavy,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: AppTheme.borderRadiusMd,
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) =>
+                                        QuizMonitoringScreen(quiz: _currentQuiz),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(Icons.analytics_outlined, size: 18),
+                              label: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Monitor Submissions'),
+                              ),
+                            ),
+                          ),
+                        if (_currentQuiz.isDraft && _currentQuiz.isActual)
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _primaryNavy,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: AppTheme.borderRadiusMd,
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: _isSaving ? null : _finalizeQuiz,
+                              icon: const Icon(
+                                Icons.check_circle_outline,
+                                size: 18,
+                              ),
+                              label: const FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('Finalize Reference Exam'),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _primaryNavy,
+                            side: const BorderSide(color: _primaryNavy),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: AppTheme.borderRadiusMd,
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 12,
+                              horizontal: 14,
+                            ),
+                          ),
+                          onPressed: _exportOrPrintExam,
+                          icon: const Icon(Icons.print_outlined, size: 18),
+                          label: const FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text('Print Exam'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
-              // ── Questions List ─────────────────────────────────
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  itemCount: _currentQuiz.questions.length,
-                  itemBuilder: (context, index) {
-                    final q = _currentQuiz.questions[index];
-                    return _buildQuestionCard(q, index);
-                  },
-                ),
+                  const SizedBox(height: 8),
+
+                  // ── Questions List ─────────────────────────────────
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      itemCount: _currentQuiz.questions.length,
+                      itemBuilder: (context, index) {
+                        final q = _currentQuiz.questions[index];
+                        return _buildQuestionCard(q, index);
+                      },
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -738,15 +776,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: _surfaceWhite,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: AppTheme.borderRadiusLg,
         border: Border.all(color: _outlineVariant.withValues(alpha: 0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        boxShadow: AppTheme.cardShadow,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,18 +802,22 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.indigo.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  q.type.displayName,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.indigo[800],
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.indigo.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    q.type.displayName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.indigo[800],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ),
@@ -834,7 +870,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                     color: isCorrect
                         ? Colors.green.withValues(alpha: 0.1)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppTheme.borderRadiusSm,
                     border: Border.all(
                       color: isCorrect
                           ? Colors.green
@@ -883,7 +919,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                     color: isCorrect
                         ? Colors.green.withValues(alpha: 0.1)
                         : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: AppTheme.borderRadiusSm,
                     border: Border.all(
                       color: isCorrect ? Colors.green : _outlineVariant,
                     ),
@@ -919,7 +955,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.blue.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: AppTheme.borderRadiusSm,
                 border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
               ),
               child: Column(
@@ -966,7 +1002,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.green.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: AppTheme.borderRadiusSm,
                 border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
               ),
               child: Row(

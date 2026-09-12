@@ -9,6 +9,7 @@ import '../../services/quiz_service.dart';
 import 'quiz_detail_screen.dart';
 import 'upload_generate_quiz_screen.dart';
 import '../materials/material_viewer_screen.dart';
+import '../../theme/app_theme.dart';
 
 /// Class Details Screen for Teachers (Google Classroom style).
 ///
@@ -19,12 +20,18 @@ import '../materials/material_viewer_screen.dart';
 /// - Students tab with live enrolled member roster.
 class TeacherClassDetailsScreen extends StatefulWidget {
   final ClassModel classModel;
+  final Stream<ClassModel?>? initialClassStream;
   final Stream<List<MaterialModel>>? initialMaterialsStream;
+  final Stream<List<QuizModel>>? initialQuizzesStream;
+  final Stream<List<ClassMember>>? initialStudentsStream;
 
   const TeacherClassDetailsScreen({
     super.key,
     required this.classModel,
+    this.initialClassStream,
     this.initialMaterialsStream,
+    this.initialQuizzesStream,
+    this.initialStudentsStream,
   });
 
   @override
@@ -34,14 +41,14 @@ class TeacherClassDetailsScreen extends StatefulWidget {
 
 class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     with SingleTickerProviderStateMixin {
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _darkNavy = Color(0xFF000666);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _darkNavy = AppTheme.darkNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   late TabController _tabController;
   final MaterialService _materialService = MaterialService();
@@ -61,11 +68,12 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
   }
 
   void _initStreams(String classId) {
-    _classStream = _classService.streamClass(classId);
+    _classStream = widget.initialClassStream ?? _classService.streamClass(classId);
     _materialsStream = widget.initialMaterialsStream ??
         _materialService.streamClassMaterials(classId);
-    _quizzesStream = _quizService.streamClassQuizzes(classId);
-    _studentsStream = _classService.getClassMembersStream(classId);
+    _quizzesStream = widget.initialQuizzesStream ??
+        _quizService.streamClassQuizzes(classId);
+    _studentsStream = widget.initialStudentsStream ?? _classService.getClassMembersStream(classId);
   }
 
   @override
@@ -532,195 +540,212 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
               ),
             ),
             child: SafeArea(
-              child: Column(
-                children: [
-                  // ── Top Navigation Bar ────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    child: Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(
-                            Icons.arrow_back,
-                            color: _textPrimary,
-                          ),
-                          onPressed: () => Navigator.pop(context),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 840),
+                  child: Column(
+                    children: [
+                      // ── Top Navigation Bar ────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            liveClass.name,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: _textPrimary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // ── Google Classroom Header Banner ────────────
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_primaryNavy, _darkNavy],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: _primaryNavy.withValues(alpha: 0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: Row(
                           children: [
+                            IconButton(
+                              icon: const Icon(
+                                Icons.arrow_back,
+                                color: _textPrimary,
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 liveClass.name,
                                 style: const TextStyle(
-                                  fontSize: 22,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.white,
+                                  color: _textPrimary,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
+                          ],
+                        ),
+                      ),
+
+                      // ── Google Classroom Header Banner ────────────
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [_primaryNavy, _darkNavy],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _primaryNavy.withValues(alpha: 0.25),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    liveClass.name,
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    '${liveClass.rosterCount} students',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            if (liveClass.teacherName.isNotEmpty)
+                              Text(
+                                'Instructor: ${liveClass.teacherName}',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withValues(alpha: 0.8),
+                                ),
                               ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '${liveClass.rosterCount} students',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white,
+                            const SizedBox(height: 14),
+                            // Join Code Action Bar
+                            GestureDetector(
+                              onTap: () => _copyJoinCode(liveClass.joinCode),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.3),
+                                  ),
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.vpn_key_outlined,
+                                        size: 14,
+                                        color: Colors.white70,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Text(
+                                        'CLASS CODE: ',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white70,
+                                          letterSpacing: 0.8,
+                                        ),
+                                      ),
+                                      Text(
+                                        liveClass.joinCode,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 1.2,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      const Icon(
+                                        Icons.copy,
+                                        size: 14,
+                                        color: Colors.white70,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 6),
-                        if (liveClass.teacherName.isNotEmpty)
-                          Text(
-                            'Instructor: ${liveClass.teacherName}',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        const SizedBox(height: 14),
-                        // Join Code Action Bar
-                        GestureDetector(
-                          onTap: () => _copyJoinCode(liveClass.joinCode),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.key,
-                                    size: 16,
-                                    color: Colors.white,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Class Join Code: ',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                  Text(
-                                    liveClass.joinCode,
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w800,
-                                      letterSpacing: 1.2,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Icon(
-                                    Icons.copy,
-                                    size: 14,
-                                    color: Colors.white70,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // ── Segmented Tabs ───────────────────────────
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: _outlineVariant),
                         ),
-                      ],
-                    ),
-                  ),
+                        child: TabBar(
+                          controller: _tabController,
+                          labelColor: _primaryNavy,
+                          unselectedLabelColor: _textSecondary,
+                          indicatorColor: _primaryNavy,
+                          indicatorWeight: 3,
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          dividerColor: Colors.transparent,
+                          tabs: const [
+                            Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
+                            Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
+                            Tab(icon: Icon(Icons.people_outline), text: 'Students'),
+                          ],
+                        ),
+                      ),
 
-                  const SizedBox(height: 12),
+                      // ── Tab Views ────────────────────────────────
+                      Expanded(
+                        child: TabBarView(
+                          controller: _tabController,
+                          children: [
+                            // 1. Materials Tab
+                            _KeepAliveTab(child: _buildMaterialsTab(liveClass)),
 
-                  // ── Segmented Tabs ───────────────────────────
-                  TabBar(
-                    controller: _tabController,
-                    labelColor: _primaryNavy,
-                    unselectedLabelColor: _textSecondary,
-                    indicatorColor: _primaryNavy,
-                    indicatorWeight: 3,
-                    tabs: const [
-                      Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
-                      Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
-                      Tab(icon: Icon(Icons.people_outline), text: 'Students'),
+                            // 2. Quizzes Tab
+                            _KeepAliveTab(child: _buildQuizzesTab(liveClass)),
+
+                            // 3. Students / Roster Tab
+                            _KeepAliveTab(child: _buildStudentsTab(liveClass)),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
-
-                  // ── Tab Views ────────────────────────────────
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        // 1. Materials Tab
-                        _KeepAliveTab(child: _buildMaterialsTab(liveClass)),
-
-                        // 2. Quizzes Tab
-                        _KeepAliveTab(child: _buildQuizzesTab(liveClass)),
-
-                        // 3. Students / Roster Tab
-                        _KeepAliveTab(child: _buildStudentsTab(liveClass)),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -887,6 +912,33 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     return StreamBuilder<List<QuizModel>>(
       stream: _quizzesStream,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off_outlined, color: _textSecondary),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Unable to load quizzes. Check your connection and try again.',
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () => setState(() {
+                      _quizzesStream = widget.initialQuizzesStream ??
+                          _quizService.streamClassQuizzes(liveClass.id);
+                    }),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
             child: CircularProgressIndicator(strokeWidth: 2.5),

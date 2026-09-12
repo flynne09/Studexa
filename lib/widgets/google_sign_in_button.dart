@@ -28,9 +28,10 @@ class GoogleSignInButton extends StatelessWidget {
           backgroundColor: _surfaceWhite,
           foregroundColor: _textPrimary,
           elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           side: const BorderSide(color: _outlineVariant),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
           ),
         ),
         onPressed: isLoading ? null : onPressed,
@@ -45,16 +46,21 @@ class GoogleSignInButton extends StatelessWidget {
               )
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const GoogleLogo(size: 20),
-                  const SizedBox(width: 12),
-                  Text(
-                    text,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: _textPrimary,
-                      letterSpacing: 0.2,
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      text,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: _textPrimary,
+                        letterSpacing: 0.2,
+                      ),
                     ),
                   ),
                 ],

@@ -1,6 +1,6 @@
 ﻿# Studexa Phase 1 Master Implementation Plan
 
-This document details the complete architectural and technical implementation plans across all Phase 1 modules of Studexa, including the Practice Quiz UX & AI Quiz Generation Accuracy milestone.
+This document records the Phase 1 plan and historical milestones. The 2026-09-11 integration revision below supersedes earlier client-side Gemini/fallback descriptions. See [INTEGRATION_REPORT.md](INTEGRATION_REPORT.md) for current implementation, evidence, changed files, and deployment limitations. Later milestone narratives and their test counts remain historical records.
 
 ---
 
@@ -8,23 +8,23 @@ This document details the complete architectural and technical implementation pl
 
 ```mermaid
 flowchart TD
-    subgraph Client["Flutter Mobile Client (Android)"]
+    subgraph Client["Flutter Client (Android, iOS, web, Windows scaffolds)"]
         TeacherUI["Teacher Screens (Classes, Materials, Quizzes, Monitoring)"]
         StudentUI["Student Screens (Enrolled Classes, Materials, Practice, Results)"]
         Extractor["DocumentTextExtractor (PDF, DOCX, PPTX On-Device)"]
-        QuizGen["QuizService (Gemini 1.5 Flash + Local Fallback Engine)"]
+        QuizGen["QuizService + QuizGenerationClient (authenticated HTTP)"]
         Scoring["ScoringUtils (Typo-Tolerance, Enumeration Partial Credit)"]
     end
 
     subgraph Firebase["Firebase Platform"]
         Auth["Firebase Authentication (Role-based Email/Password)"]
-        Firestore["Cloud Firestore (Default Database)"]
+        Firestore["Cloud Firestore (named database: default)"]
         Storage["Firebase Storage (uploads/{teacherId}/...)"]
-        Functions["Cloud Functions v2 (Node 18+)"]
+        Functions["Cloud Functions v2 (configured Node 20)"]
     end
 
     subgraph External["AI & Preview Services"]
-        Gemini["Google Gemini 1.5 Flash API (Direct Restricted Client Call)"]
+        Gemini["Google Gemini API (server secret; default gemini-3.6-flash)"]
         DriveAPI["Google Drive v3 API (PPTX/DOCX to PDF Preview Conversion)"]
     end
 
@@ -37,9 +37,11 @@ flowchart TD
     Functions -->|Office Preview Conversion| DriveAPI
     DriveAPI -->|Preview PDF Stream| Storage
     TeacherUI -->|Generate Quiz Request| QuizGen
-    QuizGen -->|Strict Academic Prompts| Gemini
-    QuizGen -->|Zero-Cost Resilient Synthesizer| QuizGen
-    QuizGen -->|Save Quizzes| Firestore
+    QuizGen -->|Firebase ID token and material IDs| Functions
+    Functions -->|Read owned material and Actual reference| Firestore
+    Functions -->|Strict prompt, selected types and exact count| Gemini
+    Gemini -->|Schema-validated questions| Functions
+    Functions -->|Persist validated draft quiz| Firestore
     TeacherUI <-->|Real-Time Streams| Firestore
     StudentUI <-->|Real-Time Streams| Firestore
     StudentUI -->|Submit Attempts & Drafts| Firestore
@@ -50,9 +52,11 @@ flowchart TD
 
 ## 2. Core Architectural Decisions & Deviations
 
-1. **Gemini API Key Security (NFR-03 Academic MVP Resolution)**:
-   - Client-side Gemini 1.5 Flash invocation restricted in Google Cloud Console to Android package `com.example.studexa` with debug certificate SHA-1 `BA:62:AF:97:16:D1:A4:1D:1B:B2:C9:47:1F:04:97:AF:96:7B:17:3B` and enforced with hard daily quota caps.
-   - Bypasses Spark-tier Cloud Function egress limits while preventing key leakage or billing abuse.
+1. **Server-only Gemini credentials (2026-09-11 integration revision)**:
+   - `QuizService.generateQuiz` uses `QuizGenerationClient` and the existing `generateQuizHttp` function with a Firebase ID token. The server verifies teacher/class/material ownership and reads material text from the named Firestore database `default` (not `(default)`).
+   - `functions/quiz_generator.js` defaults to `gemini-3.6-flash`, with a server-only `GEMINI_MODEL` override. `defineSecret('GEMINI_API_KEY')` binds the key to both generation functions. Local emulator value: ignored `functions/.secret.local`. Production secret version 1, both generation functions, extractText and named-database rules were deployed with user confirmation on 2026-09-11.
+   - Invalid counts/types/content, malformed or incomplete responses, provider errors and timeouts fail explicitly. Runtime generation never fills missing questions with offline fixtures. Historical deterministic helpers remain for compatibility and separate tests.
+   - Historical claims that client key restrictions prevent leakage or that this architecture needs no enabled Cloud Functions billing are superseded. Live CLI inspection found all three existing functions; billing/quota availability still governs service operation.
 
 2. **On-Device Text Extraction (FR-05 Academic MVP Resolution)**:
    - High-performance on-device extraction engine (`DocumentTextExtractor`) parses PDF, DOCX, and PPTX directly in Flutter.
@@ -192,7 +196,7 @@ updatedAt: Timestamp
 - **Phase C: Scoring Engine**: Deterministic typo tolerance, prefix cleaning (`A.`, `1.`), case insensitivity, enumeration partial scoring.
 - **Phase D: Class Management**: Class creation, unique join codes, student membership synchronization, real-time roster listener.
 - **Phase E: Material Upload & Text Extraction**: Multi-format validation, on-device `DocumentTextExtractor` supporting PDF, DOCX, and PPTX.
-- **Phase F: AI Quiz Generation**: Gemini 1.5 Flash direct API integration + zero-cost fallback concept engine across all 5 question types.
+- **Phase F: AI Quiz Generation (current revision)**: authenticated server Gemini generation with strict validation across all five question types; secure production deployment completed on 2026-09-11. Prior direct/fallback behavior is historical.
 - **Phase G: Quiz Assignment & Teacher Monitoring**: Assignment publishing with deadlines, student attempt tracking, real-time monitoring dashboard with average/highest scores.
 - **Phase H: Printable PDF Exam Export**: Professional examination formatting via `pdf` and `printing`, student answer sheets, and confidential teacher answer keys.
 - **Phase I: Unified In-App Document Preview**: Google Drive API v3 background office-to-PDF conversion for PPTX/DOCX preview inside `SfPdfViewer`.
@@ -271,7 +275,19 @@ updatedAt: Timestamp
 
 ---
 
-## 6. Verification & Automated Test Matrix
+## Current deployment verification (2026-09-11; reviewed 2026-09-12)
+
+Teacher visibility correction (2026-09-12): quiz read rules explicitly authorize the class owner using classId, matching TeacherClassDetailsScreen's class-only query. TeacherId-only queries and student published-Practice restrictions remain. Verified with failing-before/passing-after emulator queries, 18 targeted Flutter tests and 8 production check groups; corrected rules are deployed. Query errors now have a Retry state rather than an empty-class message.
+
+- User-approved Secret Manager version 1, both generation functions, extractText and named-database rules are live.
+- Production Auth/database/Gemini verification passed 12 check groups, including Actual 10 and Practice 10 questions, publish/query and result/history persistence. Temporary test accounts and documents were removed.
+- Production DOCX Storage upload/download and server extraction passed, yielding 1,005 characters and a Firestore server timestamp. Optional Office-to-PDF conversion failed; Drive API is enabled, but scoped logs did not expose a cause. Do not claim previews are fully working.
+- Native picker and a signed-in release UI walkthrough still need a connected device. Production REST checks do not execute Flutter scoring or prove native interaction.
+- See INTEGRATION_REPORT.md for retained limits, cleanup evidence, Node 20 retirement and artifact-retention follow-ups.
+
+## 6. Historical Verification & Automated Test Matrix
+
+Current 2026-09-11 verification: 167 Flutter tests and 11 Node unit tests passed; 32 Auth/Firestore emulator checks and 38 HTTP handler checks with an explicit provider fixture passed. Android/web release builds passed; Chrome startup rendered correctly. See INTEGRATION_REPORT.md for real Gemini evidence and platform/deployment limits. Counts below describe the earlier milestone only.
 
 | Test File | Target Module / Phase | Tests Passed |
 | :--- | :--- | :--- |

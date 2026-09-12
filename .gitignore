@@ -47,4 +47,7 @@ app.*.map.json
 # Private API Keys & Credentials (Never commit)
 lib/config/gemini_config.dart
 *.env
+.env.*
+**/.secret.local
+**/service-account*.json
 

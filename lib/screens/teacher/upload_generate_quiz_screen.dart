@@ -9,6 +9,7 @@ import '../../services/class_service.dart';
 import '../../services/material_service.dart';
 import '../../services/quiz_service.dart';
 import 'quiz_detail_screen.dart';
+import '../../theme/app_theme.dart';
 
 /// Screen allowing a teacher to upload a study material (PDF/PPTX/DOCX),
 /// perform client-side text extraction, configure question parameters,
@@ -34,14 +35,14 @@ class UploadGenerateQuizScreen extends StatefulWidget {
 
 class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   // ── Design tokens ───────────────────────────────────────────
-  static const _primaryNavy = Color(0xFF1A237E);
-  static const _darkNavy = Color(0xFF000666);
-  static const _gradientStart = Color(0xFFF3F0FF);
-  static const _gradientEnd = Color(0xFFEFF6FF);
-  static const _surfaceWhite = Color(0xFFFBF9F8);
-  static const _outlineVariant = Color(0xFFC6C5D4);
-  static const _textPrimary = Color(0xFF1B1C1C);
-  static const _textSecondary = Color(0xFF454652);
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _darkNavy = AppTheme.darkNavy;
+  static const _gradientStart = AppTheme.gradientStart;
+  static const _gradientEnd = AppTheme.gradientEnd;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
 
   final MaterialService _materialService = MaterialService();
   final ClassService _classService = ClassService();
@@ -49,6 +50,8 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
 
   // ── Upload & Firestore Material State ───────────────────────
   String? _materialId;
+  String? _actualQuizId;
+  String? _actualQuizMaterialId;
   String? _selectedFileName;
   String? _selectedFileType;
   int? _selectedFileBytesLength;
@@ -590,10 +593,15 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         isActual: isActual,
         questionTypes: activeTypes,
         questionCount: _questionCount.toInt(),
+        sourceQuizId: !isActual && _actualQuizMaterialId == _materialId ? _actualQuizId : null,
         preloadedExtractedText: _material?.extractedText,
         preloadedFileName: _material?.fileName,
       );
 
+      if (isActual) {
+        _actualQuizId = createdQuiz.id;
+        _actualQuizMaterialId = createdQuiz.materialId;
+      }
       if (!mounted) return;
       Navigator.pop(context); // Close loading dialog
 
@@ -648,11 +656,14 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
           ),
         ),
         child: SafeArea(
-          child: SingleChildScrollView(
-            controller: _scrollController,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Section 1: Target Class ──────────────────
                 const Text(
@@ -756,12 +767,14 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text(
-                      'Number of Questions',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: _textPrimary,
+                    const Expanded(
+                      child: Text(
+                        'Number of Questions',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _textPrimary,
+                        ),
                       ),
                     ),
                     Container(
@@ -831,19 +844,13 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                 Container(
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppTheme.borderRadiusLg,
                     border: Border.all(color: _outlineVariant),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+                    boxShadow: AppTheme.cardShadow,
                   ),
                   child: Material(
                     color: Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: AppTheme.borderRadiusLg,
                     clipBehavior: Clip.antiAlias,
                     child: Column(
                       children: _questionTypes.keys.map((type) {
@@ -926,7 +933,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                       ),
                       elevation: isMaterialReady ? 1 : 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: AppTheme.borderRadiusMd,
                       ),
                     ),
                     onPressed: isMaterialReady
@@ -937,11 +944,15 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                       children: [
                         Icon(Icons.print_outlined, size: 20),
                         SizedBox(width: 8),
-                        Text(
-                          'Generate Actual Quiz (PDF Exam)',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            'Generate Actual Quiz (PDF Exam)',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -966,7 +977,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                         width: 1.5,
                       ),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: AppTheme.borderRadiusMd,
                       ),
                     ),
                     onPressed: isMaterialReady
@@ -977,11 +988,15 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                       children: [
                         Icon(Icons.phone_android_outlined, size: 20),
                         SizedBox(width: 8),
-                        Text(
-                          'Generate Practice Quiz (App Practice)',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            'Generate Practice Quiz (App Practice)',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -994,8 +1009,10 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   /// Class selection dropdown or empty state
   Widget _buildClassSelector() {
