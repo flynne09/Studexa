@@ -10,6 +10,8 @@ import 'quiz_detail_screen.dart';
 import 'upload_generate_quiz_screen.dart';
 import '../materials/material_viewer_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
+import '../../widgets/app_feedback.dart';
 
 /// Class Details Screen for Teachers (Google Classroom style).
 ///
@@ -43,8 +45,6 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     with SingleTickerProviderStateMixin {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -68,12 +68,16 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
   }
 
   void _initStreams(String classId) {
-    _classStream = widget.initialClassStream ?? _classService.streamClass(classId);
-    _materialsStream = widget.initialMaterialsStream ??
+    _classStream =
+        widget.initialClassStream ?? _classService.streamClass(classId);
+    _materialsStream =
+        widget.initialMaterialsStream ??
         _materialService.streamClassMaterials(classId);
-    _quizzesStream = widget.initialQuizzesStream ??
-        _quizService.streamClassQuizzes(classId);
-    _studentsStream = widget.initialStudentsStream ?? _classService.getClassMembersStream(classId);
+    _quizzesStream =
+        widget.initialQuizzesStream ?? _quizService.streamClassQuizzes(classId);
+    _studentsStream =
+        widget.initialStudentsStream ??
+        _classService.getClassMembersStream(classId);
   }
 
   @override
@@ -92,13 +96,11 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
 
   void _copyJoinCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Join code "$code" copied to clipboard!'),
-        backgroundColor: _primaryNavy,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
+    AppFeedback.success(
+      context,
+      'Join code $code is ready to share.',
+      title: 'Copied to clipboard',
+      duration: const Duration(seconds: 2),
     );
   }
 
@@ -333,26 +335,11 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
 
                       if (confirm == true) {
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Row(
-                              children: [
-                                const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text('Deleting "${material.fileName}"...'),
-                                ),
-                              ],
-                            ),
-                            duration: const Duration(seconds: 2),
-                          ),
+                        AppFeedback.info(
+                          context,
+                          'Removing "${material.fileName}" from this class.',
+                          title: 'Deleting material',
+                          duration: const Duration(seconds: 2),
                         );
 
                         try {
@@ -363,23 +350,18 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                             convertedPdfRef: material.convertedPdfRef,
                           );
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Material "${material.fileName}" deleted.'),
-                              backgroundColor: Colors.green,
-                              duration: const Duration(seconds: 3),
-                            ),
+                          AppFeedback.success(
+                            context,
+                            '"${material.fileName}" was removed from the class.',
+                            title: 'Material deleted',
                           );
                         } catch (e) {
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Failed to delete material: $e'),
-                              backgroundColor: Colors.redAccent,
-                              duration: const Duration(seconds: 4),
-                            ),
+                          debugPrint('Failed to delete material: $e');
+                          AppFeedback.error(
+                            context,
+                            'The material could not be deleted. Check your connection and try again.',
+                            title: 'Unable to delete material',
                           );
                         }
                       }
@@ -529,16 +511,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
         final liveClass = classSnapshot.data ?? widget.classModel;
 
         return Scaffold(
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [_gradientStart, _gradientEnd],
-              ),
-            ),
+          body: StudexaBackground(
             child: SafeArea(
               child: Center(
                 child: ConstrainedBox(
@@ -720,9 +693,18 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                           indicatorSize: TabBarIndicatorSize.tab,
                           dividerColor: Colors.transparent,
                           tabs: const [
-                            Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
-                            Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
-                            Tab(icon: Icon(Icons.people_outline), text: 'Students'),
+                            Tab(
+                              icon: Icon(Icons.folder_outlined),
+                              text: 'Materials',
+                            ),
+                            Tab(
+                              icon: Icon(Icons.quiz_outlined),
+                              text: 'Quizzes',
+                            ),
+                            Tab(
+                              icon: Icon(Icons.people_outline),
+                              text: 'Students',
+                            ),
                           ],
                         ),
                       ),
@@ -928,7 +910,8 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                   const SizedBox(height: 12),
                   TextButton.icon(
                     onPressed: () => setState(() {
-                      _quizzesStream = widget.initialQuizzesStream ??
+                      _quizzesStream =
+                          widget.initialQuizzesStream ??
                           _quizService.streamClassQuizzes(liveClass.id);
                     }),
                     icon: const Icon(Icons.refresh),
@@ -1067,14 +1050,18 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                           runSpacing: 4,
                           children: [
                             _buildQuizBadge(
-                              label: q.isActual ? 'Actual Exam' : 'Practice Quiz',
+                              label: q.isActual
+                                  ? 'Actual Exam'
+                                  : 'Practice Quiz',
                               color: q.isActual ? Colors.purple : Colors.blue,
                             ),
                             _buildQuizBadge(
                               label: q.formattedStatus,
                               color: q.isPublished
                                   ? Colors.green
-                                  : (q.isFinalized ? Colors.teal : Colors.orange),
+                                  : (q.isFinalized
+                                        ? Colors.teal
+                                        : Colors.orange),
                             ),
                             _buildQuizBadge(
                               label: q.isGeminiGenerated

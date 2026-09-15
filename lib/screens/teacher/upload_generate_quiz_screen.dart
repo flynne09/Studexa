@@ -8,8 +8,11 @@ import '../../models/material_model.dart';
 import '../../services/class_service.dart';
 import '../../services/material_service.dart';
 import '../../services/quiz_service.dart';
+import '../../services/quiz_generation_client.dart';
 import 'quiz_detail_screen.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
+import '../../widgets/app_feedback.dart';
 
 /// Screen allowing a teacher to upload a study material (PDF/PPTX/DOCX),
 /// perform client-side text extraction, configure question parameters,
@@ -37,8 +40,6 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -157,25 +158,19 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   Future<void> _pickAndUploadFile() async {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please sign in as a teacher to upload study materials.',
-          ),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.error(
+        context,
+        'Sign in with a teacher account before uploading study materials.',
+        title: 'Teacher sign-in required',
       );
       return;
     }
 
     if (_selectedClassId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please select or create a class first before uploading materials.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+      AppFeedback.warning(
+        context,
+        'Select an existing class or create one before uploading a material.',
+        title: 'Choose a class',
       );
       return;
     }
@@ -250,7 +245,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         onProgress: (progress) {
           if (mounted) {
             // Throttle progress updates to at least 5% steps or completion to prevent UI stutter
-            if ((progress - _uploadProgress).abs() >= 0.05 || progress >= 1.0 || _uploadProgress == 0.0) {
+            if ((progress - _uploadProgress).abs() >= 0.05 ||
+                progress >= 1.0 ||
+                _uploadProgress == 0.0) {
               setState(() {
                 _uploadProgress = progress;
               });
@@ -269,18 +266,16 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         });
 
         if (createdMaterial.isReady) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Document "$fileName" uploaded and ready for quiz generation!'),
-              backgroundColor: Colors.green,
-            ),
+          AppFeedback.success(
+            context,
+            '"$fileName" is ready. You can now configure and generate a quiz.',
+            title: 'Material ready',
           );
         } else if (createdMaterial.hasFailed) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Document uploaded, but text extraction failed: ${createdMaterial.formattedError}'),
-              backgroundColor: Colors.redAccent,
-            ),
+          AppFeedback.error(
+            context,
+            createdMaterial.formattedError,
+            title: 'Text extraction failed',
           );
         }
 
@@ -293,22 +288,17 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
           _isUploading = false;
           _uploadError = e.message;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
-        );
+        AppFeedback.error(context, e.message, title: 'Unable to upload file');
       }
     } catch (e) {
       if (mounted) {
+        debugPrint('Material upload failed: $e');
         setState(() {
           _isUploading = false;
-          _uploadError = 'Upload failed: $e';
+          _uploadError =
+              'The material could not be uploaded. Check your connection and try again.';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        AppFeedback.error(context, _uploadError!, title: 'Upload failed');
       }
     } finally {
       if (mounted && _isUploading) {
@@ -326,28 +316,27 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
 
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please sign in as a teacher to upload study materials.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.error(
+        context,
+        'Sign in with a teacher account before uploading study materials.',
+        title: 'Teacher sign-in required',
       );
       return;
     }
 
     if (_selectedClassId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a target class first.'),
-          backgroundColor: Colors.orange,
-        ),
+      AppFeedback.warning(
+        context,
+        'Select the class that should receive this material.',
+        title: 'Choose a class',
       );
       return;
     }
 
     final fileName = _selectedFileName ?? 'document';
     final fileExtension = _selectedFileType ?? '';
-    final byteLength = _selectedFileBytesLength ?? _cachedPickedBytes?.length ?? 0;
+    final byteLength =
+        _selectedFileBytesLength ?? _cachedPickedBytes?.length ?? 0;
 
     setState(() {
       _isUploading = true;
@@ -368,7 +357,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         onProgress: (progress) {
           if (mounted) {
             // Throttle progress updates to at least 5% steps or completion to prevent UI stutter
-            if ((progress - _uploadProgress).abs() >= 0.05 || progress >= 1.0 || _uploadProgress == 0.0) {
+            if ((progress - _uploadProgress).abs() >= 0.05 ||
+                progress >= 1.0 ||
+                _uploadProgress == 0.0) {
               setState(() {
                 _uploadProgress = progress;
               });
@@ -387,18 +378,16 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         });
 
         if (createdMaterial.isReady) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Document "$fileName" uploaded and ready for quiz generation!'),
-              backgroundColor: Colors.green,
-            ),
+          AppFeedback.success(
+            context,
+            '"$fileName" is ready. You can now configure and generate a quiz.',
+            title: 'Material ready',
           );
         } else if (createdMaterial.hasFailed) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Document uploaded, but text extraction failed: ${createdMaterial.formattedError}'),
-              backgroundColor: Colors.redAccent,
-            ),
+          AppFeedback.error(
+            context,
+            createdMaterial.formattedError,
+            title: 'Text extraction failed',
           );
         }
 
@@ -410,22 +399,17 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
           _isUploading = false;
           _uploadError = e.message;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.redAccent),
-        );
+        AppFeedback.error(context, e.message, title: 'Unable to upload file');
       }
     } catch (e) {
       if (mounted) {
+        debugPrint('Material upload retry failed: $e');
         setState(() {
           _isUploading = false;
-          _uploadError = 'Upload failed: $e';
+          _uploadError =
+              'The material could not be uploaded. Check your connection and try again.';
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Upload failed: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+        AppFeedback.error(context, _uploadError!, title: 'Upload failed');
       }
     } finally {
       if (mounted && _isUploading) {
@@ -448,11 +432,11 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
           },
           onError: (error) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Error monitoring extraction: $error'),
-                backgroundColor: Colors.redAccent,
-              ),
+            debugPrint('Material extraction stream failed: $error');
+            AppFeedback.error(
+              context,
+              'Live extraction updates stopped. Reopen this screen to refresh the material status.',
+              title: 'Status update unavailable',
             );
           },
         );
@@ -463,19 +447,18 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     try {
       await _materialService.retryMaterialExtraction(_materialId!);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Retrying text extraction...'),
-          backgroundColor: _primaryNavy,
-        ),
+      AppFeedback.info(
+        context,
+        'Studexa is processing the material again.',
+        title: 'Extraction restarted',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Retry failed: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      debugPrint('Material extraction retry failed: $e');
+      AppFeedback.error(
+        context,
+        'Text extraction could not be restarted. Check your connection and try again.',
+        title: 'Unable to retry extraction',
       );
     }
   }
@@ -483,50 +466,45 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   Future<void> _generateQuiz({required bool isActual}) async {
     // Check if material is loaded and ready
     if (_material == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select or upload a study material first.'),
-          backgroundColor: Colors.orange,
-        ),
+      AppFeedback.warning(
+        context,
+        'Select an existing material or upload one before generating a quiz.',
+        title: 'Choose a study material',
       );
       return;
     }
     if (_material!.hasFailed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_material!.formattedError),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.error(
+        context,
+        _material!.formattedError,
+        title: 'Material processing failed',
       );
       return;
     }
     if (!_material!.isReady) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Document is still processing. Please wait for extraction to complete.'),
-          backgroundColor: Colors.orange,
-        ),
+      AppFeedback.info(
+        context,
+        'Wait for text extraction to finish before generating the quiz.',
+        title: 'Material is still processing',
       );
       return;
     }
 
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     if (currentUserId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please log in as a teacher to generate quizzes.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.error(
+        context,
+        'Sign in with a teacher account before generating quizzes.',
+        title: 'Teacher sign-in required',
       );
       return;
     }
 
     if (_selectedClassId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a target class first.'),
-          backgroundColor: Colors.orange,
-        ),
+      AppFeedback.warning(
+        context,
+        'Select the class that should receive this quiz.',
+        title: 'Choose a class',
       );
       return;
     }
@@ -537,11 +515,10 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         .toList();
 
     if (activeTypes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select at least one question type.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.warning(
+        context,
+        'Choose at least one question type to include in the quiz.',
+        title: 'Question type required',
       );
       return;
     }
@@ -593,7 +570,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         isActual: isActual,
         questionTypes: activeTypes,
         questionCount: _questionCount.toInt(),
-        sourceQuizId: !isActual && _actualQuizMaterialId == _materialId ? _actualQuizId : null,
+        sourceQuizId: !isActual && _actualQuizMaterialId == _materialId
+            ? _actualQuizId
+            : null,
         preloadedExtractedText: _material?.extractedText,
         preloadedFileName: _material?.fileName,
       );
@@ -615,11 +594,14 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Close loading dialog
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Quiz generation failed: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      debugPrint('Quiz generation failed: $e');
+      final errorMessage = e is QuizGenerationException
+          ? e.message
+          : 'The quiz could not be generated. Check the material and your connection, then try again.';
+      AppFeedback.error(
+        context,
+        errorMessage,
+        title: 'Quiz generation failed',
       );
     }
   }
@@ -645,374 +627,375 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 760),
               child: SingleChildScrollView(
                 controller: _scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // ── Section 1: Target Class ──────────────────
-                const Text(
-                  'Assign to Class',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Select which of your classes this material belongs to.',
-                  style: TextStyle(fontSize: 13, color: _textSecondary),
-                ),
-                const SizedBox(height: 8),
-
-                _buildClassSelector(),
-
-                const SizedBox(height: 24),
-
-                // ── Section 2: Study Material Upload ─────────
-                const Text(
-                  'Upload Study Material',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Upload lecture slides, book chapters, or notes (PDF, PPTX, DOCX, up to 50MB).',
-                  style: TextStyle(fontSize: 13, color: _textSecondary),
-                ),
-                const SizedBox(height: 12),
-
-                // File picker tap area / upload trigger
-                InkWell(
-                  onTap: _isUploading ? null : _pickAndUploadFile,
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 24,
-                      horizontal: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _surfaceWhite,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: _primaryNavy.withValues(alpha: 0.3),
-                        width: 1.5,
+                  children: [
+                    // ── Section 1: Target Class ──────────────────
+                    const Text(
+                      'Assign to Class',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _textPrimary,
                       ),
                     ),
-                    child: Column(
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Select which of your classes this material belongs to.',
+                      style: TextStyle(fontSize: 13, color: _textSecondary),
+                    ),
+                    const SizedBox(height: 8),
+
+                    _buildClassSelector(),
+
+                    const SizedBox(height: 24),
+
+                    // ── Section 2: Study Material Upload ─────────
+                    const Text(
+                      'Upload Study Material',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Upload lecture slides, book chapters, or notes (PDF, PPTX, DOCX, up to 50MB).',
+                      style: TextStyle(fontSize: 13, color: _textSecondary),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // File picker tap area / upload trigger
+                    InkWell(
+                      onTap: _isUploading ? null : _pickAndUploadFile,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 24,
+                          horizontal: 16,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _primaryNavy.withValues(alpha: 0.3),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: _primaryNavy.withValues(alpha: 0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.cloud_upload_outlined,
+                                size: 28,
+                                color: _primaryNavy,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _selectedFileName == null
+                                  ? 'Select PDF, PPTX, or DOCX File'
+                                  : 'Choose a Different File',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: _primaryNavy,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Uploads to Firebase Storage & extracts text server-side',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // ── Real-time Status Area ────────────────────
+                    if (_isUploading ||
+                        _material != null ||
+                        _uploadError != null) ...[
+                      const SizedBox(height: 16),
+                      _buildRealtimeStatusCard(),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // ── Section 3: Question Count ────────────────
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        const Expanded(
+                          child: Text(
+                            'Number of Questions',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: _textPrimary,
+                            ),
+                          ),
+                        ),
                         Container(
-                          width: 56,
-                          height: 56,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
-                            color: _primaryNavy.withValues(alpha: 0.08),
-                            shape: BoxShape.circle,
+                            color: _primaryNavy.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(
-                            Icons.cloud_upload_outlined,
-                            size: 28,
-                            color: _primaryNavy,
+                          child: Text(
+                            '${_questionCount.toInt()} questions',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: _primaryNavy,
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
+                      ],
+                    ),
+                    Slider(
+                      value: _questionCount,
+                      min: 5,
+                      max: 50,
+                      divisions: 9,
+                      activeColor: _primaryNavy,
+                      inactiveColor: _outlineVariant,
+                      label: '${_questionCount.toInt()}',
+                      onChanged: (val) {
+                        setState(() => _questionCount = val);
+                      },
+                    ),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
                         Text(
-                          _selectedFileName == null
-                              ? 'Select PDF, PPTX, or DOCX File'
-                              : 'Choose a Different File',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: _primaryNavy,
-                          ),
+                          '5 questions',
+                          style: TextStyle(fontSize: 12, color: _textSecondary),
                         ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Uploads to Firebase Storage & extracts text server-side',
+                        Text(
+                          '50 questions',
                           style: TextStyle(fontSize: 12, color: _textSecondary),
                         ),
                       ],
                     ),
-                  ),
-                ),
 
-                // ── Real-time Status Area ────────────────────
-                if (_isUploading || _material != null || _uploadError != null) ...[
-                  const SizedBox(height: 16),
-                  _buildRealtimeStatusCard(),
-                ],
+                    const SizedBox(height: 24),
 
-                const SizedBox(height: 24),
-
-                // ── Section 3: Question Count ────────────────
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Number of Questions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: _textPrimary,
-                        ),
+                    // ── Section 4: Question Types ────────────────
+                    const Text(
+                      'Question Types',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _textPrimary,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Select the question formats to generate from the extracted text.',
+                      style: TextStyle(fontSize: 13, color: _textSecondary),
+                    ),
+                    const SizedBox(height: 12),
+
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
                       decoration: BoxDecoration(
-                        color: _primaryNavy.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
+                        color: _surfaceWhite,
+                        borderRadius: AppTheme.borderRadiusLg,
+                        border: Border.all(color: _outlineVariant),
+                        boxShadow: AppTheme.cardShadow,
                       ),
-                      child: Text(
-                        '${_questionCount.toInt()} questions',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: _primaryNavy,
+                      child: Material(
+                        color: Colors.transparent,
+                        borderRadius: AppTheme.borderRadiusLg,
+                        clipBehavior: Clip.antiAlias,
+                        child: Column(
+                          children: _questionTypes.keys.map((type) {
+                            final isChecked = _questionTypes[type] ?? false;
+                            return CheckboxListTile(
+                              value: isChecked,
+                              activeColor: _primaryNavy,
+                              title: Text(
+                                type,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                  color: _textPrimary,
+                                ),
+                              ),
+                              onChanged: (val) {
+                                setState(() {
+                                  _questionTypes[type] = val ?? false;
+                                });
+                              },
+                            );
+                          }).toList(),
                         ),
                       ),
                     ),
-                  ],
-                ),
-                Slider(
-                  value: _questionCount,
-                  min: 5,
-                  max: 50,
-                  divisions: 9,
-                  activeColor: _primaryNavy,
-                  inactiveColor: _outlineVariant,
-                  label: '${_questionCount.toInt()}',
-                  onChanged: (val) {
-                    setState(() => _questionCount = val);
-                  },
-                ),
-                const Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '5 questions',
-                      style: TextStyle(fontSize: 12, color: _textSecondary),
-                    ),
-                    Text(
-                      '50 questions',
-                      style: TextStyle(fontSize: 12, color: _textSecondary),
-                    ),
-                  ],
-                ),
 
-                const SizedBox(height: 24),
+                    const SizedBox(height: 28),
 
-                // ── Section 4: Question Types ────────────────
-                const Text(
-                  'Question Types',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: _textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Select the question formats to generate from the extracted text.',
-                  style: TextStyle(fontSize: 13, color: _textSecondary),
-                ),
-                const SizedBox(height: 12),
-
-                Container(
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: AppTheme.borderRadiusLg,
-                    border: Border.all(color: _outlineVariant),
-                    boxShadow: AppTheme.cardShadow,
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    borderRadius: AppTheme.borderRadiusLg,
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      children: _questionTypes.keys.map((type) {
-                        final isChecked = _questionTypes[type] ?? false;
-                        return CheckboxListTile(
-                          value: isChecked,
-                          activeColor: _primaryNavy,
-                          title: Text(
-                            type,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: _textPrimary,
-                            ),
+                    // ── Section 5: Quiz Generation Buttons ───────
+                    if (!isMaterialReady) ...[
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.amber.withValues(alpha: 0.3),
                           ),
-                          onChanged: (val) {
-                            setState(() {
-                              _questionTypes[type] = val ?? false;
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 28),
-
-                // ── Section 5: Quiz Generation Buttons ───────
-                if (!isMaterialReady) ...[
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.amber.withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          size: 16,
-                          color: Colors.amber[900],
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            _material?.isProcessing == true
-                                ? 'Generation buttons will unlock once text extraction completes.'
-                                : 'Please upload and extract a study material first to generate quizzes.',
-                            style: TextStyle(
-                              fontSize: 12,
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
                               color: Colors.amber[900],
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-
-                // Actual Quiz Button (Disabled until material is ready)
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _darkNavy,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: _darkNavy.withValues(alpha: 0.3),
-                      disabledForegroundColor: Colors.white.withValues(
-                        alpha: 0.6,
-                      ),
-                      elevation: isMaterialReady ? 1 : 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: AppTheme.borderRadiusMd,
-                      ),
-                    ),
-                    onPressed: isMaterialReady
-                        ? () => _generateQuiz(isActual: true)
-                        : null,
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.print_outlined, size: 20),
-                        SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Generate Actual Quiz (PDF Exam)',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _material?.isProcessing == true
+                                    ? 'Generation buttons will unlock once text extraction completes.'
+                                    : 'Please upload and extract a study material first to generate quizzes.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.amber[900],
+                                ),
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
+                      ),
+                    ],
 
-                // Practice Quiz Button (Disabled until material is ready)
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: _surfaceWhite,
-                      foregroundColor: _primaryNavy,
-                      disabledForegroundColor: _outlineVariant,
-                      side: BorderSide(
-                        color: isMaterialReady
-                            ? _primaryNavy
-                            : _outlineVariant.withValues(alpha: 0.5),
-                        width: 1.5,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: AppTheme.borderRadiusMd,
-                      ),
-                    ),
-                    onPressed: isMaterialReady
-                        ? () => _generateQuiz(isActual: false)
-                        : null,
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.phone_android_outlined, size: 20),
-                        SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'Generate Practice Quiz (App Practice)',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    // Actual Quiz Button (Disabled until material is ready)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _darkNavy,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: _darkNavy.withValues(
+                            alpha: 0.3,
+                          ),
+                          disabledForegroundColor: Colors.white.withValues(
+                            alpha: 0.6,
+                          ),
+                          elevation: isMaterialReady ? 1 : 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppTheme.borderRadiusMd,
                           ),
                         ),
-                      ],
+                        onPressed: isMaterialReady
+                            ? () => _generateQuiz(isActual: true)
+                            : null,
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.print_outlined, size: 20),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Generate Actual Quiz (PDF Exam)',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 12),
+
+                    // Practice Quiz Button (Disabled until material is ready)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: _surfaceWhite,
+                          foregroundColor: _primaryNavy,
+                          disabledForegroundColor: _outlineVariant,
+                          side: BorderSide(
+                            color: isMaterialReady
+                                ? _primaryNavy
+                                : _outlineVariant.withValues(alpha: 0.5),
+                            width: 1.5,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppTheme.borderRadiusMd,
+                          ),
+                        ),
+                        onPressed: isMaterialReady
+                            ? () => _generateQuiz(isActual: false)
+                            : null,
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.phone_android_outlined, size: 20),
+                            SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                'Generate Practice Quiz (App Practice)',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
                 ),
-                const SizedBox(height: 24),
-              ],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  ),
-);
-}
+    );
+  }
 
   /// Class selection dropdown or empty state
   Widget _buildClassSelector() {
@@ -1308,7 +1291,8 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                     label: const Text('Choose Another'),
                   ),
                 ),
-                if (_cachedPickedBytes != null || _cachedPickedPath != null) ...[
+                if (_cachedPickedBytes != null ||
+                    _cachedPickedPath != null) ...[
                   const SizedBox(width: 10),
                   OutlinedButton.icon(
                     style: OutlinedButton.styleFrom(

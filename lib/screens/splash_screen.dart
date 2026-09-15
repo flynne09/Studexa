@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_feedback.dart';
 import 'auth/role_selection_screen.dart';
 import 'teacher/teacher_home_screen.dart';
 import 'student/student_home_screen.dart';
@@ -58,15 +59,13 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     // Subtle upward drift for the text
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0.0, 0.25),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(
-        parent: _controller,
-        curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
-      ),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0.0, 0.25), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: _controller,
+            curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
+          ),
+        );
 
     _controller.forward();
 
@@ -93,10 +92,13 @@ class _SplashScreenState extends State<SplashScreen>
     } catch (error) {
       _isNavigating = false;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(AuthService.getErrorMessage(error)),
-          action: SnackBarAction(label: 'Retry', onPressed: _navigateToApp),
-        ));
+        AppFeedback.error(
+          context,
+          AuthService.getErrorMessage(error),
+          title: 'Unable to open Studexa',
+          actionLabel: 'Retry',
+          onAction: _navigateToApp,
+        );
       }
       return;
     }
@@ -188,7 +190,9 @@ class _SplashScreenState extends State<SplashScreen>
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: AppTheme.primaryNavy.withValues(alpha: 0.12),
+                              color: AppTheme.primaryNavy.withValues(
+                                alpha: 0.12,
+                              ),
                               blurRadius: 28,
                               spreadRadius: 2,
                               offset: const Offset(0, 10),
@@ -258,7 +262,9 @@ class _SplashScreenState extends State<SplashScreen>
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: AppTheme.primaryNavy.withValues(alpha: 0.07),
+                              color: AppTheme.primaryNavy.withValues(
+                                alpha: 0.07,
+                              ),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: const Text(

@@ -2,12 +2,12 @@
 
 ## CURRENT STATUS
 - Overall status: `DEVELOPMENT_ACTIVE`
-- Current phase: `Visual Design Enhancement — Part 2 Complete (All 4 Batches Fully Implemented & Verified)`
-- Last completed task: Final Studexa visual enhancement verified with release builds and a design-only source audit.
-- Current task: Complete.
-- NEXT TASK: Review the enhanced application on a target device and report any screen-specific visual adjustments.
-- Blockers: None.
-- Last verified: 2026-09-12: full Flutter suite passed 184/184; dedicated visual suites passed 14/14 at 375px and 1440px; flutter analyze passed; Android APK and web release builds succeeded.
+- Current phase: `User Feedback Messaging Polish Complete`
+- Last completed task: Standardized app-wide error, warning, information, and success feedback with clear titles, actionable wording, accessible semantics, and the existing Studexa palette.
+- Current task: Feedback-message implementation and automated verification complete; on-device launcher icon verification remains pending.
+- NEXT TASK: Connect an Android device or install an emulator system image, install the fresh debug APK, and visually confirm the home-screen/app-drawer icon.
+- Blockers: No Android device is connected and no Android emulator/system image is installed on this machine.
+- Last verified: 2026-09-13: `flutter analyze` passed with no issues and 57 targeted auth/material/quiz/student/teacher tests passed; launcher generation and APK resource verification remain valid from the preceding task.
 
 ## PROJECT SOURCE OF TRUTH
 - Application: `Studexa`
@@ -63,6 +63,11 @@ Never claim a task or test is complete without evidence.
 - UI source: Preserve existing Studexa visual design language (Navy `#1A237E`, lavender-to-blue gradient `#F3F0FF` to `#EFF6FF`, rounded surfaces `#FBF9F8`).
 
 ## COMPLETED TASKS
+- [x] App-wide feedback-message polish: added the shared `AppFeedback` component and replaced one-off SnackBars across authentication, splash/session recovery, class joining, material viewing/upload, quiz taking, publishing/finalizing/deleting, and assignment monitoring. Messages now state the outcome and next step, use existing semantic palette tokens, include live-region semantics, and keep raw exceptions in debug logs instead of exposing them to users.
+- [x] Studexa launcher icon spacing: changed only the Android adaptive foreground inset from 0% to 12%, regenerated native launcher assets from the unchanged source, and confirmed the fresh APK packages the inset adaptive icon.
+- [x] Student Home profile refinement: changed the account card from the dark hero gradient to `AppTheme.surfaceWhite`, used `AppTheme.primaryNavy` (`#1A237E`) with `AppTheme.onPrimary` for Join Class, and removed the duplicate `student_logout_button`; logout remains in `student_header_avatar_menu` through `_handleLogout`.
+- [x] Studexa launcher icon generation: added approved `flutter_launcher_icons: ^0.14.4`, configured Android and the existing iOS target from `assets/images/Studexa_icon.png`, generated Android legacy/adaptive resources and the full iOS AppIcon set, and verified the resources in a fresh debug APK. Physical launcher verification remains pending because no Android target is available.
+- [x] Academic Portal Visual Depth: replaced the simple flat-card presentation with a shared layered classroom canvas, navy role feature panels, richer teacher action cards, visually distinct student/teacher class cards, stronger elevation, larger radii, and unified chip/tab treatments while preserving all workflows and the existing palette.
 - [x] Part 2 Batch 4: Student Core Experience & Utility screens (`lib/screens/student/student_home_screen.dart`, `lib/screens/student/student_class_details_screen.dart`, `lib/screens/student/join_class_screen.dart`, `lib/screens/student/answer_quiz_screen.dart`, `lib/screens/materials/material_viewer_screen.dart` refactored with centralized `AppTheme` tokens, responsive desktop constraints `maxWidth: 840` / `480`, 14dp card radiuses, 12dp button and input radiuses, fitted action labels, horizontal scrollable question badge counters, verified at 375px and 1440px viewports with 0 errors).
 - [x] Part 2 Batch 3: Teacher Quiz Management & Analytics screens (`lib/screens/teacher/quiz_detail_screen.dart`, `lib/screens/teacher/quiz_monitoring_screen.dart`, `lib/screens/teacher/teacher_results_screen.dart` refactored with centralized `AppTheme` tokens, responsive desktop constraints `maxWidth: 840`, 14dp card radiuses, 12dp button radiuses, overflow-protected horizontal chip filters and deadline controls, verified at 375px/1440px with 0 errors).
 - [x] Part 2 Batch 2: Teacher Core Experience screens (`lib/screens/teacher/teacher_home_screen.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `lib/screens/teacher/upload_generate_quiz_screen.dart` refactored with centralized `AppTheme` tokens, responsive desktop constraints `maxWidth: 840` / `760`, 14dp card radiuses, 12dp button radiuses, styled TabBar, verified at 375px/1440px with 0 errors).
@@ -119,12 +124,18 @@ Never claim a task or test is complete without evidence.
 - [x] Task 7: Investigate and optimize slow PDF upload (Profiled and resolved primary bottleneck in `MaterialService.uploadStudyMaterial`: decoupled serial Storage upload from on-device text extraction, initiating Storage upload concurrently and returning `readyModel` immediately upon extraction and Firestore write [~1.3s - 1.6s vs 7s - 17s], while background worker finalizes `downloadUrl`; added fast pattern presence check to `DocumentTextExtractor._sanitizePdfBytes`; added short-circuit in Cloud Function `extractText` to skip redundant re-download and re-extraction; added `MaterialModel.contentTypeForExtension`; verified with `test/pdf_upload_optimization_test.dart`; 68/68 tests passing across 10 test suites, 0 analyzer issues).
 
 ## IN PROGRESS
+- On-device confirmation of the generated Studexa launcher icon after connecting an Android device or installing an emulator system image.
 - Signed-in native device walkthrough and diagnosis of optional Office preview failure. Deployment and live REST/service checks are complete; see docs/INTEGRATION_REPORT.md sections E-F.
 
 ## BLOCKED
+- Launcher home-screen/app-drawer verification is blocked because `flutter devices` reports only Windows and web targets, `adb devices` reports no Android device, and `flutter emulators` reports no available emulator.
 - Shared-project changes were confirmed and deployed; use the updated enrollment and Practice-query client. No Android device is connected; Windows requires host symlink support and iOS requires macOS/Xcode. Intermittent Gemini 503 responses occurred, but the final real-provider backend check passed.
 
 ## FILES CHANGED
+- Feedback-message polish: added `lib/widgets/app_feedback.dart`; updated `lib/screens/auth/login_screen.dart`, `lib/screens/auth/register_screen.dart`, `lib/screens/splash_screen.dart`, `lib/screens/materials/material_viewer_screen.dart`, `lib/screens/student/answer_quiz_screen.dart`, `lib/screens/student/join_class_screen.dart`, `lib/screens/student/student_class_details_screen.dart`, `lib/screens/teacher/quiz_detail_screen.dart`, `lib/screens/teacher/quiz_monitoring_screen.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `lib/screens/teacher/teacher_home_screen.dart`, and `lib/screens/teacher/upload_generate_quiz_screen.dart`. No package, service, model, navigation, Firebase rule, or database change was made.
+- Launcher spacing refinement: `pubspec.yaml` (`adaptive_icon_foreground_inset: 12`), regenerated Android/iOS native launcher files from the unchanged source, and `docs/IMPLEMENTATION_LOG.md`. No Dart/application-flow file changed.
+- Student Home profile refinement: `lib/screens/student/student_home_screen.dart` only for application source; `docs/IMPLEMENTATION_LOG.md` updated for session discipline. `lib/theme/app_theme.dart` was not changed because the required navy already exists as `AppTheme.primaryNavy` (`#1A237E`).
+- Launcher icon pass: `pubspec.yaml`, `pubspec.lock`, Android `mipmap-*` launcher PNGs, Android adaptive foreground PNGs/XML/background color, iOS `AppIcon.appiconset` PNGs/`Contents.json`, and the generator-produced iOS Xcode project setting. Existing source `assets/images/Studexa_icon.png` was used unchanged; no Dart screen/widget file was touched by this task.
 - Current integration pass: complete file-by-file inventory in docs/INTEGRATION_REPORT.md, section C. Lists below also include historical sessions.
 - App icon pass: 29 image/icon files and 4 icon/launch configuration files; complete per-file inventory in the App icon task 3 SESSION HISTORY entry below. Source logo and dependencies unchanged.
 - `lib/models/material_model.dart`: Added `convertedPdfRef`, `convertedPdfUrl`, `conversionStatus`, and `convertedAt` properties; updated `toMap`, `fromMap`, `copyWith`; added `hasConvertedPdf` (`conversionStatus == 'completed' && (convertedPdfUrl != null || convertedPdfRef != null)`), `isConverting` (`conversionStatus == 'pending'`), and `conversionFailed` (`conversionStatus == 'failed'`) getters.
@@ -259,6 +270,13 @@ Never claim a task or test is complete without evidence.
   - `materials/{materialId}` collection with `{ teacherId, classId, fileName, fileType, fileRef, status, errorReason?, extractedText, createdAt, extractedAt?, fileSizeBytes? }`.
 
 ## TESTS / VERIFICATION
+- `flutter analyze` (feedback-message polish):
+  - Result: No issues found.
+  - Date: 2026-09-13
+- Targeted feedback regression suite (`auth_validation_test.dart`, `auth_visual_enhancement_test.dart`, `material_viewer_test.dart`, `quiz_skip_submit_guard_test.dart`, `quiz_submission_integration_test.dart`, `student_quiz_attempt_limits_test.dart`, `student_visual_enhancement_test.dart`, `teacher_upload_reliability_test.dart`, `teacher_management_visual_test.dart`, `teacher_visual_enhancement_test.dart`):
+  - Result: 57 passed, 0 failed.
+  - Verified authentication copy, material fallback states, quiz submission persistence errors, non-blocking skip notices, upload states, and responsive student/teacher screens.
+  - Date: 2026-09-13
 - `flutter test` (Full Project Suite):
   - Result: 67 passed, 0 failed across all 9 test suites (`ui_navigation_walkthrough_test.dart`, `week11_core_journey_integration_test.dart`, `assignment_monitoring_test.dart`, `auth_validation_test.dart`, `class_management_test.dart`, `material_service_test.dart`, `pdf_export_test.dart`, `quiz_test.dart`, `scoring_test.dart`).
   - Date: 2026-09-08 10:24:35
@@ -377,7 +395,7 @@ The Week 11 core journey should eventually pass as one connected scenario:
 - [x] Teacher exports Actual Quiz PDF
 
 ## NEXT TASK
-Conduct live demonstration and user acceptance testing with project stakeholders for the Week 11 MVP milestone. All core teacher and student journeys, Firestore security rules, PDF export, and automated test coverage (53/53 tests passing, 0 analyzer issues) are verified and production-ready.
+Connect an Android device or install an emulator system image, install `build/app/outputs/flutter-apk/app-debug.apk`, and visually confirm `Studexa_icon.png` appears correctly on the home screen and app drawer without blur or mask cropping.
 
 ## SESSION HISTORY
 ### 2026-09-07 20:49
@@ -1992,3 +2010,61 @@ Conduct live demonstration and user acceptance testing with project stakeholders
 - Removed one trailing blank line reported by `git diff --check`; the remaining output consists only of Git's existing LF-to-CRLF working-copy notices.
 - Files changed in this checkpoint: `lib/screens/auth/role_selection_screen.dart` (whitespace-only cleanup) and `docs/IMPLEMENTATION_LOG.md`.
 - Next task: Review the enhanced application on a target device and report any screen-specific visual adjustments.
+
+### 2026-09-12 - Visual Design Enhancement: Academic portal depth
+- Objective: Address feedback that the first visual pass remained too simple for a classroom application, while retaining the established navy/lavender palette and preserving every route, action, query, service, and workflow.
+- Added `lib/widgets/studexa_background.dart`, a reusable non-interactive academic canvas with a palette-based three-stop gradient, subtle grid, and low-opacity geometric forms.
+- Applied the shared canvas to role selection, login, registration, teacher and student dashboards, class details, join class, upload/generation, active quiz attempts, quiz review, monitoring, and teacher results.
+- Strengthened `AppTheme` with 18dp content cards, 24dp feature surfaces, layered navy-tinted shadows, a navy hero gradient, pill chip styling, and unified tab typography.
+- Reworked teacher and student dashboard account summaries into branded feature panels. Upgraded teacher quick actions with larger icon-led feature cards and upgraded teacher/student class cards with clearer course identity, metadata grouping, join-code treatment, and visual depth.
+- Updated `docs/UI_DESIGN_WALKTHROUGH.md` to document the new academic portal depth and shared background component.
+- Verification: all four dedicated visual suites passed 14/14 at 375x812 and 1440x900 with no captured exceptions or overflow. The full serial Flutter suite passed 184/184, including auth/navigation, teacher/student phone widths, quiz workflows, scoring, upload reliability, and the end-to-end core journey. `flutter analyze` passed with no issues before the final documentation update.
+- Files changed in this task: `lib/theme/app_theme.dart`, `lib/widgets/studexa_background.dart`, `lib/screens/auth/login_screen.dart`, `lib/screens/auth/register_screen.dart`, `lib/screens/auth/role_selection_screen.dart`, `lib/screens/student/student_home_screen.dart`, `lib/screens/student/student_class_details_screen.dart`, `lib/screens/student/join_class_screen.dart`, `lib/screens/student/answer_quiz_screen.dart`, `lib/screens/teacher/teacher_home_screen.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `lib/screens/teacher/upload_generate_quiz_screen.dart`, `lib/screens/teacher/quiz_detail_screen.dart`, `lib/screens/teacher/quiz_monitoring_screen.dart`, `lib/screens/teacher/teacher_results_screen.dart`, `docs/UI_DESIGN_WALKTHROUGH.md`, and `docs/IMPLEMENTATION_LOG.md`.
+- No Firebase rules, services, models, dependencies, navigation destinations, or business logic were changed.
+- Next task: Review the deeper academic portal design on a target device and report any screen-specific visual adjustments.
+
+### 2026-09-13 - Studexa device launcher icon generation
+- Read `IMPLEMENTATION_LOG.md` before changes and inspected the requested source asset at `assets/images/Studexa_icon.png`.
+- Source validation: PNG, 1254x1254, square, opaque 24-bit RGB, 937,187 bytes. Visual inspection confirmed the complete mark fits inside Android's circular safe mask and has enough resolution for Android and iOS launcher sizes. The source asset was not edited.
+- Package approval: `flutter_launcher_icons` was absent from the project. Work paused for explicit approval; after approval, added `flutter_launcher_icons: ^0.14.4` under `dev_dependencies`. `pubspec.lock` records 0.14.4 and its transitive generator dependencies.
+- Configuration: Android and the already-existing iOS target use `assets/images/Studexa_icon.png`; Android generates legacy `ic_launcher` density files plus a white-background adaptive icon with 0% generator inset; iOS removes alpha defensively even though the source is already opaque. Web, Windows, Dart screens, and in-app branding were not changed.
+- Generation: `dart run flutter_launcher_icons` completed successfully. Android output includes 48/72/96/144/192px legacy launcher PNGs, 108/162/216/324/432px adaptive foreground PNGs, `mipmap-anydpi-v26/ic_launcher.xml`, and `values/colors.xml`. The complete existing iOS AppIcon set was regenerated, including the 1024px marketing icon.
+- Build verification: `flutter build apk --debug` completed successfully and produced `build/app/outputs/flutter-apk/app-debug.apk` (179,156,300 bytes; SHA-256 `323A5F21641104091D72F9E3E951C0E04BA32B982754AEA36295801EA4CECDBA`). Android AAPT reports the packaged application icon as `res/mipmap-anydpi-v26/ic_launcher.xml`; archive/resource inspection confirms all legacy and adaptive launcher files are present.
+- Visual verification: inspected the generated 192px legacy launcher and 432px adaptive foreground. Both are sharp, preserve the original colors and full artwork, and remain inside the Android mask-safe area.
+- On-device verification: pending. `flutter devices` found only Windows, Chrome, and Edge; `adb devices` found no Android target; `flutter emulators` reported no available emulator, and no Android system image is installed. The icon has therefore not been claimed as verified on a physical/emulated launcher.
+- Files changed by this task: `pubspec.yaml`, `pubspec.lock`, Android launcher PNGs under `android/app/src/main/res/mipmap-*`, new Android adaptive resources under `drawable-*`, `mipmap-anydpi-v26/ic_launcher.xml`, `values/colors.xml`, iOS AppIcon PNGs/`Contents.json`, `ios/Runner.xcodeproj/project.pbxproj`, and `docs/IMPLEMENTATION_LOG.md`. Existing `assets/images/Studexa_icon.png` was consumed unchanged.
+- Next task: connect an Android device or install an emulator image, install the fresh APK, and confirm the Studexa icon on the actual launcher.
+
+### 2026-09-13 - Student Home profile card and action refinement
+- Read `IMPLEMENTATION_LOG.md` before inspecting or modifying the screen.
+- Confirmed the palette already defines `AppTheme.primaryNavy` as `#1A237E`; no theme or package change was required.
+- Changed the Student Home account surface from `AppTheme.heroGradient` to `AppTheme.surfaceWhite`, with `AppTheme.outlineSubtle` and `AppTheme.cardShadow`. Updated the avatar, role badge, account text, and divider to their existing light-surface palette tokens.
+- Changed the `student_join_class_button` background to `AppTheme.primaryNavy` (`#1A237E`) and its foreground to `AppTheme.onPrimary`.
+- Removed the direct `student_logout_button` and its spacing from the account card. Confirmed logout remains accessible through the top-right `student_header_avatar_menu`: selecting the `logout` menu value calls the existing `_handleLogout`, which retains the confirmation dialog and sign-out/navigation behavior.
+- Captured the original 375px layout at `build/integration-evidence/student-home-before-375.png` and the updated layout at `build/integration-evidence/student-home-after-375.png`. Visual inspection confirms the light account card, navy Join Class button, and absence of the direct logout button without overflow.
+- Verification: `flutter analyze` passed with no issues. `flutter test test/student_visual_enhancement_test.dart --concurrency=1 --reporter expanded` passed 5/5 and regenerated both 375px and 1440px student visual captures.
+- Scope: application changes are limited to `lib/screens/student/student_home_screen.dart`; `lib/theme/app_theme.dart`, packages, teacher screens, services, models, and navigation were not changed. `docs/IMPLEMENTATION_LOG.md` was updated as required.
+- Known test follow-up: `test/student_phone_visibility_test.dart` still contains historical assertions for the intentionally removed `student_logout_button`; it was not edited because this task explicitly limited file changes to the Student Home screen and implementation log.
+- Next task: update that historical test only if test-maintenance scope is approved; separately, connect an Android target to complete the pending launcher-icon device verification.
+
+### 2026-09-13 - Studexa launcher icon white-space refinement
+- Read `IMPLEMENTATION_LOG.md` before changing the launcher configuration.
+- Interpreted the requested smaller presentation as additional white breathing room inside the Android adaptive launcher mask, without changing the source artwork.
+- Changed `adaptive_icon_foreground_inset` in `pubspec.yaml` from 0 to 12. The existing `adaptive_icon_background: "#FFFFFF"` remains, producing a modest white border around the scaled Studexa mark.
+- Re-ran `dart run flutter_launcher_icons` successfully. The source `assets/images/Studexa_icon.png` remains unchanged, and Android/iOS launcher assets were regenerated by the existing approved package.
+- Rebuilt with `flutter build apk --debug`; build passed in 33.9 seconds and produced `build/app/outputs/flutter-apk/app-debug.apk` (219,255,644 bytes; SHA-256 `B11A1973A09E9CCB53CE744C8BABB9055B7127A7239243ABF359DB120EDE41C0`).
+- APK verification: AAPT reports `res/mipmap-anydpi-v26/ic_launcher.xml` as the application icon, and its compiled XML tree contains the 12% inset around `ic_launcher_foreground` with the existing white background resource.
+- On-device verification remains pending because no Android device or emulator is available in this environment.
+- Files changed in this refinement: `pubspec.yaml`, regenerated Android/iOS launcher resources, and `docs/IMPLEMENTATION_LOG.md`. No Dart screen, widget, service, model, or in-app logo was changed.
+- Next task: install the fresh debug APK on an Android target and confirm the amount of white space on the launcher; adjust the inset only if device review requests it.
+
+### 2026-09-13 - App-wide error and success message polish
+- Read `IMPLEMENTATION_LOG.md` before inspecting the existing feedback states.
+- Added `lib/widgets/app_feedback.dart` as the shared presentation layer for success, error, warning, and informational feedback. It uses the existing `AppTheme` success/error/warning/info colors, a clear title and supporting message, matching icons and borders, close controls, and live-region semantics for assistive technology.
+- Replaced all direct screen-level SnackBar construction across 12 screens and 55 feedback calls. Authentication, splash recovery, join-class validation, material open/upload/extraction, quiz completion/submission, teacher publish/finalize/delete, assignment open/close/deadline, and clipboard actions now use consistent styling and outcome-specific wording.
+- Reworded vague or technical messages to explain what happened and what the user can do next. Raw caught exceptions are written with `debugPrint` for diagnosis and are no longer displayed in the affected user-facing upload, extraction, publish, finalize, delete, PDF, and class-creation states.
+- Brief quiz-navigation notices use a dismissible top material banner so feedback does not cover or block the answer controls. Submission failure wording retains the established guarantee that answers have been kept on the device.
+- Verification: `flutter analyze` passed with no issues. Ten targeted suites passed 57/57 tests, covering authentication, responsive layouts, materials, quiz skip/submit guards, persistence failure messaging, attempt limits, teacher uploads, quiz management, and teacher/student visual regressions. `git diff --check` reported no whitespace errors; only existing Windows LF-to-CRLF notices were printed.
+- Files changed: `lib/widgets/app_feedback.dart`; `lib/screens/auth/login_screen.dart`; `lib/screens/auth/register_screen.dart`; `lib/screens/splash_screen.dart`; `lib/screens/materials/material_viewer_screen.dart`; `lib/screens/student/answer_quiz_screen.dart`; `lib/screens/student/join_class_screen.dart`; `lib/screens/student/student_class_details_screen.dart`; `lib/screens/teacher/quiz_detail_screen.dart`; `lib/screens/teacher/quiz_monitoring_screen.dart`; `lib/screens/teacher/teacher_class_details_screen.dart`; `lib/screens/teacher/teacher_home_screen.dart`; `lib/screens/teacher/upload_generate_quiz_screen.dart`; and `docs/IMPLEMENTATION_LOG.md`.
+- No dependency, service, model, navigation, Firebase, or database change was made.
+- Next task: connect an Android target and visually confirm the pending launcher-icon spacing; separately review feedback wording on-device if product copy adjustments are requested.

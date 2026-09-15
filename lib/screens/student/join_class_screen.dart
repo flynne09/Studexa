@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_feedback.dart';
+import '../../widgets/studexa_background.dart';
 
 /// Screen where students enter a class join code, submit, and see
 /// a confirmation state displaying the joined class details.
@@ -17,8 +19,6 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
 
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -41,11 +41,10 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
   Future<void> _handleJoin() async {
     final code = _codeController.text.trim();
     if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a class join code.'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.warning(
+        context,
+        'Enter the join code shared by your teacher.',
+        title: 'Join code required',
       );
       return;
     }
@@ -66,8 +65,8 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
       final studentName = user.displayName?.trim().isNotEmpty == true
           ? user.displayName!.trim()
           : (user.email != null && user.email!.contains('@')
-              ? user.email!.split('@').first
-              : 'Student');
+                ? user.email!.split('@').first
+                : 'Student');
       final studentEmail = user.email?.trim() ?? '';
 
       final joinedClass = await ClassService().joinClassByCode(
@@ -95,12 +94,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
         _isLoading = false;
         _errorMessage = msg;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
+      AppFeedback.error(context, msg, title: 'Unable to join class');
     }
   }
 
@@ -134,16 +128,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -151,8 +136,13 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
                 maxWidth: AppTheme.maxContentWidthMobile,
               ),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                child: _isJoined ? _buildConfirmationState() : _buildEntryState(),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 24,
+                ),
+                child: _isJoined
+                    ? _buildConfirmationState()
+                    : _buildEntryState(),
               ),
             ),
           ),
@@ -198,11 +188,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
           child: Text(
             'Ask your teacher for the unique join code to access their quizzes and study materials.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: _textSecondary,
-              height: 1.4,
-            ),
+            style: TextStyle(fontSize: 14, color: _textSecondary, height: 1.4),
           ),
         ),
         const SizedBox(height: 32),
@@ -218,7 +204,11 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.error_outline, color: Colors.redAccent, size: 20),
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.redAccent,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -264,11 +254,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
               fontWeight: FontWeight.normal,
               color: _outlineVariant,
             ),
-            prefixIcon: const Icon(
-              Icons.tag,
-              color: _primaryNavy,
-              size: 20,
-            ),
+            prefixIcon: const Icon(Icons.tag, color: _primaryNavy, size: 20),
             filled: true,
             fillColor: _surfaceWhite,
             contentPadding: const EdgeInsets.symmetric(
@@ -285,10 +271,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: AppTheme.borderRadiusMd,
-              borderSide: const BorderSide(
-                color: _primaryNavy,
-                width: 1.5,
-              ),
+              borderSide: const BorderSide(color: _primaryNavy, width: 1.5),
             ),
           ),
           onSubmitted: (_) => _handleJoin(),
@@ -351,11 +334,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
             color: Colors.green.withValues(alpha: 0.12),
             shape: BoxShape.circle,
           ),
-          child: const Icon(
-            Icons.check_circle,
-            color: Colors.green,
-            size: 48,
-          ),
+          child: const Icon(Icons.check_circle, color: Colors.green, size: 48),
         ),
         const SizedBox(height: 20),
         const Text(
@@ -429,10 +408,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
               const SizedBox(height: 4),
               Text(
                 'Instructor: ${_joinedTeacherName ?? ''}',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: _textSecondary,
-                ),
+                style: const TextStyle(fontSize: 14, color: _textSecondary),
               ),
               const SizedBox(height: 16),
               const Divider(),
@@ -472,10 +448,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
             onPressed: () => Navigator.pop(context),
             child: const Text(
               'Back to My Classes',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),
         ),

@@ -56,8 +56,8 @@ class AppTheme {
   // ── 3. Corner Radii ───────────────────────────────────────────
   static const double radiusSm = 8.0;
   static const double radiusMd = 12.0; // Inputs, buttons
-  static const double radiusLg = 14.0; // Standard cards
-  static const double radiusXl = 20.0; // Dialogs, large chips
+  static const double radiusLg = 18.0; // Standard cards
+  static const double radiusXl = 24.0; // Dialogs, large chips
   static const double radiusPill = 999.0;
 
   static final BorderRadius borderRadiusSm = BorderRadius.circular(radiusSm);
@@ -68,9 +68,22 @@ class AppTheme {
   // ── 4. Shadows ────────────────────────────────────────────────
   static const List<BoxShadow> cardShadow = [
     BoxShadow(
-      color: Color(0x0A1A237E),
-      blurRadius: 10,
-      offset: Offset(0, 3),
+      color: Color(0x121A237E),
+      blurRadius: 18,
+      offset: Offset(0, 7),
+    ),
+    BoxShadow(
+      color: Color(0x08FFFFFF),
+      blurRadius: 2,
+      offset: Offset(0, -1),
+    ),
+  ];
+
+  static const List<BoxShadow> featureShadow = [
+    BoxShadow(
+      color: Color(0x281A237E),
+      blurRadius: 28,
+      offset: Offset(0, 12),
     ),
   ];
 
@@ -86,7 +99,14 @@ class AppTheme {
   static const LinearGradient backgroundGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [gradientStart, gradientEnd],
+    colors: [gradientStart, primaryContainer, gradientEnd],
+    stops: [0, 0.52, 1],
+  );
+
+  static const LinearGradient heroGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [primaryNavy, darkNavy],
   );
 
   // ── 6. Responsive Width Constraints ───────────────────────────
@@ -190,7 +210,7 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusLg),
-          side: const BorderSide(color: outlineVariant),
+          side: const BorderSide(color: outlineSubtle),
         ),
         margin: EdgeInsets.zero,
       ),
@@ -372,6 +392,30 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radiusMd),
         ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: surfaceWhite,
+        selectedColor: primaryContainer,
+        side: const BorderSide(color: outlineSubtle),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radiusPill),
+        ),
+        labelStyle: const TextStyle(
+          color: textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: spacingSm),
+      ),
+      tabBarTheme: const TabBarThemeData(
+        labelColor: primaryNavy,
+        unselectedLabelColor: textSecondary,
+        labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+        dividerColor: Colors.transparent,
       ),
     );
   }

@@ -4,6 +4,7 @@ import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
 import '../auth/role_selection_screen.dart';
 import 'join_class_screen.dart';
 import 'student_class_details_screen.dart';
@@ -27,8 +28,6 @@ class StudentHomeScreen extends StatefulWidget {
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -97,16 +96,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -268,11 +258,11 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
               SliverToBoxAdapter(
                 child: Container(
                   margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: AppTheme.borderRadiusLg,
-                    border: Border.all(color: _outlineVariant),
+                    borderRadius: AppTheme.borderRadiusXl,
+                    border: Border.all(color: AppTheme.outlineSubtle),
                     boxShadow: AppTheme.cardShadow,
                   ),
                   child: Column(
@@ -281,13 +271,13 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       Row(
                         children: [
                           Container(
-                            width: 44,
-                            height: 44,
+                            width: 52,
+                            height: 52,
                             decoration: BoxDecoration(
-                              color: _primaryNavy.withValues(alpha: 0.1),
+                              color: AppTheme.primaryContainer,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: _primaryNavy.withValues(alpha: 0.2),
+                                color: _primaryNavy.withValues(alpha: 0.16),
                               ),
                             ),
                             child: Center(
@@ -334,8 +324,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                         vertical: 2,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: _primaryNavy
-                                            .withValues(alpha: 0.08),
+                                        color: AppTheme.primaryContainer,
                                         borderRadius:
                                             BorderRadius.circular(4),
                                       ),
@@ -369,7 +358,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         ],
                       ),
                       const SizedBox(height: 14),
-                      const Divider(height: 1, color: _outlineVariant),
+                      const Divider(height: 1),
                       const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
@@ -377,7 +366,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                           key: const Key('student_join_class_button'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _primaryNavy,
-                            foregroundColor: Colors.white,
+                            foregroundColor: AppTheme.onPrimary,
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             shape: RoundedRectangleBorder(
@@ -395,32 +384,6 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                           icon: const Icon(Icons.add, size: 18),
                           label: const Text(
                             'Join Class',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          key: const Key('student_logout_button'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.redAccent,
-                            side: BorderSide(
-                              color: Colors.redAccent.withValues(alpha: 0.4),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: AppTheme.borderRadiusMd,
-                            ),
-                          ),
-                          onPressed: _handleLogout,
-                          icon: const Icon(Icons.logout, size: 16),
-                          label: const Text(
-                            'Log Out',
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
@@ -530,15 +493,15 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             margin: const EdgeInsets.only(bottom: 20),
                             decoration: BoxDecoration(
                               color: _surfaceWhite,
-                              borderRadius: AppTheme.borderRadiusLg,
-                              border: Border.all(color: _outlineVariant),
+                              borderRadius: AppTheme.borderRadiusXl,
+                              border: Border.all(color: AppTheme.outlineSubtle),
                               boxShadow: AppTheme.cardShadow,
                             ),
                             child: Material(
                               color: Colors.transparent,
-                              borderRadius: AppTheme.borderRadiusLg,
+                              borderRadius: AppTheme.borderRadiusXl,
                               child: InkWell(
-                                borderRadius: AppTheme.borderRadiusLg,
+                                borderRadius: AppTheme.borderRadiusXl,
                                 onTap: () {
                                   Navigator.push(
                                     context,
@@ -554,24 +517,39 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                   children: [
                                     // Class Header Card
                                     Container(
-                                      padding: const EdgeInsets.all(16),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            _primaryNavy.withValues(alpha: 0.04),
+                                      padding: const EdgeInsets.all(20),
+                                      decoration: const BoxDecoration(
+                                        gradient: AppTheme.heroGradient,
                                         borderRadius:
-                                            const BorderRadius.vertical(
+                                            BorderRadius.vertical(
                                           top: Radius.circular(
-                                              AppTheme.radiusLg - 1),
-                                        ),
-                                        border: const Border(
-                                          bottom: BorderSide(
-                                              color: _outlineVariant),
+                                              AppTheme.radiusXl - 1),
                                         ),
                                       ),
                                       child: Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.spaceBetween,
                                         children: [
+                                          Container(
+                                            width: 44,
+                                            height: 44,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.14),
+                                              borderRadius:
+                                                  AppTheme.borderRadiusMd,
+                                              border: Border.all(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.22),
+                                              ),
+                                            ),
+                                            child: const Icon(
+                                              Icons.auto_stories_outlined,
+                                              color: Colors.white,
+                                              size: 22,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
                                           Expanded(
                                             child: Column(
                                               crossAxisAlignment:
@@ -582,7 +560,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                                   style: const TextStyle(
                                                     fontSize: 16,
                                                     fontWeight: FontWeight.bold,
-                                                    color: _textPrimary,
+                                                    color: Colors.white,
                                                   ),
                                                 ),
                                                 const SizedBox(height: 2),
@@ -593,7 +571,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                                       : 'Instructor enrolled',
                                                   style: const TextStyle(
                                                     fontSize: 12,
-                                                    color: _textSecondary,
+                                                    color: Color(0xFFD7DAFF),
                                                   ),
                                                 ),
                                               ],
@@ -605,11 +583,13 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                               vertical: 3,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: _surfaceWhite,
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.14),
                                               borderRadius:
                                                   AppTheme.borderRadiusSm,
                                               border: Border.all(
-                                                color: _outlineVariant,
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.3),
                                               ),
                                             ),
                                             child: Text(
@@ -617,7 +597,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                               style: const TextStyle(
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.bold,
-                                                color: _primaryNavy,
+                                                color: Colors.white,
                                               ),
                                             ),
                                           ),
@@ -699,4 +679,3 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
 );
   }
 }
-

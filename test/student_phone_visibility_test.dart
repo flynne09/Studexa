@@ -43,6 +43,7 @@ void main() {
         child: MaterialApp(
           home: StudentHomeScreen(
             initialProfile: mockStudent,
+            initialClassesStream: const Stream.empty(),
           ),
         ),
       );
@@ -76,10 +77,9 @@ void main() {
       // Verify Avatar initial 'A'
       expect(find.text('A'), findsWidgets);
 
-      // Verify Log Out button is directly visible and rendered on the card
-      final logoutButton = find.byKey(const Key('student_logout_button'));
-      expect(logoutButton, findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Log Out'), findsOneWidget);
+      // Verify Avatar menu is directly visible and rendered on the card
+      final avatarMenu = find.byKey(const Key('student_header_avatar_menu'));
+      expect(avatarMenu, findsOneWidget);
 
       // Verify Join Class button is visible
       final joinButton = find.byKey(const Key('student_join_class_button'));
@@ -87,7 +87,7 @@ void main() {
       expect(find.widgetWithText(ElevatedButton, 'Join Class'), findsOneWidget);
     });
 
-    testWidgets('Tapping Log Out button displays confirmation dialog', (tester) async {
+    testWidgets('Tapping Log Out in avatar menu displays confirmation dialog', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -98,10 +98,17 @@ void main() {
       await tester.pumpWidget(buildTestApp(size: const Size(360, 640)));
       await tester.pump();
 
-      // Tap the prominent Log Out button
-      final logoutButton = find.byKey(const Key('student_logout_button'));
-      await tester.tap(logoutButton);
+      // Tap the avatar menu and select Log Out
+      final avatarMenu = find.byKey(const Key('student_header_avatar_menu'));
+      await tester.tap(avatarMenu);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      final logoutItem = find.text('Log Out');
+      expect(logoutItem, findsOneWidget);
+      await tester.tap(logoutItem, warnIfMissed: false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
 
       // Verify confirmation dialog appears
       expect(find.text('Log Out'), findsWidgets);
@@ -111,6 +118,7 @@ void main() {
       // Dismiss dialog
       await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('Are you sure you want to log out of Studexa?'), findsNothing);
     });
 
@@ -130,7 +138,7 @@ void main() {
 
       // Elements remain visible
       expect(find.text('Alex Morgan'), findsOneWidget);
-      expect(find.byKey(const Key('student_logout_button')), findsOneWidget);
+      expect(find.byKey(const Key('student_header_avatar_menu')), findsOneWidget);
       expect(find.byKey(const Key('student_join_class_button')), findsOneWidget);
     });
   });

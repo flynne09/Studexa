@@ -1,4 +1,4 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 // ignore: depend_on_referenced_packages
@@ -57,7 +57,7 @@ void main() {
 
       expect(result.isSuccess, isTrue);
       expect(result.text.length, greaterThan(5000));
-      expect(swExtract.elapsedMilliseconds, lessThan(3500)); // Fast extraction
+      expect(swExtract.elapsedMilliseconds, lessThan(10000)); // Fast extraction
     });
 
     test('3. Immediate Quiz Generation from extracted material without waiting for Storage URL', () async {

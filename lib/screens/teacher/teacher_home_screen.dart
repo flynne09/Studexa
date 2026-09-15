@@ -5,6 +5,8 @@ import '../../services/class_service.dart';
 import '../../models/user_profile.dart';
 import '../../models/class_model.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_feedback.dart';
+import '../../widgets/studexa_background.dart';
 import '../auth/role_selection_screen.dart';
 import 'upload_generate_quiz_screen.dart';
 import 'teacher_class_details_screen.dart';
@@ -28,8 +30,6 @@ class TeacherHomeScreen extends StatefulWidget {
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -81,7 +81,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: _textSecondary)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: _textSecondary),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -117,7 +120,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: _surfaceWhite,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Row(
             children: [
               Icon(Icons.info_outline, color: _primaryNavy),
@@ -139,7 +144,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: _textSecondary)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: _textSecondary),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -209,7 +217,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           color: _primaryNavy.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.school, color: _primaryNavy, size: 20),
+                        child: const Icon(
+                          Icons.school,
+                          color: _primaryNavy,
+                          size: 20,
+                        ),
                       ),
                       title: Text(
                         cls.name,
@@ -220,9 +232,16 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       ),
                       subtitle: Text(
                         'Code: ${cls.joinCode} • ${cls.rosterCount} students',
-                        style: const TextStyle(fontSize: 12, color: _textSecondary),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _textSecondary,
+                        ),
                       ),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: _primaryNavy),
+                      trailing: const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 14,
+                        color: _primaryNavy,
+                      ),
                       onTap: () {
                         Navigator.pop(ctx);
                         Navigator.push(
@@ -258,7 +277,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: _surfaceWhite,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: const Text(
             'Create New Class',
             style: TextStyle(
@@ -305,7 +326,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _primaryNavy, width: 1.5),
+                    borderSide: const BorderSide(
+                      color: _primaryNavy,
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),
@@ -314,7 +338,10 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
           actions: [
             TextButton(
               onPressed: isCreating ? null : () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: _textSecondary)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: _textSecondary),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -341,10 +368,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                       });
 
                       try {
-                        final teacherId = _teacherProfile?.uid ??
+                        final teacherId =
+                            _teacherProfile?.uid ??
                             AuthService().currentUser?.uid ??
                             'teacher_demo';
-                        final teacherName = _teacherProfile?.displayName ??
+                        final teacherName =
+                            _teacherProfile?.displayName ??
                             AuthService().currentUser?.displayName ??
                             'Teacher';
 
@@ -360,9 +389,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                         }
                         _showClassCreatedSuccessDialog(createdClass);
                       } catch (e) {
+                        debugPrint('Failed to create class: $e');
                         setDialogState(() {
                           isCreating = false;
-                          errorMessage = 'Failed to create class: $e';
+                          errorMessage =
+                              'We could not create the class. Check your connection and try again.';
                         });
                       }
                     },
@@ -463,16 +494,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -480,483 +502,508 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
               child: CustomScrollView(
                 slivers: [
                   // ── Header Bar ─────────────────────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(
-                                    color: _primaryNavy.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.school,
-                                    size: 16,
-                                    color: _primaryNavy,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Flexible(
-                                  child: Text(
-                                    'Teacher Portal',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: _primaryNavy,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'My Classes & Materials',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: _textPrimary,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      PopupMenuButton<String>(
-                        key: const Key('teacher_header_avatar_menu'),
-                        tooltip: 'Account options',
-                        color: _surfaceWhite,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          side: const BorderSide(color: _outlineVariant),
-                        ),
-                        onSelected: (val) {
-                          if (val == 'logout') {
-                            _handleLogout();
-                          }
-                        },
-                        itemBuilder: (ctx) => [
-                          PopupMenuItem<String>(
-                            enabled: false,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _teacherProfile?.displayName ?? 'Teacher Account',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: _textPrimary,
-                                  ),
-                                ),
-                                if (_teacherProfile?.email.isNotEmpty ?? false)
-                                  Text(
-                                    _teacherProfile!.email,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: _textSecondary,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout,
-                                    color: Colors.redAccent, size: 18),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Log Out',
-                                  style: TextStyle(
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: _surfaceWhite,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: _outlineVariant),
-                          ),
-                          child: Center(
-                            child: _teacherProfile != null &&
-                                    _teacherProfile!.displayName.isNotEmpty
-                                ? Text(
-                                    _teacherProfile!.displayName[0]
-                                        .toUpperCase(),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _primaryNavy,
-                                      fontSize: 16,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.person_outline,
-                                    color: _primaryNavy,
-                                    size: 22,
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Teacher Profile & Quick Action Card ────────
-              SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: _outlineVariant),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: _primaryNavy.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: _primaryNavy.withValues(alpha: 0.2),
-                              ),
-                            ),
-                            child: Center(
-                              child: Text(
-                                _teacherProfile != null &&
-                                        _teacherProfile!.displayName.isNotEmpty
-                                    ? _teacherProfile!.displayName[0]
-                                        .toUpperCase()
-                                    : 'T',
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _primaryNavy,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Expanded(
+                                    Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: BoxDecoration(
+                                        color: _primaryNavy.withValues(
+                                          alpha: 0.1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.school,
+                                        size: 16,
+                                        color: _primaryNavy,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Flexible(
                                       child: Text(
-                                        _teacherProfile?.displayName ??
-                                            'Teacher Account',
-                                        key: const Key(
-                                            'teacher_display_name_text'),
-                                        style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.bold,
-                                          color: _textPrimary,
+                                        'Teacher Portal',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: _primaryNavy,
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'My Classes & Materials',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: _textPrimary,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          PopupMenuButton<String>(
+                            key: const Key('teacher_header_avatar_menu'),
+                            tooltip: 'Account options',
+                            color: _surfaceWhite,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: const BorderSide(color: _outlineVariant),
+                            ),
+                            onSelected: (val) {
+                              if (val == 'logout') {
+                                _handleLogout();
+                              }
+                            },
+                            itemBuilder: (ctx) => [
+                              PopupMenuItem<String>(
+                                enabled: false,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _teacherProfile?.displayName ??
+                                          'Teacher Account',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: _textPrimary,
                                       ),
-                                      decoration: BoxDecoration(
-                                        color: _primaryNavy
-                                            .withValues(alpha: 0.08),
-                                        borderRadius:
-                                            BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'Teacher',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: _primaryNavy,
+                                    ),
+                                    if (_teacherProfile?.email.isNotEmpty ??
+                                        false)
+                                      Text(
+                                        _teacherProfile!.email,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: _textSecondary,
                                         ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuDivider(),
+                              const PopupMenuItem<String>(
+                                value: 'logout',
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.logout,
+                                      color: Colors.redAccent,
+                                      size: 18,
+                                    ),
+                                    SizedBox(width: 8),
+                                    Text(
+                                      'Log Out',
+                                      style: TextStyle(
+                                        color: Colors.redAccent,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  _teacherProfile?.email.isNotEmpty == true
-                                      ? _teacherProfile!.email
-                                      : 'Signed in as teacher',
-                                  key: const Key('teacher_email_text'),
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: _textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
+                              ),
+                            ],
+                            child: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: _surfaceWhite,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: _outlineVariant),
+                              ),
+                              child: Center(
+                                child:
+                                    _teacherProfile != null &&
+                                        _teacherProfile!.displayName.isNotEmpty
+                                    ? Text(
+                                        _teacherProfile!.displayName[0]
+                                            .toUpperCase(),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _primaryNavy,
+                                          fontSize: 16,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.person_outline,
+                                        color: _primaryNavy,
+                                        size: 22,
+                                      ),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      const Divider(height: 1, color: _outlineVariant),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          key: const Key('teacher_logout_button'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.redAccent,
-                            side: BorderSide(
-                              color: Colors.redAccent.withValues(alpha: 0.4),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 9),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: _handleLogout,
-                          icon: const Icon(Icons.logout, size: 16),
-                          label: const Text(
-                            'Log Out',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
 
-              // ── Prominent Action Buttons ───────────────────
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                  child: Row(
-                    children: [
-                      // Upload Material & Generate Quiz Action
-                      Expanded(
-                        child: _ActionCard(
-                          title: 'Upload Material',
-                          subtitle: 'Select class & file',
-                          icon: Icons.upload_file_outlined,
-                          isPrimary: true,
-                          onTap: _showClassSelectionSheet,
-                        ),
+                  // ── Teacher Profile & Quick Action Card ────────
+                  SliverToBoxAdapter(
+                    child: Container(
+                      margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.heroGradient,
+                        borderRadius: AppTheme.borderRadiusXl,
+                        boxShadow: AppTheme.featureShadow,
                       ),
-                      const SizedBox(width: 12),
-                      // Create Class Action
-                      Expanded(
-                        child: _ActionCard(
-                          title: 'Create Class',
-                          subtitle: 'Generate join code',
-                          icon: Icons.add_circle_outline,
-                          isPrimary: false,
-                          onTap: _showCreateClassDialog,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // ── Section: Classes ───────────────────────────
-              StreamBuilder<List<ClassModel>>(
-                stream: _classesStream ?? const Stream.empty(),
-                builder: (context, snapshot) {
-                  final classes = snapshot.data ?? [];
-                  final countText =
-                      snapshot.connectionState == ConnectionState.waiting
-                          ? 'Loading...'
-                          : '${classes.length} total';
-
-                  return SliverMainAxisGroup(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              const Expanded(
-                                child: Text(
-                                  'Enrolled Classes',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: _textPrimary,
+                              Container(
+                                width: 52,
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.14),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.28),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _teacherProfile != null &&
+                                            _teacherProfile!
+                                                .displayName
+                                                .isNotEmpty
+                                        ? _teacherProfile!.displayName[0]
+                                              .toUpperCase()
+                                        : 'T',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                countText,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: _textSecondary,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            _teacherProfile?.displayName ??
+                                                'Teacher Account',
+                                            key: const Key(
+                                              'teacher_display_name_text',
+                                            ),
+                                            style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.14,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: const Text(
+                                            'Teacher',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      _teacherProfile?.email.isNotEmpty == true
+                                          ? _teacherProfile!.email
+                                          : 'Signed in as teacher',
+                                      key: const Key('teacher_email_text'),
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFFD7DAFF),
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          classes.isEmpty)
-                        const SliverToBoxAdapter(
-                          child: Center(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 24),
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2.5),
+                          const SizedBox(height: 14),
+                          Divider(
+                            height: 1,
+                            color: Colors.white.withValues(alpha: 0.18),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              key: const Key('teacher_logout_button'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: BorderSide(
+                                  color: Colors.white.withValues(alpha: 0.35),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 9,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: AppTheme.borderRadiusMd,
+                                ),
+                              ),
+                              onPressed: _handleLogout,
+                              icon: const Icon(Icons.logout, size: 16),
+                              label: const Text(
+                                'Log Out',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
-                        )
-                      else if (classes.isEmpty)
-                        SliverToBoxAdapter(
-                          child: Container(
-                            margin: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 8),
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: _surfaceWhite,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: _outlineVariant),
-                            ),
-                            child: Column(
-                              children: [
-                                Icon(Icons.school_outlined,
-                                    size: 36,
-                                    color:
-                                        _primaryNavy.withValues(alpha: 0.5)),
-                                const SizedBox(height: 10),
-                                const Text(
-                                  'No classes yet',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
-                                    color: _textPrimary,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                const Text(
-                                  'Tap "Create Class" above to create your first class and get a join code.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 13, color: _textSecondary),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        SliverPadding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 20.0),
-                          sliver: SliverList(
-                            delegate: SliverChildBuilderDelegate(
-                              (context, index) {
-                                final item = classes[index];
-                                return RepaintBoundary(
-                                  key: ValueKey(item.id),
-                                  child: _ClassItemCard(
-                                    classModel: item,
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              TeacherClassDetailsScreen(
-                                            classModel: item,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    onUploadTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              UploadGenerateQuizScreen(
-                                            initialClassId: item.id,
-                                            preselectedClass: item,
-                                            isClassLocked: true,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                              childCount: classes.length,
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
+                        ],
+                      ),
+                    ),
+                  ),
 
-              // Bottom spacing for visual balance and scroll clearance
-              const SliverToBoxAdapter(
-                child: SizedBox(height: 24),
+                  // ── Prominent Action Buttons ───────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                      child: Row(
+                        children: [
+                          // Upload Material & Generate Quiz Action
+                          Expanded(
+                            child: _ActionCard(
+                              title: 'Upload Material',
+                              subtitle: 'Select class & file',
+                              icon: Icons.upload_file_outlined,
+                              isPrimary: true,
+                              onTap: _showClassSelectionSheet,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          // Create Class Action
+                          Expanded(
+                            child: _ActionCard(
+                              title: 'Create Class',
+                              subtitle: 'Generate join code',
+                              icon: Icons.add_circle_outline,
+                              isPrimary: false,
+                              onTap: _showCreateClassDialog,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // ── Section: Classes ───────────────────────────
+                  StreamBuilder<List<ClassModel>>(
+                    stream: _classesStream ?? const Stream.empty(),
+                    builder: (context, snapshot) {
+                      final classes = snapshot.data ?? [];
+                      final countText =
+                          snapshot.connectionState == ConnectionState.waiting
+                          ? 'Loading...'
+                          : '${classes.length} total';
+
+                      return SliverMainAxisGroup(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                24,
+                                20,
+                                12,
+                              ),
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Expanded(
+                                    child: Text(
+                                      'Enrolled Classes',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: _textPrimary,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    countText,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      color: _textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              classes.isEmpty)
+                            const SliverToBoxAdapter(
+                              child: Center(
+                                child: Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 24),
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (classes.isEmpty)
+                            SliverToBoxAdapter(
+                              child: Container(
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 8,
+                                ),
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: _surfaceWhite,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: _outlineVariant),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Icon(
+                                      Icons.school_outlined,
+                                      size: 36,
+                                      color: _primaryNavy.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    const Text(
+                                      'No classes yet',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                        color: _textPrimary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      'Tap "Create Class" above to create your first class and get a join code.',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _textSecondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            SliverPadding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20.0,
+                              ),
+                              sliver: SliverList(
+                                delegate: SliverChildBuilderDelegate((
+                                  context,
+                                  index,
+                                ) {
+                                  final item = classes[index];
+                                  return RepaintBoundary(
+                                    key: ValueKey(item.id),
+                                    child: _ClassItemCard(
+                                      classModel: item,
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                TeacherClassDetailsScreen(
+                                                  classModel: item,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                      onUploadTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                UploadGenerateQuizScreen(
+                                                  initialClassId: item.id,
+                                                  preselectedClass: item,
+                                                  isClassLocked: true,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  );
+                                }, childCount: classes.length),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+
+                  // Bottom spacing for visual balance and scroll clearance
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  ),
-);
-}
+    );
+  }
 }
 
 /// Action card for prominent "Upload Material" or "Create Class" buttons.
@@ -978,37 +1025,51 @@ class _ActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: isPrimary ? AppTheme.primaryNavy : AppTheme.surfaceWhite,
-      borderRadius: AppTheme.borderRadiusLg,
-      elevation: isPrimary ? 2 : 1,
+      color: Colors.transparent,
+      borderRadius: AppTheme.borderRadiusXl,
       child: InkWell(
         onTap: onTap,
-        borderRadius: AppTheme.borderRadiusLg,
+        borderRadius: AppTheme.borderRadiusXl,
         child: Container(
-          padding: const EdgeInsets.all(AppTheme.spacingLg),
+          padding: const EdgeInsets.all(AppTheme.spacingXl),
           decoration: BoxDecoration(
-            borderRadius: AppTheme.borderRadiusLg,
+            color: isPrimary ? null : AppTheme.surfaceWhite,
+            gradient: isPrimary ? AppTheme.heroGradient : null,
+            borderRadius: AppTheme.borderRadiusXl,
             border: Border.all(
-              color: isPrimary ? Colors.transparent : AppTheme.outlineVariant,
+              color: isPrimary ? Colors.transparent : AppTheme.outlineSubtle,
             ),
+            boxShadow: isPrimary ? AppTheme.featureShadow : AppTheme.cardShadow,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: isPrimary
-                      ? Colors.white.withValues(alpha: 0.15)
-                      : AppTheme.primaryNavy.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  icon,
-                  size: 22,
-                  color: isPrimary ? Colors.white : AppTheme.primaryNavy,
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: isPrimary
+                          ? Colors.white.withValues(alpha: 0.15)
+                          : AppTheme.primaryContainer,
+                      borderRadius: AppTheme.borderRadiusMd,
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 23,
+                      color: isPrimary ? Colors.white : AppTheme.primaryNavy,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(
+                    Icons.arrow_outward_rounded,
+                    size: 19,
+                    color: isPrimary
+                        ? Colors.white.withValues(alpha: 0.72)
+                        : AppTheme.primaryNavy,
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Text(
@@ -1056,27 +1117,42 @@ class _ClassItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: AppTheme.surfaceWhite,
-        borderRadius: AppTheme.borderRadiusLg,
-        border: Border.all(color: AppTheme.outlineVariant),
+        borderRadius: AppTheme.borderRadiusXl,
+        border: Border.all(color: AppTheme.outlineSubtle),
         boxShadow: AppTheme.cardShadow,
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: AppTheme.borderRadiusLg,
+        borderRadius: AppTheme.borderRadiusXl,
         child: InkWell(
           onTap: onTap,
-          borderRadius: AppTheme.borderRadiusLg,
+          borderRadius: AppTheme.borderRadiusXl,
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(20.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        gradient: AppTheme.heroGradient,
+                        borderRadius: AppTheme.borderRadiusMd,
+                        boxShadow: AppTheme.cardShadow,
+                      ),
+                      child: const Icon(
+                        Icons.school_outlined,
+                        color: Colors.white,
+                        size: 23,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1103,14 +1179,13 @@ class _ClassItemCard extends StatelessWidget {
                     InkWell(
                       onTap: () {
                         Clipboard.setData(
-                            ClipboardData(text: classModel.joinCode));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                                'Join code ${classModel.joinCode} copied to clipboard!'),
-                            backgroundColor: AppTheme.primaryNavy,
-                            duration: const Duration(seconds: 2),
-                          ),
+                          ClipboardData(text: classModel.joinCode),
+                        );
+                        AppFeedback.success(
+                          context,
+                          'Join code ${classModel.joinCode} is ready to share.',
+                          title: 'Copied to clipboard',
+                          duration: const Duration(seconds: 2),
                         );
                       },
                       borderRadius: BorderRadius.circular(8),
@@ -1150,6 +1225,8 @@ class _ClassItemCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                const Divider(),
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -1181,9 +1258,12 @@ class _ClassItemCard extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppTheme.primaryNavy,
                         side: BorderSide(
-                            color: AppTheme.primaryNavy.withValues(alpha: 0.4)),
+                          color: AppTheme.primaryNavy.withValues(alpha: 0.4),
+                        ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -1191,8 +1271,10 @@ class _ClassItemCard extends StatelessWidget {
                       ),
                       onPressed: onUploadTap,
                       icon: const Icon(Icons.upload_file, size: 14),
-                      label: const Text('Upload',
-                          style: TextStyle(fontSize: 12)),
+                      label: const Text(
+                        'Upload',
+                        style: TextStyle(fontSize: 12),
+                      ),
                     ),
                     const SizedBox(width: 8),
                     const Icon(

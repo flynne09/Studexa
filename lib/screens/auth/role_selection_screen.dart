@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
 import 'login_screen.dart';
 
 /// Screen where the user selects their role (Teacher or Student)
@@ -10,12 +11,7 @@ class RoleSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: AppTheme.backgroundGradient,
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(

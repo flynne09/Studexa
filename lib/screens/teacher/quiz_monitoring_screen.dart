@@ -6,6 +6,8 @@ import '../../models/quiz_model.dart';
 import '../../services/assignment_service.dart';
 import '../../services/class_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
+import '../../widgets/app_feedback.dart';
 
 /// Teacher screen for monitoring class quiz submissions, reviewing individual student scores,
 /// managing assignment status (open/close/deadline), and viewing class summary analytics.
@@ -32,8 +34,6 @@ class QuizMonitoringScreen extends StatefulWidget {
 class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -58,9 +58,11 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   }
 
   void _initStreams() {
-    _membersStream = widget.initialMembersStream ??
+    _membersStream =
+        widget.initialMembersStream ??
         _classService.getClassMembersStream(widget.quiz.classId);
-    _attemptsStream = widget.initialAttemptsStream ??
+    _attemptsStream =
+        widget.initialAttemptsStream ??
         _assignmentService.streamClassQuizAttempts(
           widget.quiz.classId,
           widget.quiz.id,
@@ -107,11 +109,10 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
         _assignment = _assignment!.copyWith(isClosed: false);
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Quiz assignment reopened for submissions.'),
-          backgroundColor: Colors.green,
-        ),
+      AppFeedback.success(
+        context,
+        'Students can submit new attempts again.',
+        title: 'Quiz reopened',
       );
     } else {
       await _assignmentService.closeAssignment(_assignment!.id);
@@ -119,11 +120,10 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
         _assignment = _assignment!.copyWith(isClosed: true);
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Quiz assignment closed. No new submissions allowed.'),
-          backgroundColor: Colors.orange,
-        ),
+      AppFeedback.warning(
+        context,
+        'Students can no longer submit new attempts.',
+        title: 'Quiz closed',
       );
     }
   }
@@ -177,13 +177,10 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
     }
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Deadline set to ${combinedDeadline.month}/${combinedDeadline.day}/${combinedDeadline.year} at ${pickedTime.format(context)}',
-        ),
-        backgroundColor: _primaryNavy,
-      ),
+    AppFeedback.success(
+      context,
+      '${combinedDeadline.month}/${combinedDeadline.day}/${combinedDeadline.year} at ${pickedTime.format(context)}',
+      title: 'Deadline updated',
     );
   }
 
@@ -270,27 +267,35 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                     children: [
                       Row(
                         children: [
-                          Text('Q${idx + 1}',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            'Q${idx + 1}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           const Spacer(),
                           Text(
                             '${earned.toStringAsFixed(1)} / ${points.toStringAsFixed(0)} pt',
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
-                              color:
-                                  isCor ? Colors.green[800] : Colors.red[800],
+                              color: isCor
+                                  ? Colors.green[800]
+                                  : Colors.red[800],
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text('Student Answer: ${b['userAnswer'] ?? 'None'}',
-                          style: const TextStyle(fontSize: 13)),
-                      Text('Expected: ${b['correctAnswer'] ?? 'N/A'}',
-                          style: TextStyle(
-                              fontSize: 12, color: Colors.green[900])),
+                      Text(
+                        'Student Answer: ${b['userAnswer'] ?? 'None'}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      Text(
+                        'Expected: ${b['correctAnswer'] ?? 'N/A'}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.green[900],
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -321,16 +326,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -341,8 +337,9 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                 stream: _membersStream,
                 builder: (context, membersSnapshot) {
                   final allMembers = membersSnapshot.data ?? [];
-                  final students =
-                      allMembers.where((m) => m.role == 'student').toList();
+                  final students = allMembers
+                      .where((m) => m.role == 'student')
+                      .toList();
 
                   return StreamBuilder<List<QuizAttemptModel>>(
                     stream: _attemptsStream,
@@ -367,8 +364,10 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                       double avgPercentage = 0.0;
                       double highestScore = 0.0;
                       if (completedStudents > 0) {
-                        final totalP = studentAttempts.values
-                            .fold<double>(0.0, (acc, a) => acc + a.percentage);
+                        final totalP = studentAttempts.values.fold<double>(
+                          0.0,
+                          (acc, a) => acc + a.percentage,
+                        );
                         avgPercentage = totalP / completedStudents;
                         highestScore = studentAttempts.values
                             .map((a) => a.percentage)
@@ -427,7 +426,8 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
                                   children: [
                                     const Expanded(
                                       child: Text(
@@ -443,14 +443,20 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                                     ),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 4),
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: (_assignment?.isAvailable ?? true)
-                                            ? Colors.green.withValues(alpha: 0.1)
+                                        color:
+                                            (_assignment?.isAvailable ?? true)
+                                            ? Colors.green.withValues(
+                                                alpha: 0.1,
+                                              )
                                             : Colors.red.withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
-                                          color: (_assignment?.isAvailable ?? true)
+                                          color:
+                                              (_assignment?.isAvailable ?? true)
                                               ? Colors.green
                                               : Colors.red,
                                         ),
@@ -460,7 +466,8 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.bold,
-                                          color: (_assignment?.isAvailable ?? true)
+                                          color:
+                                              (_assignment?.isAvailable ?? true)
                                               ? Colors.green[800]
                                               : Colors.red[800],
                                         ),
@@ -472,14 +479,19 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                                   const SizedBox(height: 8),
                                   Row(
                                     children: [
-                                      const Icon(Icons.schedule,
-                                          size: 14, color: _textSecondary),
+                                      const Icon(
+                                        Icons.schedule,
+                                        size: 14,
+                                        color: _textSecondary,
+                                      ),
                                       const SizedBox(width: 6),
                                       Expanded(
                                         child: Text(
                                           'Deadline: ${_assignment!.deadline!.month}/${_assignment!.deadline!.day}/${_assignment!.deadline!.year} at ${_assignment!.deadline!.hour}:${_assignment!.deadline!.minute.toString().padLeft(2, '0')}',
                                           style: const TextStyle(
-                                              fontSize: 12, color: _textSecondary),
+                                            fontSize: 12,
+                                            color: _textSecondary,
+                                          ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -495,10 +507,11 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                                         style: OutlinedButton.styleFrom(
                                           foregroundColor:
                                               (_assignment?.isClosed ?? false)
-                                                  ? Colors.green
-                                                  : Colors.red[700],
+                                              ? Colors.green
+                                              : Colors.red[700],
                                           side: BorderSide(
-                                            color: (_assignment?.isClosed ?? false)
+                                            color:
+                                                (_assignment?.isClosed ?? false)
                                                 ? Colors.green
                                                 : Colors.red.shade300,
                                           ),
@@ -529,14 +542,19 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                                       child: OutlinedButton.icon(
                                         style: OutlinedButton.styleFrom(
                                           foregroundColor: _primaryNavy,
-                                          side: const BorderSide(color: _primaryNavy),
+                                          side: const BorderSide(
+                                            color: _primaryNavy,
+                                          ),
                                           shape: RoundedRectangleBorder(
-                                            borderRadius: AppTheme.borderRadiusMd,
+                                            borderRadius:
+                                                AppTheme.borderRadiusMd,
                                           ),
                                         ),
                                         onPressed: _setDeadline,
-                                        icon: const Icon(Icons.calendar_month,
-                                            size: 16),
+                                        icon: const Icon(
+                                          Icons.calendar_month,
+                                          size: 16,
+                                        ),
                                         label: const FittedBox(
                                           fit: BoxFit.scaleDown,
                                           child: Text('Set Deadline'),
@@ -550,171 +568,190 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
                           ),
                           const SizedBox(height: 14),
 
-                      // ── Analytics Summary Cards ──────────────────
-                      Row(
-                        children: [
-                          _buildMetricCard(
-                            label: 'Completion',
-                            value:
-                                '$completedStudents/$totalStudents (${completionRate.toStringAsFixed(0)}%)',
-                            color: Colors.blue,
-                            icon: Icons.people_outline,
-                          ),
-                          const SizedBox(width: 10),
-                          _buildMetricCard(
-                            label: 'Average Score',
-                            value: '${avgPercentage.toStringAsFixed(0)}%',
-                            color: Colors.teal,
-                            icon: Icons.analytics_outlined,
-                          ),
-                          const SizedBox(width: 10),
-                          _buildMetricCard(
-                            label: 'Top Score',
-                            value: '${highestScore.toStringAsFixed(0)}%',
-                            color: Colors.amber[800]!,
-                            icon: Icons.star_border,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // ── Enrolled Student Roster & Results ─────────
-                      const Text(
-                        'Student Submissions',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: _textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-
-                      if (students.isEmpty)
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: _surfaceWhite,
-                            borderRadius: AppTheme.borderRadiusMd,
-                            border: Border.all(color: _outlineVariant),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              'No students currently enrolled in this class.',
-                              style: TextStyle(
-                                  fontSize: 13, color: _textSecondary),
-                            ),
-                          ),
-                        )
-                      else
-                        ...students.map((student) {
-                          final attempt = studentAttempts[student.userId];
-                          final hasCompleted = attempt != null;
-
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            decoration: BoxDecoration(
-                              color: _surfaceWhite,
-                              borderRadius: AppTheme.borderRadiusLg,
-                              border: Border.all(
-                                color: hasCompleted
-                                    ? Colors.green.withValues(alpha: 0.3)
-                                    : _outlineVariant,
+                          // ── Analytics Summary Cards ──────────────────
+                          Row(
+                            children: [
+                              _buildMetricCard(
+                                label: 'Completion',
+                                value:
+                                    '$completedStudents/$totalStudents (${completionRate.toStringAsFixed(0)}%)',
+                                color: Colors.blue,
+                                icon: Icons.people_outline,
                               ),
-                              boxShadow: AppTheme.cardShadow,
+                              const SizedBox(width: 10),
+                              _buildMetricCard(
+                                label: 'Average Score',
+                                value: '${avgPercentage.toStringAsFixed(0)}%',
+                                color: Colors.teal,
+                                icon: Icons.analytics_outlined,
+                              ),
+                              const SizedBox(width: 10),
+                              _buildMetricCard(
+                                label: 'Top Score',
+                                value: '${highestScore.toStringAsFixed(0)}%',
+                                color: Colors.amber[800]!,
+                                icon: Icons.star_border,
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+
+                          // ── Enrolled Student Roster & Results ─────────
+                          const Text(
+                            'Student Submissions',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: _textPrimary,
                             ),
-                            child: Material(
-                              color: Colors.transparent,
-                              borderRadius: AppTheme.borderRadiusLg,
-                              clipBehavior: Clip.antiAlias,
-                              child: ListTile(
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 4),
-                                leading: CircleAvatar(
-                                  backgroundColor: hasCompleted
-                                      ? Colors.green.withValues(alpha: 0.15)
-                                      : Colors.grey.withValues(alpha: 0.15),
-                                  child: Text(
-                                    student.displayName.isNotEmpty
-                                        ? student.displayName[0].toUpperCase()
-                                        : 'S',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: hasCompleted
-                                          ? Colors.green[800]
-                                          : Colors.grey[700],
-                                    ),
-                                  ),
-                                ),
-                                title: Text(
-                                  student.displayName,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: _textPrimary,
-                                  ),
-                                ),
-                                subtitle: Text(
-                                  hasCompleted
-                                      ? 'Score: ${attempt.formattedScore} (${attempt.formattedPercentage})'
-                                      : 'Not yet attempted',
+                          ),
+                          const SizedBox(height: 10),
+
+                          if (students.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(24),
+                              decoration: BoxDecoration(
+                                color: _surfaceWhite,
+                                borderRadius: AppTheme.borderRadiusMd,
+                                border: Border.all(color: _outlineVariant),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  'No students currently enrolled in this class.',
                                   style: TextStyle(
-                                    fontSize: 12,
-                                    color: hasCompleted
-                                        ? Colors.green[800]
-                                        : _textSecondary,
-                                    fontWeight: hasCompleted
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
+                                    fontSize: 13,
+                                    color: _textSecondary,
                                   ),
                                 ),
-                                trailing: hasCompleted
-                                    ? OutlinedButton(
-                                        style: OutlinedButton.styleFrom(
-                                          foregroundColor: _primaryNavy,
-                                          side: const BorderSide(
-                                              color: _primaryNavy),
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 4),
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                AppTheme.borderRadiusMd,
-                                          ),
-                                        ),
-                                        onPressed: () =>
-                                            _showStudentAttemptDetails(attempt),
-                                        child: const Text('Review',
-                                            style: TextStyle(fontSize: 11)),
-                                      )
-                                    : Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color:
-                                              Colors.grey.withValues(alpha: 0.1),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: const Text(
-                                          'Pending',
-                                          style: TextStyle(
-                                              fontSize: 11, color: Colors.grey),
+                              ),
+                            )
+                          else
+                            ...students.map((student) {
+                              final attempt = studentAttempts[student.userId];
+                              final hasCompleted = attempt != null;
+
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                decoration: BoxDecoration(
+                                  color: _surfaceWhite,
+                                  borderRadius: AppTheme.borderRadiusLg,
+                                  border: Border.all(
+                                    color: hasCompleted
+                                        ? Colors.green.withValues(alpha: 0.3)
+                                        : _outlineVariant,
+                                  ),
+                                  boxShadow: AppTheme.cardShadow,
+                                ),
+                                child: Material(
+                                  color: Colors.transparent,
+                                  borderRadius: AppTheme.borderRadiusLg,
+                                  clipBehavior: Clip.antiAlias,
+                                  child: ListTile(
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 4,
+                                    ),
+                                    leading: CircleAvatar(
+                                      backgroundColor: hasCompleted
+                                          ? Colors.green.withValues(alpha: 0.15)
+                                          : Colors.grey.withValues(alpha: 0.15),
+                                      child: Text(
+                                        student.displayName.isNotEmpty
+                                            ? student.displayName[0]
+                                                  .toUpperCase()
+                                            : 'S',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: hasCompleted
+                                              ? Colors.green[800]
+                                              : Colors.grey[700],
                                         ),
                                       ),
-                              ),
-                            ),
-                          );
-                        }),
-                    ],
+                                    ),
+                                    title: Text(
+                                      student.displayName,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: _textPrimary,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      hasCompleted
+                                          ? 'Score: ${attempt.formattedScore} (${attempt.formattedPercentage})'
+                                          : 'Not yet attempted',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: hasCompleted
+                                            ? Colors.green[800]
+                                            : _textSecondary,
+                                        fontWeight: hasCompleted
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                    trailing: hasCompleted
+                                        ? OutlinedButton(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: _primaryNavy,
+                                              side: const BorderSide(
+                                                color: _primaryNavy,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 10,
+                                                    vertical: 4,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    AppTheme.borderRadiusMd,
+                                              ),
+                                            ),
+                                            onPressed: () =>
+                                                _showStudentAttemptDetails(
+                                                  attempt,
+                                                ),
+                                            child: const Text(
+                                              'Review',
+                                              style: TextStyle(fontSize: 11),
+                                            ),
+                                          )
+                                        : Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 3,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              'Pending',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              );
+                            }),
+                        ],
+                      );
+                    },
                   );
                 },
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  ),
-);
-}
+    );
+  }
 
   Widget _buildMetricCard({
     required String label,

@@ -118,6 +118,35 @@ void main() {
       }
     },
   );
+  test('preserves actionable validation and quota messages for the UI', () async {
+    const expectedMessages = {
+      422:
+          'The AI returned incomplete or unsupported questions. Try again with fewer questions.',
+      429:
+          'The AI service has reached its request limit. Please try again later.',
+    };
+    for (final entry in expectedMessages.entries) {
+      var calls = 0;
+      final client = QuizGenerationClient(
+        tokenProvider: () async => 'test-token',
+        client: MockClient((_) async {
+          calls++;
+          return http.Response('{}', entry.key);
+        }),
+      );
+      await expectLater(
+        generate(client),
+        throwsA(
+          isA<QuizGenerationException>().having(
+            (e) => e.message,
+            'message',
+            entry.value,
+          ),
+        ),
+      );
+      expect(calls, 1);
+    }
+  });
   test(
     'network and timeout failures do not create a substitute quiz',
     () async {

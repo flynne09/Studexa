@@ -5,6 +5,8 @@ import '../../services/class_service.dart';
 import '../../services/pdf_export_service.dart';
 import '../../services/quiz_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
+import '../../widgets/app_feedback.dart';
 import 'quiz_monitoring_screen.dart';
 
 /// Screen allowing a teacher to review, edit, finalize, and publish a generated quiz.
@@ -12,11 +14,7 @@ class QuizDetailScreen extends StatefulWidget {
   final QuizModel quiz;
   final ClassModel? initialClass;
 
-  const QuizDetailScreen({
-    super.key,
-    required this.quiz,
-    this.initialClass,
-  });
+  const QuizDetailScreen({super.key, required this.quiz, this.initialClass});
 
   @override
   State<QuizDetailScreen> createState() => _QuizDetailScreenState();
@@ -25,8 +23,6 @@ class QuizDetailScreen extends StatefulWidget {
 class _QuizDetailScreenState extends State<QuizDetailScreen> {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -100,14 +96,14 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     if (confirm != true) return;
     if (!mounted) return;
 
-    final publishValidationError =
-        QuizService.validateQuizQuestions(_currentQuiz.questions);
+    final publishValidationError = QuizService.validateQuizQuestions(
+      _currentQuiz.questions,
+    );
     if (publishValidationError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Cannot publish quiz: $publishValidationError'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.warning(
+        context,
+        publishValidationError,
+        title: 'Quiz is not ready to publish',
       );
       return;
     }
@@ -120,35 +116,32 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
         _isSaving = false;
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Quiz published successfully! Students can now practice.',
-          ),
-          backgroundColor: Colors.green,
-        ),
+      AppFeedback.success(
+        context,
+        'Students in this class can now find and take the practice quiz.',
+        title: 'Quiz published',
       );
     } catch (e) {
       setState(() => _isSaving = false);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to publish quiz: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      debugPrint('Failed to publish quiz: $e');
+      AppFeedback.error(
+        context,
+        'The quiz could not be published. Check your connection and try again.',
+        title: 'Unable to publish quiz',
       );
     }
   }
 
   Future<void> _finalizeQuiz() async {
-    final finalizeValidationError =
-        QuizService.validateQuizQuestions(_currentQuiz.questions);
+    final finalizeValidationError = QuizService.validateQuizQuestions(
+      _currentQuiz.questions,
+    );
     if (finalizeValidationError != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Cannot finalize quiz: $finalizeValidationError'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.warning(
+        context,
+        finalizeValidationError,
+        title: 'Quiz is not ready to finalize',
       );
       return;
     }
@@ -161,20 +154,19 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
         _isSaving = false;
       });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Actual Quiz finalized as reference exam.'),
-          backgroundColor: Colors.green,
-        ),
+      AppFeedback.success(
+        context,
+        'The Actual Quiz is saved as the reference exam.',
+        title: 'Quiz finalized',
       );
     } catch (e) {
       setState(() => _isSaving = false);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to finalize quiz: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      debugPrint('Failed to finalize quiz: $e');
+      AppFeedback.error(
+        context,
+        'The quiz could not be finalized. Check your connection and try again.',
+        title: 'Unable to finalize quiz',
       );
     }
   }
@@ -332,49 +324,29 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     if (confirm != true) return;
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('Deleting "${_currentQuiz.title}"...'),
-            ),
-          ],
-        ),
-        duration: const Duration(seconds: 2),
-      ),
+    AppFeedback.info(
+      context,
+      'Removing "${_currentQuiz.title}" from this class.',
+      title: 'Deleting quiz',
+      duration: const Duration(seconds: 2),
     );
 
     try {
       await _quizService.deleteQuiz(_currentQuiz.id);
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Quiz "${_currentQuiz.title}" deleted.'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 3),
-        ),
+      AppFeedback.success(
+        context,
+        '"${_currentQuiz.title}" was removed from the class.',
+        title: 'Quiz deleted',
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete quiz: $e'),
-          backgroundColor: Colors.redAccent,
-          duration: const Duration(seconds: 4),
-        ),
+      debugPrint('Failed to delete quiz: $e');
+      AppFeedback.error(
+        context,
+        'The quiz could not be deleted. Check your connection and try again.',
+        title: 'Unable to delete quiz',
       );
     }
   }
@@ -488,11 +460,11 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to generate PDF: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      debugPrint('Failed to generate PDF: $e');
+      AppFeedback.error(
+        context,
+        'The PDF could not be prepared. Please try again.',
+        title: 'Unable to create PDF',
       );
     }
   }
@@ -528,16 +500,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
           ),
         ],
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -548,7 +511,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                 children: [
                   // ── Header Banner ──────────────────────────────────
                   Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
@@ -646,7 +612,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: AppTheme.borderRadiusMd,
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                               onPressed: _isSaving ? null : _publishQuiz,
                               icon: const Icon(Icons.send_rounded, size: 18),
@@ -665,18 +633,24 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: AppTheme.borderRadiusMd,
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                               onPressed: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (context) =>
-                                        QuizMonitoringScreen(quiz: _currentQuiz),
+                                    builder: (context) => QuizMonitoringScreen(
+                                      quiz: _currentQuiz,
+                                    ),
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.analytics_outlined, size: 18),
+                              icon: const Icon(
+                                Icons.analytics_outlined,
+                                size: 18,
+                              ),
                               label: const FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text('Monitor Submissions'),
@@ -692,7 +666,9 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: AppTheme.borderRadiusMd,
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                               onPressed: _isSaving ? null : _finalizeQuiz,
                               icon: const Icon(
@@ -804,7 +780,10 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.indigo.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(6),

@@ -158,8 +158,8 @@ void main() {
       await tester.tap(confirmDelete);
       await tester.pump();
 
-      // Immediately upon confirmation, non-blocking progress SnackBar should be displayed
-      expect(find.text('Deleting "Dynamic Programming & Graphs"...'), findsOneWidget);
+      // Immediately upon confirmation, non-blocking progress feedback should be displayed
+      expect(find.text('Removing "Dynamic Programming & Graphs" from this class.'), findsOneWidget);
     });
 
     test('3. Upload progress throttling helper ensures state updates >= 5% steps or completion', () {

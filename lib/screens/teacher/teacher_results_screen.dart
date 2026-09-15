@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/class_model.dart';
 import '../../services/class_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
 
 /// Teacher Results Screen showing per-class, per-quiz student completion
 /// statuses and scores bound to real enrolled class members.
@@ -26,8 +27,6 @@ class TeacherResultsScreen extends StatefulWidget {
 class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -148,16 +147,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_gradientStart, _gradientEnd],
-          ),
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(

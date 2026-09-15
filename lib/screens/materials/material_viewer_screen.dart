@@ -6,6 +6,7 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../models/material_model.dart';
 import '../../services/material_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_feedback.dart';
 
 /// Screen and handler for viewing study materials.
 /// - PDF: Rendered in-app with Syncfusion PDF Viewer.
@@ -31,13 +32,11 @@ class MaterialViewerScreen extends StatefulWidget {
   }) async {
     final service = materialService ?? MaterialService();
     final ext = material.fileType.toLowerCase();
-    final messenger = ScaffoldMessenger.of(context);
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Opening original ${material.fileName}...'),
-        duration: const Duration(seconds: 2),
-      ),
+    AppFeedback.info(
+      context,
+      'Opening ${material.fileName} in a supported app.',
+      title: 'Opening file',
+      duration: const Duration(seconds: 2),
     );
 
     try {
@@ -46,13 +45,10 @@ class MaterialViewerScreen extends StatefulWidget {
         final result = await OpenFilex.open(file.path);
         if (result.type != ResultType.done) {
           if (context.mounted) {
-            messenger.showSnackBar(
-              SnackBar(
-                content: Text(
-                  'No app found to open ${ext.toUpperCase()} file (${result.message}). Viewing extracted text.',
-                ),
-                backgroundColor: Colors.orange.shade800,
-              ),
+            AppFeedback.warning(
+              context,
+              'No app on this device can open ${ext.toUpperCase()} files. Showing the extracted text instead.',
+              title: 'Original file unavailable',
             );
             Navigator.push(
               context,
@@ -67,13 +63,10 @@ class MaterialViewerScreen extends StatefulWidget {
         }
       } else {
         if (context.mounted) {
-          messenger.showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Original file not cached locally. Viewing extracted text.',
-              ),
-              backgroundColor: Colors.indigo.shade700,
-            ),
+          AppFeedback.info(
+            context,
+            'The original file is not available on this device. Showing the extracted text instead.',
+            title: 'Showing text version',
           );
           Navigator.push(
             context,
@@ -88,11 +81,11 @@ class MaterialViewerScreen extends StatefulWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text('Could not open file: $e. Viewing extracted text.'),
-            backgroundColor: Colors.redAccent,
-          ),
+        debugPrint('Failed to open original material: $e');
+        AppFeedback.error(
+          context,
+          'The original file could not be opened. Showing the extracted text instead.',
+          title: 'Unable to open file',
         );
         Navigator.push(
           context,
@@ -177,8 +170,12 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     final isNativePdf = _material.fileType.toLowerCase() == 'pdf';
     final hasPreview = _material.hasConvertedPdf;
 
-    _showExtractedText = widget.initialShowExtractedText ||
-        (!isNativePdf && !hasPreview && !_material.isConverting && !_material.conversionFailed);
+    _showExtractedText =
+        widget.initialShowExtractedText ||
+        (!isNativePdf &&
+            !hasPreview &&
+            !_material.isConverting &&
+            !_material.conversionFailed);
 
     if (_showExtractedText) {
       _isLoadingPdf = false;
@@ -190,7 +187,8 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   void _startPreview() {
     if (_previewStarted) return;
     _previewStarted = true;
-    if (_material.fileType.toLowerCase() == 'pdf' || _material.hasConvertedPdf) {
+    if (_material.fileType.toLowerCase() == 'pdf' ||
+        _material.hasConvertedPdf) {
       _loadPdf();
     } else if (_material.isConverting) {
       _listenForConversion();
@@ -207,7 +205,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
 
   void _listenForConversion() {
     _materialSub?.cancel();
-    _materialSub = _materialService.streamMaterial(_material.id).listen((updated) {
+    _materialSub = _materialService.streamMaterial(_material.id).listen((
+      updated,
+    ) {
       if (updated == null || !mounted) return;
       setState(() {
         _material = updated;
@@ -257,10 +257,11 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
       }
     } catch (e) {
       if (mounted) {
+        debugPrint('Failed to load document preview: $e');
         setState(() {
           _isLoadingPdf = false;
           _pdfLoadError =
-              'Could not load document preview: $e. Displaying extracted text fallback.';
+              'The document preview could not be loaded. Showing the extracted text instead.';
           _showExtractedText = true;
         });
       }
@@ -312,7 +313,8 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
           if (!isNativePdf)
             IconButton(
               icon: const Icon(Icons.open_in_new, size: 20),
-              tooltip: 'Open original ${_material.fileType.toUpperCase()} in device app',
+              tooltip:
+                  'Open original ${_material.fileType.toUpperCase()} in device app',
               onPressed: () {
                 MaterialViewerScreen.openExternal(
                   context: context,
@@ -322,7 +324,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
               },
             ),
           // Toggle between preview and extracted text
-          if (hasPreview || _material.isConverting || _material.conversionFailed)
+          if (hasPreview ||
+              _material.isConverting ||
+              _material.conversionFailed)
             TextButton.icon(
               style: TextButton.styleFrom(foregroundColor: Colors.white),
               onPressed: () {
@@ -355,7 +359,8 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     }
 
     // If converting or conversion failed and preview not ready yet, show in-app status card
-    if ((_material.isConverting || _material.conversionFailed) && !_material.hasConvertedPdf) {
+    if ((_material.isConverting || _material.conversionFailed) &&
+        !_material.hasConvertedPdf) {
       return _buildConvertingView();
     }
 
@@ -390,7 +395,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     }
 
     final isNativePdf = _material.fileType.toLowerCase() == 'pdf';
-    final effectiveUrl = isNativePdf ? _material.downloadUrl : _material.convertedPdfUrl;
+    final effectiveUrl = isNativePdf
+        ? _material.downloadUrl
+        : _material.convertedPdfUrl;
 
     if (effectiveUrl != null && effectiveUrl.isNotEmpty) {
       return SfPdfViewer.network(
@@ -417,18 +424,26 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
       alignment: Alignment.center,
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidthMobile),
+          constraints: const BoxConstraints(
+            maxWidth: AppTheme.maxContentWidthMobile,
+          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: isFailed ? Colors.amber.shade50 : Colors.indigo.shade50,
+                  color: isFailed
+                      ? Colors.amber.shade50
+                      : Colors.indigo.shade50,
                   shape: BoxShape.circle,
                 ),
                 child: isFailed
-                    ? Icon(Icons.warning_amber_rounded, size: 40, color: Colors.amber.shade900)
+                    ? Icon(
+                        Icons.warning_amber_rounded,
+                        size: 40,
+                        color: Colors.amber.shade900,
+                      )
                     : const CircularProgressIndicator(
                         color: _primaryNavy,
                         strokeWidth: 3,
@@ -436,7 +451,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                isFailed ? 'Preview Conversion Failed' : 'Generating In-App Preview',
+                isFailed
+                    ? 'Preview Conversion Failed'
+                    : 'Generating In-App Preview',
                 style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -464,7 +481,10 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                     onPressed: () {
                       MaterialViewerScreen.openExternal(
@@ -474,7 +494,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                       );
                     },
                     icon: const Icon(Icons.open_in_new, size: 18),
-                    label: Text('Open Original (${_material.fileType.toUpperCase()})'),
+                    label: Text(
+                      'Open Original (${_material.fileType.toUpperCase()})',
+                    ),
                   ),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -483,7 +505,10 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                     onPressed: () {
                       setState(() {
@@ -508,7 +533,9 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
       padding: const EdgeInsets.all(16),
       child: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: AppTheme.maxContentWidthTablet),
+          constraints: const BoxConstraints(
+            maxWidth: AppTheme.maxContentWidthTablet,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -523,14 +550,19 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline,
-                          color: Colors.amber.shade900, size: 20),
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.amber.shade900,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _pdfLoadError!,
-                          style:
-                              TextStyle(color: Colors.amber.shade900, fontSize: 12),
+                          style: TextStyle(
+                            color: Colors.amber.shade900,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -555,7 +587,10 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
                     const SizedBox(width: 8),
                     Text(
                       widget.material.formattedFileSize,
-                      style: const TextStyle(fontSize: 12, color: _textSecondary),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: _textSecondary,
+                      ),
                     ),
                   ],
                 ],

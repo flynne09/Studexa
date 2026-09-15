@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/app_feedback.dart';
 import '../../widgets/google_sign_in_button.dart';
+import '../../widgets/studexa_background.dart';
 import 'login_screen.dart';
 import '../teacher/teacher_home_screen.dart';
 import '../student/student_home_screen.dart';
@@ -68,7 +70,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
     if (!emailRegex.hasMatch(email)) {
       _showErrorSnackBar('Please enter a valid email address.');
       return;
@@ -85,7 +89,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     if (password != confirmPassword) {
-      _showErrorSnackBar('Passwords do not match. Please verify and try again.');
+      _showErrorSnackBar(
+        'Passwords do not match. Please verify and try again.',
+      );
       return;
     }
 
@@ -172,24 +178,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.redAccent,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    AppFeedback.error(context, message, title: 'Unable to create account');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: AppTheme.backgroundGradient,
-        ),
+      body: StudexaBackground(
         child: SafeArea(
           child: Center(
             child: ConstrainedBox(
@@ -217,11 +212,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               color: AppTheme.surfaceWhite,
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: AppTheme.outlineVariant.withValues(alpha: 0.3),
+                                color: AppTheme.outlineVariant.withValues(
+                                  alpha: 0.3,
+                                ),
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppTheme.primaryNavy.withValues(alpha: 0.08),
+                                  color: AppTheme.primaryNavy.withValues(
+                                    alpha: 0.08,
+                                  ),
                                   blurRadius: 16,
                                   offset: const Offset(0, 4),
                                 ),
@@ -289,9 +288,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             padding: const EdgeInsets.all(4),
                             decoration: BoxDecoration(
                               color: AppTheme.surfaceWhite,
-                              borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                              borderRadius: BorderRadius.circular(
+                                AppTheme.radiusMd,
+                              ),
                               border: Border.all(
-                                color: AppTheme.outlineVariant.withValues(alpha: 0.5),
+                                color: AppTheme.outlineVariant.withValues(
+                                  alpha: 0.5,
+                                ),
                               ),
                             ),
                             child: Row(
@@ -306,21 +309,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             });
                                           },
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: _selectedRole.toLowerCase() == 'student'
+                                        color:
+                                            _selectedRole.toLowerCase() ==
+                                                'student'
                                             ? AppTheme.primaryNavy
                                             : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                        borderRadius: BorderRadius.circular(
+                                          AppTheme.radiusSm,
+                                        ),
                                       ),
                                       child: Center(
                                         child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
                                             Icon(
                                               Icons.school_outlined,
                                               size: 16,
-                                              color: _selectedRole.toLowerCase() == 'student'
+                                              color:
+                                                  _selectedRole.toLowerCase() ==
+                                                      'student'
                                                   ? Colors.white
                                                   : AppTheme.textSecondary,
                                             ),
@@ -330,7 +342,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                               style: TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w600,
-                                                color: _selectedRole.toLowerCase() == 'student'
+                                                color:
+                                                    _selectedRole
+                                                            .toLowerCase() ==
+                                                        'student'
                                                     ? Colors.white
                                                     : AppTheme.textSecondary,
                                               ),
@@ -352,21 +367,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                             });
                                           },
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 8,
+                                      ),
                                       decoration: BoxDecoration(
-                                        color: _selectedRole.toLowerCase() == 'teacher'
+                                        color:
+                                            _selectedRole.toLowerCase() ==
+                                                'teacher'
                                             ? AppTheme.primaryNavy
                                             : Colors.transparent,
-                                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                        borderRadius: BorderRadius.circular(
+                                          AppTheme.radiusSm,
+                                        ),
                                       ),
                                       child: Center(
                                         child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
                                             Icon(
                                               Icons.laptop_chromebook_outlined,
                                               size: 16,
-                                              color: _selectedRole.toLowerCase() == 'teacher'
+                                              color:
+                                                  _selectedRole.toLowerCase() ==
+                                                      'teacher'
                                                   ? Colors.white
                                                   : AppTheme.textSecondary,
                                             ),
@@ -376,7 +400,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                               style: TextStyle(
                                                 fontSize: 13,
                                                 fontWeight: FontWeight.w600,
-                                                color: _selectedRole.toLowerCase() == 'teacher'
+                                                color:
+                                                    _selectedRole
+                                                            .toLowerCase() ==
+                                                        'teacher'
                                                     ? Colors.white
                                                     : AppTheme.textSecondary,
                                               ),
@@ -398,15 +425,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               padding: const EdgeInsets.all(12),
                               decoration: BoxDecoration(
                                 color: AppTheme.error.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                                borderRadius: BorderRadius.circular(
+                                  AppTheme.radiusSm,
+                                ),
                                 border: Border.all(
                                   color: AppTheme.error.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.error_outline,
-                                      color: AppTheme.error, size: 20),
+                                  const Icon(
+                                    Icons.error_outline,
+                                    color: AppTheme.error,
+                                    size: 20,
+                                  ),
                                   const SizedBox(width: 10),
                                   Expanded(
                                     child: Text(
@@ -594,7 +626,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 foregroundColor: Colors.white,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.radiusMd,
+                                  ),
                                 ),
                               ),
                               onPressed: _isLoading ? null : _handleRegister,
@@ -604,13 +638,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       height: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.white,
-                                        ),
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.white,
+                                            ),
                                       ),
                                     )
                                   : const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         Text(
                                           'Register',
@@ -700,22 +736,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(
-        color: AppTheme.textTertiary,
-        fontSize: 14,
-      ),
-      prefixIcon: Icon(
-        prefixIcon,
-        size: 20,
-        color: AppTheme.textSecondary,
-      ),
+      hintStyle: const TextStyle(color: AppTheme.textTertiary, fontSize: 14),
+      prefixIcon: Icon(prefixIcon, size: 20, color: AppTheme.textSecondary),
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: AppTheme.surfaceWhite,
-      contentPadding: const EdgeInsets.symmetric(
-        vertical: 14,
-        horizontal: 16,
-      ),
+      contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
         borderSide: const BorderSide(color: AppTheme.outlineVariant),
@@ -726,10 +752,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-        borderSide: const BorderSide(
-          color: AppTheme.primaryNavy,
-          width: 1.6,
-        ),
+        borderSide: const BorderSide(color: AppTheme.primaryNavy, width: 1.6),
       ),
     );
   }

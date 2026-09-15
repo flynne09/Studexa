@@ -10,6 +10,8 @@ import '../../services/class_service.dart';
 import '../../services/material_service.dart';
 import '../../services/quiz_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/studexa_background.dart';
+import '../../widgets/app_feedback.dart';
 import 'answer_quiz_screen.dart';
 import '../materials/material_viewer_screen.dart';
 
@@ -45,8 +47,6 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     with SingleTickerProviderStateMixin {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
-  static const _gradientStart = AppTheme.gradientStart;
-  static const _gradientEnd = AppTheme.gradientEnd;
   static const _surfaceWhite = AppTheme.surfaceWhite;
   static const _outlineVariant = AppTheme.outlineVariant;
   static const _textPrimary = AppTheme.textPrimary;
@@ -241,23 +241,15 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<ClassModel?>(
-      stream: widget.initialClassStream ??
+      stream:
+          widget.initialClassStream ??
           _classService.streamClass(widget.classModel.id),
       initialData: widget.classModel,
       builder: (context, classSnapshot) {
         final liveClass = classSnapshot.data ?? widget.classModel;
 
         return Scaffold(
-          body: Container(
-            width: double.infinity,
-            height: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [_gradientStart, _gradientEnd],
-              ),
-            ),
+          body: StudexaBackground(
             child: SafeArea(
               child: Center(
                 child: ConstrainedBox(
@@ -375,9 +367,18 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                           indicatorSize: TabBarIndicatorSize.tab,
                           dividerColor: Colors.transparent,
                           tabs: const [
-                            Tab(icon: Icon(Icons.folder_outlined), text: 'Materials'),
-                            Tab(icon: Icon(Icons.quiz_outlined), text: 'Quizzes'),
-                            Tab(icon: Icon(Icons.people_outline), text: 'Class Info'),
+                            Tab(
+                              icon: Icon(Icons.folder_outlined),
+                              text: 'Materials',
+                            ),
+                            Tab(
+                              icon: Icon(Icons.quiz_outlined),
+                              text: 'Quizzes',
+                            ),
+                            Tab(
+                              icon: Icon(Icons.people_outline),
+                              text: 'Class Info',
+                            ),
                           ],
                         ),
                       ),
@@ -414,7 +415,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   // ── Materials Tab View ─────────────────────────────────────────
   Widget _buildMaterialsTab(ClassModel liveClass) {
     return StreamBuilder<List<MaterialModel>>(
-      stream: widget.initialMaterialsStream ??
+      stream:
+          widget.initialMaterialsStream ??
           _materialService.streamClassMaterials(liveClass.id),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -514,8 +516,13 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     final currentUserId = AuthService().currentUser?.uid ?? '';
 
     return StreamBuilder<List<QuizModel>>(
-      stream: widget.initialQuizzesStream ??
-          _quizService.streamClassQuizzes(liveClass.id, type: 'practice', publishedOnly: true),
+      stream:
+          widget.initialQuizzesStream ??
+          _quizService.streamClassQuizzes(
+            liveClass.id,
+            type: 'practice',
+            publishedOnly: true,
+          ),
       builder: (context, quizSnapshot) {
         if (quizSnapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -619,24 +626,33 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   decoration: BoxDecoration(
                                     color: attemptCount > 0
                                         ? (attempt!.isPassed
-                                              ? Colors.green.withValues(alpha: 0.1)
-                                              : Colors.orange.withValues(alpha: 0.1))
+                                              ? Colors.green.withValues(
+                                                  alpha: 0.1,
+                                                )
+                                              : Colors.orange.withValues(
+                                                  alpha: 0.1,
+                                                ))
                                         : _primaryNavy.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(
                                     attemptCount > 0
-                                        ? (attempt!.isPassed ? Icons.check_circle : Icons.refresh)
+                                        ? (attempt!.isPassed
+                                              ? Icons.check_circle
+                                              : Icons.refresh)
                                         : Icons.quiz_outlined,
                                     color: attemptCount > 0
-                                        ? (attempt!.isPassed ? Colors.green : Colors.orange)
+                                        ? (attempt!.isPassed
+                                              ? Colors.green
+                                              : Colors.orange)
                                         : _primaryNavy,
                                   ),
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         quiz.title,
@@ -668,7 +684,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   _buildQuizStatusChip(
                                     label:
                                         'Score: ${attempt!.formattedScore} (${attempt.formattedPercentage})',
-                                    color: attempt.isPassed ? Colors.green : Colors.orange,
+                                    color: attempt.isPassed
+                                        ? Colors.green
+                                        : Colors.orange,
                                   ),
                                   _buildQuizStatusChip(
                                     label: 'Attempts: 2/2 (Max Reached)',
@@ -678,7 +696,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   _buildQuizStatusChip(
                                     label:
                                         'Attempt 1: ${attempt!.formattedScore} (${attempt.formattedPercentage})',
-                                    color: attempt.isPassed ? Colors.green : Colors.orange,
+                                    color: attempt.isPassed
+                                        ? Colors.green
+                                        : Colors.orange,
                                   ),
                                   _buildQuizStatusChip(
                                     label: '1 Attempt Remaining',
@@ -704,7 +724,9 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                                   _buildQuizStatusChip(
                                     label:
                                         'Due: ${_formatDeadline(assignment!.deadline!)}',
-                                    color: isExpired ? Colors.redAccent : Colors.indigo,
+                                    color: isExpired
+                                        ? Colors.redAccent
+                                        : Colors.indigo,
                                   ),
                               ],
                             ),
@@ -713,134 +735,189 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                               width: double.infinity,
                               child: (isClosed || isExpired) && attemptCount > 0
                                   ? OutlinedButton.icon(
-                                      onPressed: () => _showAttemptReview(attempt!, quiz),
-                                      icon: const Icon(Icons.assessment_outlined),
-                                      label: const Text('Review Results & Feedback'),
+                                      onPressed: () =>
+                                          _showAttemptReview(attempt!, quiz),
+                                      icon: const Icon(
+                                        Icons.assessment_outlined,
+                                      ),
+                                      label: const Text(
+                                        'Review Results & Feedback',
+                                      ),
                                     )
-                                   : (isClosed || isExpired)
-                                   ? ElevatedButton.icon(
-                                       style: ElevatedButton.styleFrom(
-                                         backgroundColor: Colors.grey[300],
-                                         foregroundColor: Colors.grey[700],
-                                         elevation: 0,
-                                         shape: RoundedRectangleBorder(
-                                           borderRadius: AppTheme.borderRadiusMd,
-                                         ),
-                                         padding: const EdgeInsets.symmetric(vertical: 10),
-                                       ),
-                                       onPressed: () {
-                                         ScaffoldMessenger.of(context).showSnackBar(
-                                           SnackBar(
-                                             content: Text(
-                                               isClosed
-                                                   ? 'This quiz has been closed by your teacher.'
-                                                   : 'The deadline for this quiz has passed.',
-                                             ),
-                                             backgroundColor: Colors.redAccent,
-                                           ),
-                                         );
-                                       },
-                                       icon: const Icon(Icons.lock_outline, size: 18),
-                                       label: Text(
-                                         isClosed ? 'Closed by Instructor' : 'Deadline Passed',
-                                         style: const TextStyle(fontWeight: FontWeight.w600),
-                                       ),
-                                     )
-                                   : attemptCount >= 2
-                                   ? OutlinedButton.icon(
-                                       style: OutlinedButton.styleFrom(
-                                         foregroundColor: _primaryNavy,
-                                         side: const BorderSide(color: _primaryNavy),
-                                         shape: RoundedRectangleBorder(
-                                           borderRadius: AppTheme.borderRadiusMd,
-                                         ),
-                                         padding: const EdgeInsets.symmetric(vertical: 10),
-                                       ),
-                                       onPressed: () => _showAttemptReview(attempt!, quiz),
-                                       icon: const Icon(Icons.assessment_outlined, size: 18),
-                                       label: const Text(
-                                         'Review Results & Feedback (2/2 Used)',
-                                         style: TextStyle(fontWeight: FontWeight.w600),
-                                       ),
-                                     )
-                                   : attemptCount == 1
-                                   ? Row(
-                                       children: [
-                                         Expanded(
-                                           child: OutlinedButton.icon(
-                                             style: OutlinedButton.styleFrom(
-                                               foregroundColor: _primaryNavy,
-                                               side: const BorderSide(color: _primaryNavy),
-                                               shape: RoundedRectangleBorder(
-                                                 borderRadius: AppTheme.borderRadiusMd,
-                                               ),
-                                               padding: const EdgeInsets.symmetric(vertical: 10),
-                                             ),
-                                             onPressed: () => _showAttemptReview(attempt!, quiz),
-                                             icon: const Icon(Icons.assessment_outlined, size: 16),
-                                             label: const Text(
-                                               'Review #1',
-                                               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                             ),
-                                           ),
-                                         ),
-                                         const SizedBox(width: 8),
-                                         Expanded(
-                                           child: ElevatedButton.icon(
-                                             style: ElevatedButton.styleFrom(
-                                               backgroundColor: _primaryNavy,
-                                               foregroundColor: Colors.white,
-                                               shape: RoundedRectangleBorder(
-                                                 borderRadius: AppTheme.borderRadiusMd,
-                                               ),
-                                               padding: const EdgeInsets.symmetric(vertical: 10),
-                                             ),
-                                             onPressed: () {
-                                               Navigator.push(
-                                                 context,
-                                                 MaterialPageRoute(
-                                                   builder: (context) => AnswerQuizScreen(
-                                                     quiz: quiz,
-                                                     attemptNumber: 2,
-                                                   ),
-                                                 ),
-                                               );
-                                             },
-                                             icon: const Icon(Icons.shuffle_rounded, size: 16),
-                                             label: const Text(
-                                               'Retake #2',
-                                               style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                             ),
-                                           ),
-                                         ),
-                                       ],
-                                     )
-                                   : ElevatedButton.icon(
-                                       style: ElevatedButton.styleFrom(
-                                         backgroundColor: _primaryNavy,
-                                         foregroundColor: Colors.white,
-                                         shape: RoundedRectangleBorder(
-                                           borderRadius: AppTheme.borderRadiusMd,
-                                         ),
-                                         padding: const EdgeInsets.symmetric(vertical: 10),
-                                       ),
-                                       onPressed: () {
-                                         Navigator.push(
-                                           context,
-                                           MaterialPageRoute(
-                                             builder: (context) => AnswerQuizScreen(
-                                               quiz: quiz,
-                                               attemptNumber: 1,
-                                             ),
-                                           ),
-                                         );
-                                       },
-                                       icon: const Icon(Icons.play_arrow_rounded, size: 18),
-                                       label: const Text(
-                                         'Start Practice Quiz',
-                                         style: TextStyle(fontWeight: FontWeight.w600),
-                                       ),
-                                     ),
+                                  : (isClosed || isExpired)
+                                  ? ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.grey[300],
+                                        foregroundColor: Colors.grey[700],
+                                        elevation: 0,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: AppTheme.borderRadiusMd,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        AppFeedback.warning(
+                                          context,
+                                          isClosed
+                                              ? 'Your teacher has closed this quiz, so it no longer accepts submissions.'
+                                              : 'The deadline has passed, so this quiz no longer accepts submissions.',
+                                          title: 'Quiz unavailable',
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.lock_outline,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        isClosed
+                                            ? 'Closed by Instructor'
+                                            : 'Deadline Passed',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    )
+                                  : attemptCount >= 2
+                                  ? OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: _primaryNavy,
+                                        side: const BorderSide(
+                                          color: _primaryNavy,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: AppTheme.borderRadiusMd,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                        ),
+                                      ),
+                                      onPressed: () =>
+                                          _showAttemptReview(attempt!, quiz),
+                                      icon: const Icon(
+                                        Icons.assessment_outlined,
+                                        size: 18,
+                                      ),
+                                      label: const Text(
+                                        'Review Results & Feedback (2/2 Used)',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    )
+                                  : attemptCount == 1
+                                  ? Row(
+                                      children: [
+                                        Expanded(
+                                          child: OutlinedButton.icon(
+                                            style: OutlinedButton.styleFrom(
+                                              foregroundColor: _primaryNavy,
+                                              side: const BorderSide(
+                                                color: _primaryNavy,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    AppTheme.borderRadiusMd,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                  ),
+                                            ),
+                                            onPressed: () => _showAttemptReview(
+                                              attempt!,
+                                              quiz,
+                                            ),
+                                            icon: const Icon(
+                                              Icons.assessment_outlined,
+                                              size: 16,
+                                            ),
+                                            label: const Text(
+                                              'Review #1',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: ElevatedButton.icon(
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: _primaryNavy,
+                                              foregroundColor: Colors.white,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    AppTheme.borderRadiusMd,
+                                              ),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 10,
+                                                  ),
+                                            ),
+                                            onPressed: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      AnswerQuizScreen(
+                                                        quiz: quiz,
+                                                        attemptNumber: 2,
+                                                      ),
+                                                ),
+                                              );
+                                            },
+                                            icon: const Icon(
+                                              Icons.shuffle_rounded,
+                                              size: 16,
+                                            ),
+                                            label: const Text(
+                                              'Retake #2',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : ElevatedButton.icon(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _primaryNavy,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: AppTheme.borderRadiusMd,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 10,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                AnswerQuizScreen(
+                                                  quiz: quiz,
+                                                  attemptNumber: 1,
+                                                ),
+                                          ),
+                                        );
+                                      },
+                                      icon: const Icon(
+                                        Icons.play_arrow_rounded,
+                                        size: 18,
+                                      ),
+                                      label: const Text(
+                                        'Start Practice Quiz',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
                             ),
                           ],
                         ),
@@ -1064,7 +1141,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   // ── People & Class Info Tab View ───────────────────────────────
   Widget _buildPeopleTab(ClassModel liveClass) {
     return StreamBuilder<List<ClassMember>>(
-      stream: widget.initialPeopleStream ??
+      stream:
+          widget.initialPeopleStream ??
           _classService.getClassMembersStream(liveClass.id),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {

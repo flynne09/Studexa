@@ -1,6 +1,6 @@
 # Studexa UI Design Walkthrough
 
-Verified on 2026-09-12 against the current working tree. This pass improves visual hierarchy, spacing, consistency, responsiveness, and feedback states. It does not change authentication, navigation destinations, Firestore queries, quiz generation, scoring, submission rules, or any other application workflow.
+Verified on 2026-09-12 against the current working tree. The design now presents Studexa as a fuller academic portal through layered classroom canvases, prominent role dashboards, richer class cards, stronger information hierarchy, and clearer state treatments. It does not change authentication, navigation destinations, Firestore queries, quiz generation, scoring, submission rules, or any other application workflow.
 
 ## Design direction
 
@@ -31,6 +31,16 @@ Green, orange, red, and blue semantic tokens are reserved for success, warning, 
 - Unified input, button, card, dialog, bottom-sheet, divider, snackbar, checkbox, radio, progress, and tooltip styling.
 - Transparent Material surface tint so warm-white surfaces retain their intended color.
 - Content width limits of 600dp for compact forms and 840dp for dashboards/details on wide screens.
+
+[`studexa_background.dart`](../lib/widgets/studexa_background.dart) adds the shared academic canvas used across authentication, teacher, student, class, quiz, results, and upload experiences. Its low-opacity grid and circular forms use the existing navy/lavender palette and sit behind all controls without intercepting input.
+
+## Academic portal depth
+
+- Teacher and student account summaries are now prominent navy feature panels instead of plain utility cards. Their identity, role, and account actions form one clear dashboard anchor.
+- Teacher quick actions use distinct primary and secondary feature cards with large icon tiles, directional cues, stronger depth, and more generous spacing.
+- Class cards now read as individual course spaces. Teacher cards include a dedicated course icon, separated enrollment metadata, and a focused upload action. Student cards use a navy course banner, instructor metadata, join-code badge, and a separate destination row.
+- The shared surface system uses 18dp cards, 24dp feature panels, layered navy-tinted shadows, subtle outlines, pill chips, and consistent tab typography.
+- Class details, quiz review, monitoring, results, upload, join-class, and active-attempt pages use the same academic canvas so navigation feels like one product rather than unrelated forms.
 
 [`main.dart`](../lib/main.dart) applies this system to the normal application and the Firebase connection-error screen.
 
