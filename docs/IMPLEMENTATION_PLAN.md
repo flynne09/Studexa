@@ -19,13 +19,15 @@ flowchart TD
     subgraph Firebase["Firebase Platform"]
         Auth["Firebase Authentication (Role-based Email/Password)"]
         Firestore["Cloud Firestore (named database: default)"]
-        Storage["Firebase Storage (uploads/{teacherId}/...)"]
         Functions["Cloud Functions v2 (configured Node 20)"]
     end
 
-    subgraph External["AI & Preview Services"]
+    subgraph Supabase["Supabase Platform"]
+        Storage["Private Storage (study-materials/uploads/{teacherId}/...)"]
+    end
+
+    subgraph External["AI Services"]
         Gemini["Google Gemini API (server secret; default gemini-3.6-flash)"]
-        DriveAPI["Google Drive v3 API (PPTX/DOCX to PDF Preview Conversion)"]
     end
 
     TeacherUI -->|Auth & Token| Auth
@@ -33,9 +35,7 @@ flowchart TD
     TeacherUI -->|On-Device Text Extraction| Extractor
     Extractor -->|Direct Ready Text| Firestore
     TeacherUI -->|Non-Blocking Parallel Upload| Storage
-    Storage -->|Storage Trigger| Functions
-    Functions -->|Office Preview Conversion| DriveAPI
-    DriveAPI -->|Preview PDF Stream| Storage
+    Auth -->|Firebase ID Token| Storage
     TeacherUI -->|Generate Quiz Request| QuizGen
     QuizGen -->|Firebase ID token and material IDs| Functions
     Functions -->|Read owned material and Actual reference| Firestore
@@ -62,10 +62,11 @@ flowchart TD
    - High-performance on-device extraction engine (`DocumentTextExtractor`) parses PDF, DOCX, and PPTX directly in Flutter.
    - Saves extracted text immediately to Firestore with `status: 'ready'`, decoupling quiz creation from cloud cold starts or storage upload failures.
 
-3. **Decoupled Parallel Upload Pipeline (Task 7)**:
-   - Firebase Storage upload is initiated concurrently with client-side text extraction.
+3. **Decoupled Parallel Upload Pipeline (Supabase Storage revision, 2026-09-17)**:
+   - Private Supabase Storage upload is initiated concurrently with client-side text extraction and authorized with the current Firebase ID token.
    - The UI never waits on network upload timeouts (formerly 15s–30s). As soon as text extraction completes (~1.3s) and the Firestore document is saved, the teacher is unblocked immediately to configure and generate quizzes.
-   - Storage upload runs in the background and populates `downloadUrl` when complete.
+   - Storage upload runs in the background and updates `storageUploadStatus`; private object paths are retained instead of expiring URLs.
+   - The legacy Firebase Storage trigger no longer receives new uploads. New DOCX/PPTX files therefore use external-app and extracted-text fallback unless preview conversion is later ported to another backend.
 
 4. **Deterministic Multi-Layered Scoring & Typos**:
    - Length-tiered Levenshtein distance tolerance: $\le 4$ chars $\to 0$ typos; $5-8$ chars $\to 1$ typo; $\ge 9$ chars $\to 2$ typos.
@@ -114,12 +115,15 @@ teacherId: string
 classId: string
 fileName: string
 fileType: "pdf" | "pptx" | "docx" | "txt"
-fileRef: string (storage path: uploads/{teacherId}/{materialId}/{fileName})
-downloadUrl?: string (Firebase Storage direct download URL)
+fileRef: string (Supabase object path: uploads/{teacherId}/{materialId}/{fileName})
+storageProvider: "supabase" (legacy records default to "firebase")
+storageBucket: "study-materials"
+storageUploadStatus: "uploading" | "completed" | "failed"
+downloadUrl?: string (legacy Firebase direct download URL only)
 status: "ready" | "failed" | "processing"
 errorReason?: string ("no_extractable_text" | "parse_error" | "file_too_large" | "empty_file")
 extractedText: string
-conversionStatus: "completed" | "pending" | "failed"
+conversionStatus: "completed" | "pending" | "failed" | "unsupported"
 convertedPdfRef?: string (uploads/{teacherId}/{materialId}/preview.pdf)
 convertedPdfUrl?: string (download URL for converted preview)
 convertedAt?: Timestamp

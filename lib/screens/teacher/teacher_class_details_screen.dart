@@ -348,6 +348,8 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                             fileRef: material.fileRef,
                             fileName: material.fileName,
                             convertedPdfRef: material.convertedPdfRef,
+                            storageProvider: material.storageProvider,
+                            storageBucket: material.storageBucket,
                           );
                           if (!mounted) return;
                           AppFeedback.success(

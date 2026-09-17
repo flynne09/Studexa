@@ -211,11 +211,13 @@ void main() {
           extension: 'jpg',
           byteLength: 1000,
         ),
-        throwsA(isA<MaterialValidationException>().having(
-          (e) => e.message,
-          'message',
-          contains('Unsupported file format ".jpg"'),
-        )),
+        throwsA(
+          isA<MaterialValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('Unsupported file format ".jpg"'),
+          ),
+        ),
       );
 
       expect(
@@ -235,11 +237,13 @@ void main() {
           extension: 'pdf',
           byteLength: 0,
         ),
-        throwsA(isA<MaterialValidationException>().having(
-          (e) => e.message,
-          'message',
-          contains('empty (0 bytes)'),
-        )),
+        throwsA(
+          isA<MaterialValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('empty (0 bytes)'),
+          ),
+        ),
       );
     });
 
@@ -251,11 +255,13 @@ void main() {
           extension: 'pdf',
           byteLength: oversized,
         ),
-        throwsA(isA<MaterialValidationException>().having(
-          (e) => e.message,
-          'message',
-          contains('exceeds the 50 MB upload limit'),
-        )),
+        throwsA(
+          isA<MaterialValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('exceeds the 50 MB upload limit'),
+          ),
+        ),
       );
     });
 
@@ -267,11 +273,13 @@ void main() {
           extension: 'pdf',
           byteLength: 1024,
         ),
-        throwsA(isA<MaterialValidationException>().having(
-          (e) => e.message,
-          'message',
-          contains('A target class must be selected'),
-        )),
+        throwsA(
+          isA<MaterialValidationException>().having(
+            (e) => e.message,
+            'message',
+            contains('A target class must be selected'),
+          ),
+        ),
       );
     });
 
@@ -300,42 +308,48 @@ void main() {
         errorReason: 'file_bytes_unavailable',
         createdAt: DateTime.now(),
       );
-      expect(unavailable.formattedError, contains('Original document file is unavailable'));
+      expect(
+        unavailable.formattedError,
+        contains('Original document file is unavailable'),
+      );
     });
 
-    test('formattedError accurately distinguishes parse_error from no_extractable_text', () {
-      final parseErrorModel = MaterialModel(
-        id: 'mat_parse',
-        teacherId: 't1',
-        classId: 'c1',
-        fileName: 'corrupt.pdf',
-        fileType: 'pdf',
-        fileRef: 'ref',
-        status: 'failed',
-        errorReason: 'parse_error',
-        createdAt: DateTime.now(),
-      );
-      expect(
-        parseErrorModel.formattedError,
-        "This file couldn't be processed — try re-exporting it or use a different format.",
-      );
+    test(
+      'formattedError accurately distinguishes parse_error from no_extractable_text',
+      () {
+        final parseErrorModel = MaterialModel(
+          id: 'mat_parse',
+          teacherId: 't1',
+          classId: 'c1',
+          fileName: 'corrupt.pdf',
+          fileType: 'pdf',
+          fileRef: 'ref',
+          status: 'failed',
+          errorReason: 'parse_error',
+          createdAt: DateTime.now(),
+        );
+        expect(
+          parseErrorModel.formattedError,
+          "This file couldn't be processed — try re-exporting it or use a different format.",
+        );
 
-      final noTextModel = MaterialModel(
-        id: 'mat_notext',
-        teacherId: 't1',
-        classId: 'c1',
-        fileName: 'scanned_image.pdf',
-        fileType: 'pdf',
-        fileRef: 'ref',
-        status: 'failed',
-        errorReason: 'no_extractable_text',
-        createdAt: DateTime.now(),
-      );
-      expect(
-        noTextModel.formattedError,
-        'No extractable text found in this file. Please ensure the document contains readable text and is not a scanned image (OCR is not supported in Phase 1).',
-      );
-    });
+        final noTextModel = MaterialModel(
+          id: 'mat_notext',
+          teacherId: 't1',
+          classId: 'c1',
+          fileName: 'scanned_image.pdf',
+          fileType: 'pdf',
+          fileRef: 'ref',
+          status: 'failed',
+          errorReason: 'no_extractable_text',
+          createdAt: DateTime.now(),
+        );
+        expect(
+          noTextModel.formattedError,
+          'No extractable text found in this file. Please ensure the document contains readable text and is not a scanned image (OCR is not supported in Phase 1).',
+        );
+      },
+    );
 
     test('supports downloadUrl serialization and copyWith', () {
       final model = MaterialModel(
@@ -345,7 +359,8 @@ void main() {
         fileName: 'lesson.pdf',
         fileType: 'pdf',
         fileRef: 'uploads/t1/mat_dl/lesson.pdf',
-        downloadUrl: 'https://firebasestorage.googleapis.com/v0/b/bucket/o/lesson.pdf?alt=media',
+        downloadUrl:
+            'https://firebasestorage.googleapis.com/v0/b/bucket/o/lesson.pdf?alt=media',
         status: 'ready',
         createdAt: DateTime.now(),
       );
@@ -361,60 +376,100 @@ void main() {
       expect(copied.fileName, 'lesson.pdf');
     });
 
-    test('MaterialService deleteMaterial signature accepts optional fileName and convertedPdfRef for cleanup', () async {
-      final service = MaterialService();
-      try {
-        await service.deleteMaterial(
-          materialId: 'test_mat_123',
-          fileRef: 'uploads/t1/test_mat_123/lesson.pptx',
-          fileName: 'lesson.pptx',
-          convertedPdfRef: 'uploads/t1/test_mat_123/preview.pdf',
-        );
-      } catch (e) {
-        // Expected when running outside live Firebase environment
-        expect(e, isNotNull);
-      }
-    });
-
-    test('supports converted PDF fields and conversionStatus serialization', () {
-      final now = DateTime.now();
+    test('supports Supabase storage metadata serialization', () {
       final model = MaterialModel(
-        id: 'mat_conv_01',
-        teacherId: 't1',
-        classId: 'c1',
-        fileName: 'presentation.pptx',
-        fileType: 'pptx',
-        fileRef: 'uploads/t1/mat_conv_01/presentation.pptx',
-        convertedPdfRef: 'uploads/t1/mat_conv_01/preview.pdf',
-        convertedPdfUrl: 'https://storage.googleapis.com/test/preview.pdf',
+        id: 'mat_supabase',
+        teacherId: 'teacher_1',
+        classId: 'class_1',
+        fileName: 'lesson.pdf',
+        fileType: 'pdf',
+        fileRef: 'uploads/teacher_1/mat_supabase/lesson.pdf',
+        storageProvider: 'supabase',
+        storageBucket: 'study-materials',
+        storageUploadStatus: 'uploading',
         conversionStatus: 'completed',
-        convertedAt: now,
         status: 'ready',
-        createdAt: now,
+        createdAt: DateTime.now(),
       );
 
-      expect(model.hasConvertedPdf, isTrue);
-      expect(model.isConverting, isFalse);
-      expect(model.conversionFailed, isFalse);
+      final restored = MaterialModel.fromMap(model.toMap(), model.id);
 
-      final map = model.toMap();
-      expect(map['convertedPdfRef'], 'uploads/t1/mat_conv_01/preview.pdf');
-      expect(map['convertedPdfUrl'], 'https://storage.googleapis.com/test/preview.pdf');
-      expect(map['conversionStatus'], 'completed');
-
-      final deserialized = MaterialModel.fromMap(map, 'mat_conv_01');
-      expect(deserialized.convertedPdfRef, 'uploads/t1/mat_conv_01/preview.pdf');
-      expect(deserialized.convertedPdfUrl, 'https://storage.googleapis.com/test/preview.pdf');
-      expect(deserialized.conversionStatus, 'completed');
-      expect(deserialized.hasConvertedPdf, isTrue);
-
-      final converting = deserialized.copyWith(conversionStatus: 'pending');
-      expect(converting.isConverting, isTrue);
-      expect(converting.hasConvertedPdf, isFalse);
-
-      final failed = deserialized.copyWith(conversionStatus: 'failed');
-      expect(failed.conversionFailed, isTrue);
-      expect(failed.hasConvertedPdf, isFalse);
+      expect(restored.storageProvider, 'supabase');
+      expect(restored.storageBucket, 'study-materials');
+      expect(restored.storageUploadStatus, 'uploading');
+      expect(restored.fileRef, model.fileRef);
+      expect(restored.downloadUrl, isNull);
     });
+
+    test(
+      'MaterialService deleteMaterial signature accepts optional fileName and convertedPdfRef for cleanup',
+      () async {
+        final service = MaterialService();
+        try {
+          await service.deleteMaterial(
+            materialId: 'test_mat_123',
+            fileRef: 'uploads/t1/test_mat_123/lesson.pptx',
+            fileName: 'lesson.pptx',
+            convertedPdfRef: 'uploads/t1/test_mat_123/preview.pdf',
+          );
+        } catch (e) {
+          // Expected when running outside live Firebase environment
+          expect(e, isNotNull);
+        }
+      },
+    );
+
+    test(
+      'supports converted PDF fields and conversionStatus serialization',
+      () {
+        final now = DateTime.now();
+        final model = MaterialModel(
+          id: 'mat_conv_01',
+          teacherId: 't1',
+          classId: 'c1',
+          fileName: 'presentation.pptx',
+          fileType: 'pptx',
+          fileRef: 'uploads/t1/mat_conv_01/presentation.pptx',
+          convertedPdfRef: 'uploads/t1/mat_conv_01/preview.pdf',
+          convertedPdfUrl: 'https://storage.googleapis.com/test/preview.pdf',
+          conversionStatus: 'completed',
+          convertedAt: now,
+          status: 'ready',
+          createdAt: now,
+        );
+
+        expect(model.hasConvertedPdf, isTrue);
+        expect(model.isConverting, isFalse);
+        expect(model.conversionFailed, isFalse);
+
+        final map = model.toMap();
+        expect(map['convertedPdfRef'], 'uploads/t1/mat_conv_01/preview.pdf');
+        expect(
+          map['convertedPdfUrl'],
+          'https://storage.googleapis.com/test/preview.pdf',
+        );
+        expect(map['conversionStatus'], 'completed');
+
+        final deserialized = MaterialModel.fromMap(map, 'mat_conv_01');
+        expect(
+          deserialized.convertedPdfRef,
+          'uploads/t1/mat_conv_01/preview.pdf',
+        );
+        expect(
+          deserialized.convertedPdfUrl,
+          'https://storage.googleapis.com/test/preview.pdf',
+        );
+        expect(deserialized.conversionStatus, 'completed');
+        expect(deserialized.hasConvertedPdf, isTrue);
+
+        final converting = deserialized.copyWith(conversionStatus: 'pending');
+        expect(converting.isConverting, isTrue);
+        expect(converting.hasConvertedPdf, isFalse);
+
+        final failed = deserialized.copyWith(conversionStatus: 'failed');
+        expect(failed.conversionFailed, isTrue);
+        expect(failed.hasConvertedPdf, isFalse);
+      },
+    );
   });
 }

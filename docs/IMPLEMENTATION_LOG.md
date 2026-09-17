@@ -2,19 +2,19 @@
 
 ## CURRENT STATUS
 - Overall status: `DEVELOPMENT_ACTIVE`
-- Current phase: `User Feedback Messaging Polish Complete`
-- Last completed task: Standardized app-wide error, warning, information, and success feedback with clear titles, actionable wording, accessible semantics, and the existing Studexa palette.
-- Current task: Feedback-message implementation and automated verification complete; on-device launcher icon verification remains pending.
-- NEXT TASK: Connect an Android device or install an emulator system image, install the fresh debug APK, and visually confirm the home-screen/app-drawer icon.
-- Blockers: No Android device is connected and no Android emulator/system image is installed on this machine.
-- Last verified: 2026-09-13: `flutter analyze` passed with no issues and 57 targeted auth/material/quiz/student/teacher tests passed; launcher generation and APK resource verification remain valid from the preceding task.
+- Current phase: `Supabase Storage Migration Live Verified`
+- Last completed task: Configured and live-tested private Supabase original-material storage with Firebase JWT authorization, including upload, download, object listing, delete, cross-user denial, and cleanup.
+- Current task: Supabase migration and live backend verification complete; a signed-in native device walkthrough remains pending.
+- NEXT TASK: Restart the IDE run configuration, sign in as a teacher, upload a fresh PDF, and confirm it opens from the class material list on the target device.
+- Blockers: No Android device/emulator is connected. Windows desktop build also requires Windows Developer Mode for plugin symlink support; configured web build succeeds.
+- Last verified: 2026-09-17: live Supabase RLS smoke test passed, configured web debug build passed, `flutter analyze` passed, focused material tests passed 16/16, and the preceding full Flutter suite passed 186/186.
 
 ## PROJECT SOURCE OF TRUTH
 - Application: `Studexa`
 - Tagline: `Turn Class Materials into Quizzes Practice Smarter, Together`
 - Platform: Android primary target; iOS, web and Windows project scaffolds also exist.
 - Users: Teacher and Student
-- Backend/data platform: Firebase (Auth, Cloud Firestore; Storage upload optional/non-blocking)
+- Backend/data platform: Firebase Authentication and Cloud Firestore, with Supabase Storage for optional/non-blocking original-material files
 - AI service: Authenticated existing Firebase HTTP function with server-only Gemini secret; default gemini-3.6-flash. Production secret/functions/rules deployed on 2026-09-11; native device walkthrough remains pending.
 - Main source: Phase 1 Project Documentation supplied by the project team
 - Week 11 target: Primary screen flows functional; minimum MVP feature set working; major navigation connected; end-to-end core user journey demonstrable.
@@ -41,14 +41,14 @@
 Never claim a task or test is complete without evidence.
 
 ## PROJECT DECISIONS
-- Architecture: Flutter client (Android target) connected to Firebase (Auth, Firestore, Storage optional).
+- Architecture: Flutter client (Android target) connected to Firebase Auth/Firestore and private Supabase Storage for original material files.
 - Gemini API Key Security (2026-09-11 revision): Supersedes the earlier client-key deviation. Flutter sends a Firebase ID token to generateQuizHttp; Secret Manager supplies GEMINI_API_KEY only to backend functions. No client secret or automatic fallback is used by runtime generation. See docs/INTEGRATION_REPORT.md for deployment steps.
 - Text Extraction Architecture (FR-05): DocumentTextExtractor runs on-device and saves ready text directly to materials. Optional background Storage extraction/preview functions remain; core upload readiness does not wait for them. Preserve the PDF sanitizer and parallel upload pipeline.
 - Firebase services:
   - Firebase Authentication: email/password with role-aware profile management and persistent session recovery on splash.
   - Cloud Firestore: application data storing users, classes, materials, quizzes, assignments, and attempts.
-  - Firebase Storage: Optional background original-file upload; generation needs saved extracted text, not a completed Storage upload. Service billing/quota availability is not guaranteed by code.
-  - Cloud Functions / Gemini: Authenticated server generation and optional Storage extraction/Office preview conversion. On-device PDF/DOCX/PPTX extraction remains the foreground path.
+  - Supabase Storage: Optional background original-file upload/download/delete using the existing Firebase ID token through Supabase third-party Auth. Generation needs saved extracted text, not a completed Storage upload.
+  - Cloud Functions / Gemini: Authenticated server generation remains. The legacy Firebase Storage extraction/Office preview trigger does not receive new Supabase uploads; on-device PDF/DOCX/PPTX extraction is the active foreground path, and new Office materials use external-app/text fallback instead of a pending converted preview.
 - Firestore schema:
   - `users/{uid}`: `{ uid, email, displayName, role: "teacher" | "student", createdAt, photoUrl }`
   - `classes/{classId}`: `{ name, joinCode, teacherId, status, createdAt, updatedAt }`
@@ -63,6 +63,7 @@ Never claim a task or test is complete without evidence.
 - UI source: Preserve existing Studexa visual design language (Navy `#1A237E`, lavender-to-blue gradient `#F3F0FF` to `#EFF6FF`, rounded surfaces `#FBF9F8`).
 
 ## COMPLETED TASKS
+- [x] Supabase Storage-only migration: added Firebase third-party JWT initialization, private `study-materials` bucket/RLS SQL, non-blocking Supabase original-file upload, authenticated byte downloads, Supabase deletion, Firestore storage metadata, legacy download-URL compatibility, and explicit DOCX/PPTX preview fallback; removed the Flutter Firebase Storage dependency.
 - [x] App-wide feedback-message polish: added the shared `AppFeedback` component and replaced one-off SnackBars across authentication, splash/session recovery, class joining, material viewing/upload, quiz taking, publishing/finalizing/deleting, and assignment monitoring. Messages now state the outcome and next step, use existing semantic palette tokens, include live-region semantics, and keep raw exceptions in debug logs instead of exposing them to users.
 - [x] Studexa launcher icon spacing: changed only the Android adaptive foreground inset from 0% to 12%, regenerated native launcher assets from the unchanged source, and confirmed the fresh APK packages the inset adaptive icon.
 - [x] Student Home profile refinement: changed the account card from the dark hero gradient to `AppTheme.surfaceWhite`, used `AppTheme.primaryNavy` (`#1A237E`) with `AppTheme.onPrimary` for Join Class, and removed the duplicate `student_logout_button`; logout remains in `student_header_avatar_menu` through `_handleLogout`.
@@ -2068,3 +2069,20 @@ Connect an Android device or install an emulator system image, install `build/ap
 - Files changed: `lib/widgets/app_feedback.dart`; `lib/screens/auth/login_screen.dart`; `lib/screens/auth/register_screen.dart`; `lib/screens/splash_screen.dart`; `lib/screens/materials/material_viewer_screen.dart`; `lib/screens/student/answer_quiz_screen.dart`; `lib/screens/student/join_class_screen.dart`; `lib/screens/student/student_class_details_screen.dart`; `lib/screens/teacher/quiz_detail_screen.dart`; `lib/screens/teacher/quiz_monitoring_screen.dart`; `lib/screens/teacher/teacher_class_details_screen.dart`; `lib/screens/teacher/teacher_home_screen.dart`; `lib/screens/teacher/upload_generate_quiz_screen.dart`; and `docs/IMPLEMENTATION_LOG.md`.
 - No dependency, service, model, navigation, Firebase, or database change was made.
 - Next task: connect an Android target and visually confirm the pending launcher-icon spacing; separately review feedback wording on-device if product copy adjustments are requested.
+
+### 2026-09-17 - Supabase Storage-only migration
+- Replaced the Flutter Firebase Storage dependency and the new-material upload/download/delete paths with `supabase_flutter: ^2.17.2`. Firebase Authentication, Cloud Firestore, on-device extraction, quiz data, and class data remain unchanged.
+- Added build-time `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` configuration. Supabase receives the current Firebase ID token through its supported third-party Auth access-token callback; no Supabase secret/service-role key is stored in the client.
+- Preserved the existing non-blocking architecture: Supabase upload begins in parallel, on-device extraction saves the Firestore material immediately, and `storageUploadStatus` records background completion or failure without persisting expiring signed URLs.
+- Added `storageProvider`, `storageBucket`, and `storageUploadStatus` material fields. Existing records default to the legacy Firebase provider and can still use a persisted `downloadUrl`; new records download private Supabase object bytes using `fileRef`.
+- Changed new DOCX/PPTX `conversionStatus` to `unsupported`, preventing an indefinite pending state because the legacy Firebase Storage-triggered converter does not receive Supabase events. External device-app opening and extracted-text fallback remain available.
+- Added `supabase/migrations/202609170001_study_material_storage.sql`, which creates the private 50 MB `study-materials` bucket and validates the exact Firebase issuer/audience plus UID-owned upload/delete paths. Read access matches the existing effective Firebase rule for signed-in Studexa users.
+- Added `docs/SUPABASE_STORAGE_SETUP.md` with the remaining dashboard SQL step, safe publishable-key configuration, run/build commands, expected behavior, and smoke-test checklist.
+- Verification: `flutter analyze` passed with no issues. The full serial Flutter regression suite passed 186/186, including 34 focused material/viewer/upload tests. `git diff --check` reported no whitespace errors, only Windows line-ending notices.
+- Follow-up diagnosis after the dashboard setup found that the local IDE `main.dart` run configuration still supplied no dart-defines and both Supabase environment values were absent. Added a fail-fast upload guard so missing configuration now produces a clear user-facing storage configuration error instead of silently saving a material with a failed background upload. Focused verification passed 16/16 material-service tests and `flutter analyze` remained clean.
+- Added the supplied project URL and publishable client key as safe defaults in `SupabaseConfig`, while retaining git-ignored `supabase.local.json` and dart-define overrides for other environments. This prevents IDE/device launch configurations from silently omitting Storage configuration. Only the client-safe publishable key is bundled; no secret/service-role credential is present.
+- Live verification against project `zuidphgogdwyrtndbgkx` used temporary Firebase users and the real Supabase Storage REST surface. Uploading to another UID folder was denied; own-folder upload returned 200; authenticated download returned 200 with byte-for-byte equality; listing showed the uploaded object; delete returned the deleted object; listing after delete was empty; and a bucket-wide smoke-folder audit returned zero. All temporary Firebase users and Supabase objects were deleted.
+- `flutter build web --debug --dart-define-from-file=supabase.local.json` succeeded. The equivalently configured Windows build reached the platform prerequisite check and stopped because Windows Developer Mode/symlink support is disabled, not because of an application or Supabase error.
+- After an IDE launch still omitted the dart-defines, embedded the public project URL/publishable key defaults, removed the no-longer-applicable missing-config test, and reran verification: `flutter analyze` passed and the 20 focused material service/viewer tests passed.
+- Files changed: `lib/config/supabase_config.dart`, `lib/main.dart`, `lib/models/material_model.dart`, `lib/services/material_service.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `test/material_service_test.dart`, `pubspec.yaml`, `pubspec.lock`, generated Windows plugin registration, `supabase/migrations/202609170001_study_material_storage.sql`, `docs/SUPABASE_STORAGE_SETUP.md`, and `docs/IMPLEMENTATION_LOG.md`.
+- Next task: run the Supabase SQL migration, provide the Project URL and Publishable key through dart-defines, and perform an authenticated PDF upload/download smoke test.

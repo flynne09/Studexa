@@ -1,21 +1,30 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Represents a study material uploaded by a teacher to Firebase Storage,
-/// tracked in Firestore `materials/{materialId}` and extracted by Cloud Functions.
+/// Represents a study material tracked in Firestore. New original files are
+/// stored in Supabase Storage while legacy records can still retain Firebase
+/// download URLs.
 class MaterialModel {
   final String id;
   final String teacherId;
   final String classId;
   final String fileName;
   final String fileType; // 'pdf' | 'pptx' | 'docx'
-  final String fileRef; // Storage path e.g. uploads/{teacherId}/{materialId}/{fileName}
-  final String? downloadUrl; // Direct download URL when stored in Firebase Storage
-  final String? convertedPdfRef; // Storage path of converted preview PDF (uploads/{teacherId}/{materialId}/preview.pdf)
+  final String
+  fileRef; // Storage path e.g. uploads/{teacherId}/{materialId}/{fileName}
+  final String
+  storageProvider; // 'supabase' for new files; 'firebase' for legacy records
+  final String? storageBucket;
+  final String? storageUploadStatus; // 'uploading' | 'completed' | 'failed'
+  final String? downloadUrl; // Legacy direct download URL
+  final String?
+  convertedPdfRef; // Storage path of converted preview PDF (uploads/{teacherId}/{materialId}/preview.pdf)
   final String? convertedPdfUrl; // Download URL of converted preview PDF
-  final String? conversionStatus; // 'pending' | 'completed' | 'failed' | 'unsupported'
+  final String?
+  conversionStatus; // 'pending' | 'completed' | 'failed' | 'unsupported'
   final DateTime? convertedAt;
   final String status; // 'pending' | 'processing' | 'ready' | 'failed'
-  final String? errorReason; // 'no_extractable_text' | 'unsupported_format' | 'parse_error' | etc.
+  final String?
+  errorReason; // 'no_extractable_text' | 'unsupported_format' | 'parse_error' | etc.
   final String extractedText;
   final DateTime createdAt;
   final DateTime? extractedAt;
@@ -28,6 +37,9 @@ class MaterialModel {
     required this.fileName,
     required this.fileType,
     required this.fileRef,
+    this.storageProvider = 'firebase',
+    this.storageBucket,
+    this.storageUploadStatus,
     this.downloadUrl,
     this.convertedPdfRef,
     this.convertedPdfUrl,
@@ -69,7 +81,8 @@ class MaterialModel {
       case 'file_bytes_unavailable':
         return 'Original document file is unavailable in storage. Please re-upload the document.';
       default:
-        return errorReason ?? 'An unknown error occurred while extracting text from the document.';
+        return errorReason ??
+            'An unknown error occurred while extracting text from the document.';
     }
   }
 
@@ -111,6 +124,9 @@ class MaterialModel {
     String? fileName,
     String? fileType,
     String? fileRef,
+    String? storageProvider,
+    String? storageBucket,
+    String? storageUploadStatus,
     String? downloadUrl,
     String? convertedPdfRef,
     String? convertedPdfUrl,
@@ -130,6 +146,9 @@ class MaterialModel {
       fileName: fileName ?? this.fileName,
       fileType: fileType ?? this.fileType,
       fileRef: fileRef ?? this.fileRef,
+      storageProvider: storageProvider ?? this.storageProvider,
+      storageBucket: storageBucket ?? this.storageBucket,
+      storageUploadStatus: storageUploadStatus ?? this.storageUploadStatus,
       downloadUrl: downloadUrl ?? this.downloadUrl,
       convertedPdfRef: convertedPdfRef ?? this.convertedPdfRef,
       convertedPdfUrl: convertedPdfUrl ?? this.convertedPdfUrl,
@@ -152,6 +171,10 @@ class MaterialModel {
       'fileName': fileName,
       'fileType': fileType.toLowerCase(),
       'fileRef': fileRef,
+      'storageProvider': storageProvider,
+      if (storageBucket != null) 'storageBucket': storageBucket,
+      if (storageUploadStatus != null)
+        'storageUploadStatus': storageUploadStatus,
       if (downloadUrl != null) 'downloadUrl': downloadUrl,
       if (convertedPdfRef != null) 'convertedPdfRef': convertedPdfRef,
       if (convertedPdfUrl != null) 'convertedPdfUrl': convertedPdfUrl,
@@ -181,6 +204,9 @@ class MaterialModel {
       fileName: (map['fileName'] as String?) ?? 'Unnamed Material',
       fileType: ((map['fileType'] as String?) ?? 'pdf').toLowerCase(),
       fileRef: (map['fileRef'] as String?) ?? '',
+      storageProvider: (map['storageProvider'] as String?) ?? 'firebase',
+      storageBucket: map['storageBucket'] as String?,
+      storageUploadStatus: map['storageUploadStatus'] as String?,
       downloadUrl: map['downloadUrl'] as String?,
       convertedPdfRef: map['convertedPdfRef'] as String?,
       convertedPdfUrl: map['convertedPdfUrl'] as String?,

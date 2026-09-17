@@ -2,9 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/supabase_config.dart';
 import '../models/material_model.dart';
 import '../utils/document_text_extractor.dart';
 import 'firestore_provider.dart';
@@ -18,17 +19,25 @@ class MaterialValidationException implements Exception {
   String toString() => message;
 }
 
-/// Service handling study material uploads, Firebase Storage persistence,
-/// and real-time Firestore tracking of Cloud Function text extraction.
+/// Service handling on-device material extraction, Supabase Storage
+/// persistence, and real-time Firestore tracking.
 class MaterialService {
   final FirebaseFirestore _firestore;
-  final FirebaseStorage _storage;
+  final SupabaseClient? _injectedSupabase;
 
-  MaterialService({
-    FirebaseFirestore? firestore,
-    FirebaseStorage? storage,
-  })  : _firestore = getAppFirestore(firestore),
-        _storage = storage ?? FirebaseStorage.instance;
+  MaterialService({FirebaseFirestore? firestore, SupabaseClient? supabase})
+    : _firestore = getAppFirestore(firestore),
+      _injectedSupabase = supabase;
+
+  SupabaseClient get _supabase {
+    if (_injectedSupabase != null) return _injectedSupabase;
+    if (!SupabaseConfig.isConfigured) {
+      throw const MaterialValidationException(
+        'File storage is not configured yet. Add the Supabase URL and publishable key to the app run configuration, then restart Studexa.',
+      );
+    }
+    return Supabase.instance.client;
+  }
 
   static const int maxFileSizeBytes = 50 * 1024 * 1024; // 50MB
   static const Set<String> supportedExtensions = {'pdf', 'pptx', 'docx'};
@@ -40,8 +49,12 @@ class MaterialService {
     required int byteLength,
   }) {
     final cleanExt = extension.toLowerCase().replaceAll('.', '').trim();
-    if (fileName.trim().isEmpty || fileName.contains('/') || fileName.contains('\\')) {
-      throw const MaterialValidationException('Choose a document with a valid file name.');
+    if (fileName.trim().isEmpty ||
+        fileName.contains('/') ||
+        fileName.contains('\\')) {
+      throw const MaterialValidationException(
+        'Choose a document with a valid file name.',
+      );
     }
 
     if (!supportedExtensions.contains(cleanExt)) {
@@ -86,8 +99,8 @@ class MaterialService {
 
   /// Uploads a study material file, extracts text on-device immediately,
   /// and writes the ready document directly to Firestore.
-  /// Firebase Storage upload is performed with a non-blocking timeout so users
-  /// on free Firebase tiers are never stuck in an infinite upload loop.
+  /// Supabase Storage upload is non-blocking so original-file network latency
+  /// never delays the ready extracted text used for quiz generation.
   Future<MaterialModel> uploadStudyMaterial({
     required String teacherId,
     required String classId,
@@ -123,50 +136,50 @@ class MaterialService {
     }
 
     if (teacherId.trim().isEmpty) {
-      throw const MaterialValidationException('Please sign in before uploading a document.');
+      throw const MaterialValidationException(
+        'Please sign in before uploading a document.',
+      );
     }
     if (resolvedBytes == null) {
-      throw const MaterialValidationException('The file could not be opened. Select it again and check that it is still accessible.');
+      throw const MaterialValidationException(
+        'The file could not be opened. Select it again and check that it is still accessible.',
+      );
     }
-    validateFile(fileName: fileName, extension: cleanExt, byteLength: resolvedBytes.length);
+    validateFile(
+      fileName: fileName,
+      extension: cleanExt,
+      byteLength: resolvedBytes.length,
+    );
+
+    // Missing build-time configuration is not a recoverable background upload
+    // failure. Stop here so the UI does not report a material as uploaded when
+    // no Supabase request could have been made.
+    final SupabaseClient supabase = _supabase;
 
     // 2. Prepare Firestore document ID and storage path up front
     final materialDocRef = _firestore.collection('materials').doc();
     final materialId = materialDocRef.id;
-    final storagePath = 'uploads/$teacherId/$materialId/$fileName';
+    final storageFileName = _safeStorageFileName(fileName);
+    final storagePath = 'uploads/$teacherId/$materialId/$storageFileName';
 
-    // 3. Initiate Firebase Storage upload concurrently with text extraction
-    UploadTask? uploadTask;
-    StreamSubscription<TaskSnapshot>? progressSub;
+    // 3. Initiate Supabase Storage upload concurrently with text extraction.
+    Future<void>? uploadFuture;
     try {
-      final storageRef = _storage.ref().child(storagePath);
-      final metadata = SettableMetadata(
-        contentType: MaterialModel.contentTypeForExtension(cleanExt),
-        customMetadata: {
-          'teacherId': teacherId,
-          'materialId': materialId,
-          'classId': cleanClassId,
-        },
-      );
-
-      uploadTask = storageRef.putData(resolvedBytes, metadata);
-
-      if (onProgress != null) {
-        progressSub = uploadTask.snapshotEvents.listen(
-          (TaskSnapshot snapshot) {
-            if (snapshot.totalBytes > 0) {
-              final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-              onProgress(progress);
-            }
-          },
-          onError: (err) {
-            debugPrint('Storage upload progress stream error: $err');
-          },
-          cancelOnError: true,
-        );
-      }
+      onProgress?.call(0.0);
+      uploadFuture = supabase.storage
+          .from(SupabaseConfig.storageBucket)
+          .uploadBinary(
+            storagePath,
+            resolvedBytes,
+            fileOptions: FileOptions(
+              contentType: MaterialModel.contentTypeForExtension(cleanExt),
+              upsert: false,
+            ),
+          )
+          .timeout(const Duration(seconds: 90))
+          .then<void>((_) {});
     } catch (e) {
-      debugPrint('Storage upload task initiation note: $e');
+      debugPrint('Supabase upload task initiation note: $e');
     }
 
     // 4. Perform client-side text extraction concurrently while bytes are streaming to Storage
@@ -204,49 +217,57 @@ class MaterialService {
       fileName: fileName,
       fileType: cleanExt,
       fileRef: storagePath,
+      storageProvider: 'supabase',
+      storageBucket: SupabaseConfig.storageBucket,
+      storageUploadStatus: uploadFuture == null ? 'failed' : 'uploading',
       status: initialStatus,
       errorReason: errorReason,
       extractedText: extractedText,
-      conversionStatus: cleanExt == 'pdf' ? 'completed' : 'pending',
+      conversionStatus: cleanExt == 'pdf' ? 'completed' : 'unsupported',
       createdAt: DateTime.now(),
       fileSizeBytes: resolvedBytes.length,
     );
 
     try {
-      await materialDocRef.set({
-        ...readyModel.toMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-        if (isExtracted) 'extractedAt': FieldValue.serverTimestamp(),
-      }).timeout(const Duration(seconds: 15));
+      await materialDocRef
+          .set({
+            ...readyModel.toMap(),
+            'createdAt': FieldValue.serverTimestamp(),
+            if (isExtracted) 'extractedAt': FieldValue.serverTimestamp(),
+          })
+          .timeout(const Duration(seconds: 15));
     } catch (_) {
-      await progressSub?.cancel();
-      if (uploadTask != null) {
-        unawaited(uploadTask.cancel().then<void>((_) {}, onError: (Object _) {}));
+      if (uploadFuture != null) {
+        unawaited(
+          uploadFuture.then(
+            (_) => _deleteSupabaseFiles([storagePath]),
+            onError: (_) {},
+          ),
+        );
       }
-      throw const MaterialValidationException('Could not save this material. Check your Internet connection and try again.');
+      throw const MaterialValidationException(
+        'Could not save this material. Check your Internet connection and try again.',
+      );
     }
 
-    // 6. Resolve Storage in the background, including URL/metadata requests.
-    // Ready text never waits for Storage or download URL resolution.
-    if (uploadTask != null) {
-      final storageRef = _storage.ref().child(storagePath);
-
-      // Background worker to finalize downloadUrl in Firestore without delaying UI
+    // 6. Record background upload completion without persisting an expiring URL.
+    if (uploadFuture != null) {
       unawaited(() async {
         try {
-          final snapshot = await uploadTask!.timeout(const Duration(seconds: 45));
-          if (snapshot.state == TaskState.success) {
-            try {
-              final url = await storageRef.getDownloadURL().timeout(const Duration(seconds: 10));
-              await materialDocRef.update({'downloadUrl': url}).timeout(const Duration(seconds: 10));
-            } catch (urlErr) {
-              debugPrint('Failed to get download URL in background: $urlErr');
-            }
-          }
+          await uploadFuture;
+          await materialDocRef
+              .update({'storageUploadStatus': 'completed'})
+              .timeout(const Duration(seconds: 10));
         } catch (storageErr) {
-          debugPrint('Background storage upload note: $storageErr');
+          debugPrint('Background Supabase upload note: $storageErr');
+          try {
+            await materialDocRef
+                .update({'storageUploadStatus': 'failed'})
+                .timeout(const Duration(seconds: 10));
+          } catch (updateErr) {
+            debugPrint('Could not record Supabase upload failure: $updateErr');
+          }
         } finally {
-          await progressSub?.cancel();
           onProgress?.call(1.0);
         }
       }());
@@ -257,9 +278,9 @@ class MaterialService {
     return readyModel;
   }
 
-  /// Fetch raw bytes for a material file (via download URL or directly from Storage)
+  /// Fetch raw bytes from Supabase, with legacy URL support for old records.
   Future<Uint8List?> getMaterialFileBytes(MaterialModel material) async {
-    // 1. Try downloadUrl via HTTP
+    // 1. Preserve access to legacy records that have a direct Firebase URL.
     if (material.downloadUrl != null && material.downloadUrl!.isNotEmpty) {
       try {
         final response = await http
@@ -273,18 +294,18 @@ class MaterialService {
       }
     }
 
-    // 2. Try direct Storage path ref
-    if (material.fileRef.isNotEmpty) {
+    // 2. New records use their private Supabase bucket and object path.
+    if (material.storageProvider == 'supabase' && material.fileRef.isNotEmpty) {
       try {
-        final bytes = await _storage
-            .ref()
-            .child(material.fileRef)
-            .getData(maxFileSizeBytes).timeout(const Duration(seconds: 15));
-        if (bytes != null && bytes.isNotEmpty) {
+        final bytes = await _supabase.storage
+            .from(material.storageBucket ?? SupabaseConfig.storageBucket)
+            .download(material.fileRef)
+            .timeout(const Duration(seconds: 30));
+        if (bytes.isNotEmpty) {
           return bytes;
         }
       } catch (e) {
-        debugPrint('Failed to fetch material bytes via Storage ref: $e');
+        debugPrint('Failed to fetch material bytes from Supabase: $e');
       }
     }
 
@@ -308,19 +329,20 @@ class MaterialService {
       }
     }
 
-    // 2. Try direct Storage path ref
+    // 2. New converted previews, if added later, can also live in Supabase.
     if (material.convertedPdfRef != null &&
-        material.convertedPdfRef!.isNotEmpty) {
+        material.convertedPdfRef!.isNotEmpty &&
+        material.storageProvider == 'supabase') {
       try {
-        final bytes = await _storage
-            .ref()
-            .child(material.convertedPdfRef!)
-            .getData(maxFileSizeBytes).timeout(const Duration(seconds: 15));
-        if (bytes != null && bytes.isNotEmpty) {
+        final bytes = await _supabase.storage
+            .from(material.storageBucket ?? SupabaseConfig.storageBucket)
+            .download(material.convertedPdfRef!)
+            .timeout(const Duration(seconds: 30));
+        if (bytes.isNotEmpty) {
           return bytes;
         }
       } catch (e) {
-        debugPrint('Failed to fetch converted PDF bytes via Storage ref: $e');
+        debugPrint('Failed to fetch converted PDF from Supabase: $e');
       }
     }
 
@@ -347,11 +369,9 @@ class MaterialService {
 
   /// Stream a single material document in real time to monitor extraction status
   Stream<MaterialModel?> streamMaterial(String materialId) {
-    return _firestore
-        .collection('materials')
-        .doc(materialId)
-        .snapshots()
-        .map((snapshot) {
+    return _firestore.collection('materials').doc(materialId).snapshots().map((
+      snapshot,
+    ) {
       if (!snapshot.exists || snapshot.data() == null) return null;
       return MaterialModel.fromMap(snapshot.data()!, snapshot.id);
     });
@@ -364,12 +384,12 @@ class MaterialService {
         .where('classId', isEqualTo: classId)
         .snapshots()
         .map((snapshot) {
-      final materials = snapshot.docs
-          .map((doc) => MaterialModel.fromMap(doc.data(), doc.id))
-          .toList();
-      materials.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return materials;
-    });
+          final materials = snapshot.docs
+              .map((doc) => MaterialModel.fromMap(doc.data(), doc.id))
+              .toList();
+          materials.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return materials;
+        });
   }
 
   /// Stream all materials uploaded by a teacher, optionally filtered by classId
@@ -397,7 +417,10 @@ class MaterialService {
   /// Reset a failed extraction attempt and re-attempt extraction if bytes are retrievable
   Future<void> retryMaterialExtraction(String materialId) async {
     try {
-      final doc = await _firestore.collection('materials').doc(materialId).get();
+      final doc = await _firestore
+          .collection('materials')
+          .doc(materialId)
+          .get();
       if (doc.exists && doc.data() != null) {
         final mat = MaterialModel.fromMap(doc.data()!, doc.id);
         final bytes = await getMaterialFileBytes(mat);
@@ -411,7 +434,9 @@ class MaterialService {
             'status': isExtracted ? 'ready' : 'failed',
             'extractedText': extractionResult.text,
             'extractedAt': isExtracted ? FieldValue.serverTimestamp() : null,
-            'errorReason': isExtracted ? FieldValue.delete() : (extractionResult.errorReason ?? 'no_extractable_text'),
+            'errorReason': isExtracted
+                ? FieldValue.delete()
+                : (extractionResult.errorReason ?? 'no_extractable_text'),
           });
           return;
         }
@@ -435,43 +460,35 @@ class MaterialService {
     );
   }
 
-  /// Delete a material from both Firestore and Firebase Storage, and clean up
+  /// Delete a material from Firestore and Supabase Storage, and clean up
   /// any orphaned draft quizzes and locally cached temporary files.
   Future<void> deleteMaterial({
     required String materialId,
     required String fileRef,
     String? fileName,
     String? convertedPdfRef,
+    String storageProvider = 'supabase',
+    String? storageBucket,
   }) async {
     // 1. Delete Firestore material doc immediately so real-time UI streams reflect deletion
-    final firestoreDelete = _firestore.collection('materials').doc(materialId).delete();
+    final firestoreDelete = _firestore
+        .collection('materials')
+        .doc(materialId)
+        .delete();
 
     // 2. Concurrently clean up orphaned draft quizzes referencing this material
     final quizCleanup = _cleanupMaterialQuizzes(materialId);
 
-    // 3. Concurrently delete Firebase Storage file with a strict 5s timeout
-    final storageDelete = (fileRef.isNotEmpty)
-        ? _storage
-            .ref()
-            .child(fileRef)
-            .delete()
-            .timeout(const Duration(seconds: 5))
-            .catchError((err) {
-              debugPrint('Storage deletion non-critical notice: $err');
-            })
-        : Future.value();
-
-    // Concurrently delete converted preview PDF if present
-    final convertedStorageDelete = (convertedPdfRef != null && convertedPdfRef.isNotEmpty)
-        ? _storage
-            .ref()
-            .child(convertedPdfRef)
-            .delete()
-            .timeout(const Duration(seconds: 5))
-            .catchError((err) {
-              debugPrint('Converted PDF deletion non-critical notice: $err');
-            })
-        : Future.value();
+    // 3. Concurrently remove Supabase objects. Legacy Firebase objects are
+    // intentionally left untouched; their Firestore record is still removed.
+    final storageRefs = <String>[
+      if (fileRef.isNotEmpty) fileRef,
+      if (convertedPdfRef != null && convertedPdfRef.isNotEmpty)
+        convertedPdfRef,
+    ];
+    final storageDelete = storageProvider == 'supabase'
+        ? _deleteSupabaseFiles(storageRefs, bucket: storageBucket)
+        : Future<void>.value();
 
     // 4. Concurrently clean up any cached local temporary file
     final localCleanup = _cleanupLocalTempFile(fileName: fileName);
@@ -480,9 +497,28 @@ class MaterialService {
       firestoreDelete,
       quizCleanup,
       storageDelete,
-      convertedStorageDelete,
       localCleanup,
     ]);
+  }
+
+  Future<void> _deleteSupabaseFiles(
+    List<String> paths, {
+    String? bucket,
+  }) async {
+    if (paths.isEmpty) return;
+    try {
+      await _supabase.storage
+          .from(bucket ?? SupabaseConfig.storageBucket)
+          .remove(paths)
+          .timeout(const Duration(seconds: 10));
+    } catch (e) {
+      debugPrint('Supabase deletion non-critical notice: $e');
+    }
+  }
+
+  static String _safeStorageFileName(String fileName) {
+    final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+    return safe.isEmpty ? 'material' : safe;
   }
 
   Future<void> _cleanupMaterialQuizzes(String materialId) async {
@@ -510,7 +546,9 @@ class MaterialService {
       }
       await batch.commit().timeout(const Duration(seconds: 5));
     } catch (e) {
-      debugPrint('Notice: Quizzes cleanup for material $materialId finished with: $e');
+      debugPrint(
+        'Notice: Quizzes cleanup for material $materialId finished with: $e',
+      );
     }
   }
 

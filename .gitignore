@@ -50,4 +50,5 @@ lib/config/gemini_config.dart
 .env.*
 **/.secret.local
 **/service-account*.json
+supabase.local.json
 
