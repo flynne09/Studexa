@@ -1,12 +1,46 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { generateQuizQuestions, validateQuestions } = require("../quiz_generator");
+const { generateQuizQuestions, validateQuestions, isRepeatedFact } = require("../quiz_generator");
 
 const text = "A process is a program in execution. The kernel manages CPU scheduling. RAM holds active programs and data. A scheduler selects the next process to execute.";
 const question = { type: "identification", question: "What is a program in execution called?", options: [], correctAnswer: "process", enumerationAnswers: [], explanation: "A program in execution is a process.", sourceExcerpt: "A process is a program in execution." };
 const request = { extractedText: text, questionTypes: ["identification"], questionCount: 1, isActual: true };
 const response = (questions = [question]) => new Response(JSON.stringify({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: JSON.stringify({ questions }) }] } }] }));
 const options = (fetchImpl) => ({ apiKey: "test-only-not-a-real-key", fetchImpl });
+const facts = Array.from({ length: 50 }, (_, index) => `Concept${index + 1} performs Task${index + 1} in System${index + 1}.`);
+const factText = facts.join(" ");
+const factQuestion = (index, type = "identification") => ({
+  ...question,
+  type,
+  question: type === "true_false"
+    ? `Concept${index + 1} performs Task${index + 1} in System${index + 1}.`
+    : `Which concept performs Task${index + 1} in System${index + 1}?`,
+  correctAnswer: type === "true_false" ? "True" : `Concept${index + 1}`,
+  options: type === "true_false" ? ["True", "False"] : [],
+  sourceExcerpt: facts[index],
+});
+
+test("identifies reworded facts while retaining different skills", () => {
+  const reworded = { ...question, question: "Identify the term for a currently executing program." };
+  assert.equal(isRepeatedFact(reworded, question), true);
+  const crossType = { ...question, type: "true_false", question: "A process is a program in execution.",
+    correctAnswer: "True", options: ["True", "False"] };
+  assert.equal(isRepeatedFact(crossType, question), true);
+  const otherSkill = { ...question, question: "What component schedules CPU time?", correctAnswer: "kernel", sourceExcerpt: "The kernel manages CPU scheduling." };
+  assert.equal(isRepeatedFact(otherSkill, question), false);
+});
+
+test("returns a partial set only for opted-in clients and excludes prior draft facts", async () => {
+  const repeated = { ...question, question: "Identify the term for a currently executing program." };
+  const repeatedResponse = options(async () => response([question, repeated]));
+  const partialRequest = { ...request, questionCount: 2 };
+  await assert.rejects(generateQuizQuestions(partialRequest, repeatedResponse), { code: "data-loss" });
+  const partial = await generateQuizQuestions({ ...partialRequest, allowPartial: true }, repeatedResponse);
+  assert.equal(partial.length, 1);
+  const additional = await generateQuizQuestions({ ...request, allowPartial: true, existingQuestions: partial },
+    options(async () => response([repeated])));
+  assert.equal(additional.length, 0);
+});
 
 test("request includes selected type/count, full material, schema and header key", async () => {
   const result = await generateQuizQuestions(request, options(async (url, init) => {
@@ -104,10 +138,10 @@ test("keeps distinct technical options such as C, C++ and C#", () => {
 
 test("generates a complete ten-question MCQ and True/False batch from a provider fixture", async () => {
   const questions = Array.from({ length: 10 }, (_, index) => index % 2 === 0
-    ? { ...choiceQuestion, question: `Kernel task ${index + 1}: which operation is supported?` }
-    : { ...question, type: "true_false", question: `Statement ${index + 1}: a process is a program in execution.`,
-      options: ["True", "False"], correctAnswer: "True" });
-  const result = await generateQuizQuestions({ ...request, questionTypes: ["multiple_choice", "true_false"], questionCount: 10 }, options(async () => response(questions)));
+    ? { ...factQuestion(index, "multiple_choice"), options: [
+      `A. Concept${index + 1}`, "B. RAM", "C. kernel", "D. process"], correctAnswer: `A. Concept${index + 1}` }
+    : factQuestion(index, "true_false"));
+  const result = await generateQuizQuestions({ ...request, extractedText: factText, questionTypes: ["multiple_choice", "true_false"], questionCount: 10 }, options(async () => response(questions)));
   assert.equal(result.length, 10);
   assert.equal(result.filter((q) => q.type === "multiple_choice").length, 5);
   assert.equal(result.filter((q) => q.type === "true_false").length, 5);
@@ -184,24 +218,17 @@ test("batches generation in chunks of 10 for counts > 10", async () => {
     const body = JSON.parse(init.body);
     const count = body.generationConfig.responseSchema.properties.questions.minItems;
     assert.ok(count <= 10, "Each batch must request <= 10 questions");
-    const batchQs = Array.from({ length: count }, () => {
-      qCounter++;
-      return {
-        ...question,
-        question: `Unique question number ${qCounter} for batching`,
-      };
-    });
+    const batchQs = Array.from({ length: count }, () => factQuestion(qCounter++));
     return response(batchQs);
   };
 
-  const res30 = await generateQuizQuestions({ ...request, questionCount: 30 }, options(mockFetch));
+  const res30 = await generateQuizQuestions({ ...request, extractedText: factText, questionCount: 30 }, options(mockFetch));
   assert.equal(res30.length, 30);
   assert.equal(batchCalls, 3); // 3 batches of 10
 
   batchCalls = 0;
   qCounter = 0;
-  const res50 = await generateQuizQuestions({ ...request, questionCount: 50 }, options(mockFetch));
+  const res50 = await generateQuizQuestions({ ...request, extractedText: factText, questionCount: 50 }, options(mockFetch));
   assert.equal(res50.length, 50);
   assert.equal(batchCalls, 5); // 5 batches of 10
 });
-

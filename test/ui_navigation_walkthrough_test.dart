@@ -260,6 +260,11 @@ void main() {
 
       // Verify question list contains questions
       expect(find.text('Which organelle is known as the powerhouse of the cell?'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Glycolysis requires oxygen to proceed.'),
+        80,
+        scrollable: find.byType(Scrollable).last,
+      );
       expect(find.text('Glycolysis requires oxygen to proceed.'), findsOneWidget);
 
       // Verify actions

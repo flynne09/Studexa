@@ -43,6 +43,9 @@ void main() {
         final body = jsonDecode(request.body) as Map;
         expect(body['questionTypes'], ['identification']);
         expect(body['questionCount'], 1);
+        expect(body['mode'], 'initial');
+        expect(body['clientSessionId'], isA<String>());
+        expect(body['batchRequestId'], isA<String>());
         expect(body.containsKey('teacherId'), isFalse);
         expect(body.containsKey('apiKey'), isFalse);
         return http.Response(jsonEncode(validResponse()), 200);
@@ -51,6 +54,132 @@ void main() {
     final quiz = await generate(client);
     expect(quiz.id, 'quiz-1');
     expect(quiz.questions.single.correctAnswer, 'process');
+  });
+  test(
+    'saves a shortfall draft and uses one separate Generate more action',
+    () async {
+      var calls = 0;
+      final client = QuizGenerationClient(
+        tokenProvider: () async => 'test-token',
+        client: MockClient((request) async {
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          calls++;
+          expect(body['clientSessionId'], isA<String>());
+          expect(body['batchRequestId'], isA<String>());
+          if (calls == 1) expect(body['mode'], 'initial');
+          if (calls == 2) {
+            expect(body['mode'], 'automatic');
+            expect(body['continueQuizId'], 'quiz-1');
+          }
+          if (calls == 3) {
+            expect(body['mode'], 'extra');
+            expect(body['continueQuizId'], 'quiz-1');
+          }
+          final payload = validResponse();
+          payload['quiz']['requestedQuestionCount'] = 3;
+          payload['quiz']['selectedQuestionTypes'] = ['identification'];
+          payload['quiz']['extraGenerationAttempted'] = calls == 3;
+          if (calls == 3) {
+            payload['quiz']['questions'].add({
+              'id': 'q_2',
+              'type': 'identification',
+              'question': 'Name the component that schedules the CPU.',
+              'correctAnswer': 'kernel',
+            });
+            payload['quiz']['questions'].add({
+              'id': 'q_3',
+              'type': 'true_false',
+              'question': 'RAM stores active programs.',
+              'correctAnswer': 'True',
+              'origin': 'manual',
+            });
+          }
+          return http.Response(jsonEncode(payload), 200);
+        }),
+      );
+      final first = await client.generate(
+        teacherId: 'teacher-1',
+        classId: 'class-1',
+        materialId: 'material-1',
+        isActual: true,
+        questionTypes: ['Identification'],
+        questionCount: 3,
+      );
+      expect(first.hasGenerationShortfall, isTrue);
+      final second = await client.generate(
+        teacherId: 'teacher-1',
+        classId: 'class-1',
+        materialId: 'material-1',
+        isActual: true,
+        questionTypes: ['Identification'],
+        questionCount: 3,
+        continueQuizId: first.id,
+      );
+      expect(second.questionCount, 3);
+      expect(second.extraGenerationAttempted, isTrue);
+      expect(second.questions.last.origin, 'manual');
+      expect(calls, 3);
+    },
+  );
+  test('coordinates 50 questions in five 10-question batches', () async {
+    var calls = 0;
+    String? sessionId;
+    final client = QuizGenerationClient(
+      tokenProvider: () async => 'test-token',
+      client: MockClient((request) async {
+        calls++;
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(request.headers['apikey'], isNotEmpty);
+        sessionId ??= body['clientSessionId'] as String;
+        expect(body['clientSessionId'], sessionId);
+        expect(body['mode'], calls == 1 ? 'initial' : 'automatic');
+        if (calls > 1) expect(body['continueQuizId'], 'quiz-1');
+        final payload = validResponse();
+        payload['quiz']['requestedQuestionCount'] = 50;
+        payload['quiz']['selectedQuestionTypes'] = ['identification'];
+        payload['quiz']['questions'] = List.generate(
+          calls * 10,
+          (index) => {
+            'id': 'q_${index + 1}',
+            'type': 'identification',
+            'question': 'Distinct question ${index + 1}?',
+            'correctAnswer': 'answer ${index + 1}',
+          },
+        );
+        return http.Response(jsonEncode(payload), 200);
+      }),
+    );
+    final quiz = await client.generate(
+      teacherId: 'teacher-1',
+      classId: 'class-1',
+      materialId: 'material-1',
+      isActual: true,
+      questionTypes: ['Identification'],
+      questionCount: 50,
+    );
+    expect(calls, 5);
+    expect(quiz.questionCount, 50);
+  });
+  test('retries a timed-out batch with the same idempotency IDs', () async {
+    var calls = 0;
+    String? firstSession;
+    String? firstBatch;
+    final client = QuizGenerationClient(
+      tokenProvider: () async => 'test-token',
+      client: MockClient((request) async {
+        calls++;
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        firstSession ??= body['clientSessionId'] as String;
+        firstBatch ??= body['batchRequestId'] as String;
+        expect(body['clientSessionId'], firstSession);
+        expect(body['batchRequestId'], firstBatch);
+        if (calls == 1) throw TimeoutException('lost response');
+        return http.Response(jsonEncode(validResponse()), 200);
+      }),
+    );
+    final quiz = await generate(client);
+    expect(quiz.id, 'quiz-1');
+    expect(calls, 2);
   });
   test('signed-out request never reaches network', () async {
     final client = QuizGenerationClient(

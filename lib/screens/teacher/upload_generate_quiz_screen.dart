@@ -588,7 +588,10 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => QuizDetailScreen(quiz: createdQuiz),
+          builder: (context) => QuizDetailScreen(
+            quiz: createdQuiz,
+            showShortfallPrompt: true,
+          ),
         ),
       );
     } catch (e) {

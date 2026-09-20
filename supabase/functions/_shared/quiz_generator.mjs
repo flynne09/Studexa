@@ -1,6 +1,7 @@
 "use strict";
 
-// Pure API boundary, shared by the two existing Firebase entry points and tests.
+// Port of functions/quiz_generator.js for the Supabase Deno runtime.
+// Keep grounding, prompt and repetition safeguards in sync with the legacy API.
 class QuizGenerationError extends Error {
   constructor(code, message) {
     super(message);
@@ -10,7 +11,7 @@ class QuizGenerationError extends Error {
 
 const TYPES = ["multiple_choice", "true_false", "fill_blank", "identification", "enumeration"];
 const DEFAULT_MODELS = [
-  process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+  globalThis.Deno?.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
   "gemini-flash-lite-latest",
   "gemini-3-flash-preview",
@@ -182,7 +183,7 @@ function validateQuestions(raw, request, rejectQuestion = () => false) {
 const BATCH_SIZE = 10;
 
 async function generateSingleBatch(request, {
-  apiKey, candidateModels, fetchImpl, timeoutMs, rejectQuestion, avoidQuestions,
+  apiKey, candidateModels, fetchImpl, timeoutMs, avoidQuestions,
 }) {
   const { extractedText, questionTypes, questionCount, isActual, sourceQuizContext } = request;
   const avoidClause = avoidQuestions && avoidQuestions.length
@@ -320,6 +321,7 @@ async function generateQuizQuestions(request, {
   fetchImpl = fetch,
   timeoutMs = 90000,
   rejectQuestion,
+  maxRounds: roundLimit,
 } = {}) {
   validateRequest(request);
   if (!apiKey || !apiKey.trim() || apiKey.includes("YOUR_")) {
@@ -341,7 +343,7 @@ async function generateQuizQuestions(request, {
     let successfulBatch = false;
 
     const targetBatches = Math.ceil(questionCount / BATCH_SIZE);
-    const maxRounds = targetBatches + 3;
+    const maxRounds = roundLimit || targetBatches + 3;
 
     for (let round = 0; round < maxRounds; round++) {
       const needed = questionCount - collectedQuestions.length;
@@ -426,4 +428,4 @@ async function generateQuizQuestions(request, {
   }
 }
 
-module.exports = { QuizGenerationError, generateQuizQuestions, validateQuestions, validateRequest, isRepeatedFact };
+export { QuizGenerationError, generateQuizQuestions, validateQuestions, validateRequest, isRepeatedFact };

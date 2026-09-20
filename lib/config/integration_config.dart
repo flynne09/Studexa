@@ -1,9 +1,9 @@
-/// Public endpoint configuration. AI keys belong in Firebase Secret Manager,
+/// Public endpoint configuration. AI keys belong in Supabase Edge Function Secrets,
 /// never in Flutter source, assets, or --dart-define values.
 abstract final class IntegrationConfig {
   static const quizGenerationUrl = String.fromEnvironment(
     'QUIZ_GENERATION_URL',
     defaultValue:
-        'https://us-central1-studexa-b5e55.cloudfunctions.net/generateQuizHttp',
+        'https://zuidphgogdwyrtndbgkx.supabase.co/functions/v1/generate-quiz',
   );
 }

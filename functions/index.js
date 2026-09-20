@@ -3,7 +3,7 @@ const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https")
 const admin = require("firebase-admin");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { defineSecret } = require("firebase-functions/params");
-const { generateQuizQuestions, QuizGenerationError, validateRequest } = require("./quiz_generator");
+const { generateQuizQuestions, QuizGenerationError, validateRequest, isRepeatedFact } = require("./quiz_generator");
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
 const path = require("path");
 const fs = require("fs");
@@ -724,10 +724,11 @@ function generateFallbackQuizQuestions(extractedText, questionTypes, questionCou
 /**
  * Core processor authorizing quiz generation and persisting only validated AI output.
  */
-async function processQuizGeneration({ teacherId, classId, materialId, quizType, questionTypes, questionCount, sourceQuizId }) {
+async function processQuizGeneration({ teacherId, classId, materialId, quizType, questionTypes, questionCount, sourceQuizId, allowPartialDraft = false, continueQuizId }) {
   const validId = (value) => typeof value === "string" && value.trim().length > 0 && !value.includes("/") && value.length <= 1500;
   if (![teacherId, classId, materialId].every(validId) ||
-      !["actual", "practice"].includes(quizType) || (sourceQuizId != null && !validId(sourceQuizId))) {
+      !["actual", "practice"].includes(quizType) || (sourceQuizId != null && !validId(sourceQuizId)) ||
+      (continueQuizId != null && !validId(continueQuizId))) {
     throw new QuizGenerationError("invalid-argument", "Choose a class, material, and valid quiz type.");
   }
   const firestore = getFirestore(process.env.FIRESTORE_DATABASE_ID || "default");
@@ -743,6 +744,27 @@ async function processQuizGeneration({ teacherId, classId, materialId, quizType,
     throw new QuizGenerationError("permission-denied", "Only the teacher who owns this class and material may generate its quizzes.");
   }
   const extractedText = (materialData.extractedText || "").trim();
+  const quizRef = continueQuizId ? firestore.collection("quizzes").doc(continueQuizId) : firestore.collection("quizzes").doc();
+  let previousQuestions = [];
+  let previousQuiz;
+  if (continueQuizId) {
+    const existingDoc = await quizRef.get();
+    previousQuiz = existingDoc.data();
+    if (!allowPartialDraft || !previousQuiz || previousQuiz.teacherId !== teacherId ||
+        previousQuiz.classId !== classId || previousQuiz.materialId !== materialId ||
+        previousQuiz.type !== quizType || previousQuiz.status !== "draft" ||
+        !Number.isInteger(previousQuiz.requestedQuestionCount) ||
+        !Array.isArray(previousQuiz.selectedQuestionTypes) || previousQuiz.extraGenerationAttempted) {
+      throw new QuizGenerationError("failed-precondition", "This draft cannot generate more questions. Review the saved questions or start a new quiz.");
+    }
+    questionCount = previousQuiz.requestedQuestionCount;
+    questionTypes = previousQuiz.selectedQuestionTypes;
+    sourceQuizId = previousQuiz.sourceQuizId || null;
+    previousQuestions = Array.isArray(previousQuiz.questions) ? previousQuiz.questions : [];
+    if (previousQuestions.length >= questionCount) {
+      throw new QuizGenerationError("failed-precondition", "This draft already contains the requested number of questions.");
+    }
+  }
   validateRequest({ extractedText, questionTypes, questionCount });
   if (materialData.status !== "ready") throw new QuizGenerationError("failed-precondition", "Wait for document text extraction to finish.");
   const isActual = quizType === "actual";
@@ -756,19 +778,68 @@ async function processQuizGeneration({ teacherId, classId, materialId, quizType,
     }
     sourceQuizContext = JSON.stringify(source.questions.map(({ question, correctAnswer }) => ({ question, correctAnswer })));
   }
-  const questions = await generateQuizQuestions({
-    extractedText, questionTypes, questionCount, isActual, sourceQuizContext,
-  }, {
-    apiKey: geminiApiKey.value(),
-    rejectQuestion: (q) => isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q),
-  });
+  const missingCount = questionCount - previousQuestions.length;
+  const generationTypes = continueQuizId && missingCount < questionTypes.length
+    ? [...questionTypes].sort((a, b) => previousQuestions.filter((q) => q.type === a).length - previousQuestions.filter((q) => q.type === b).length).slice(0, missingCount)
+    : questionTypes;
+  if (continueQuizId) {
+    await firestore.runTransaction(async (transaction) => {
+      const current = await transaction.get(quizRef);
+      if (!current.exists || current.data().extraGenerationAttempted || current.data().status !== "draft" ||
+          current.data().questions.length !== previousQuestions.length) {
+        throw new QuizGenerationError("failed-precondition", "This draft changed. Reopen it before generating more questions.");
+      }
+      transaction.update(quizRef, { extraGenerationAttempted: true });
+    });
+  }
+  let newQuestions;
+  try {
+    newQuestions = await generateQuizQuestions({
+      extractedText, questionTypes: generationTypes, questionCount: missingCount, isActual, sourceQuizContext,
+      allowPartial: allowPartialDraft === true, existingQuestions: previousQuestions,
+    }, {
+      apiKey: geminiApiKey.value(),
+      rejectQuestion: (q) => isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q),
+    });
+  } catch (error) {
+    if (continueQuizId) await quizRef.update({ extraGenerationAttempted: false });
+    throw error;
+  }
+  if (continueQuizId) {
+    await firestore.runTransaction(async (transaction) => {
+      const latestDoc = await transaction.get(quizRef);
+      const latest = latestDoc.data();
+      if (!latest || latest.status !== "draft" || !latest.extraGenerationAttempted) {
+        throw new QuizGenerationError("failed-precondition", "This draft changed. Reopen it before generating more questions.");
+      }
+      const merged = [...(latest.questions || [])];
+      for (const candidate of newQuestions) {
+        if (merged.length >= questionCount) break;
+        if (!merged.some((existing) => isRepeatedFact(candidate, existing))) merged.push(candidate);
+      }
+      const renumbered = merged.map((q, index) => ({ ...q, id: `q_${index + 1}` }));
+      transaction.update(quizRef, {
+        questions: renumbered,
+        totalPoints: renumbered.reduce((total, q) => total + (q.points || 1.0), 0),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    });
+    const saved = (await quizRef.get()).data();
+    return {
+      success: true,
+      quizId: quizRef.id,
+      quiz: { id: quizRef.id, ...saved,
+        createdAt: saved.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
+        updatedAt: new Date().toISOString() },
+    };
+  }
+  const questions = newQuestions.map((q, index) => ({ ...q, id: `q_${index + 1}` }));
   const fileTitle = (materialData.fileName || "Study Material").replace(/\.[^/.]+$/, "");
   const generatedTitle = `${fileTitle} - ${isActual ? "Exam" : "Practice Quiz"}`;
   const generationMethod = "gemini";
 
   const totalPoints = questions.reduce((acc, q) => acc + (q.points || 1.0), 0);
 
-  const quizRef = firestore.collection("quizzes").doc();
   const quizPayload = {
     classId: classId,
     teacherId: teacherId,
@@ -779,8 +850,11 @@ async function processQuizGeneration({ teacherId, classId, materialId, quizType,
     generationMethod: generationMethod,
     sourceQuizId: sourceQuizId || null,
     questions: questions,
+    requestedQuestionCount: questionCount,
+    selectedQuestionTypes: questionTypes,
+    extraGenerationAttempted: Boolean(continueQuizId),
     totalPoints: totalPoints,
-    createdAt: FieldValue.serverTimestamp(),
+    ...(!continueQuizId ? { createdAt: FieldValue.serverTimestamp() } : {}),
     updatedAt: FieldValue.serverTimestamp(),
   };
 
@@ -792,7 +866,7 @@ async function processQuizGeneration({ teacherId, classId, materialId, quizType,
     quiz: {
       id: quizRef.id,
       ...quizPayload,
-      createdAt: new Date().toISOString(),
+      createdAt: previousQuiz?.createdAt?.toDate?.()?.toISOString?.() || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
   };
@@ -822,7 +896,7 @@ exports.generateQuiz = onCall(
       throw new HttpsError("unauthenticated", "User must be authenticated to generate quizzes.");
     }
 
-    const { classId, materialId, quizType, questionTypes, questionCount, sourceQuizId } = request.data || {};
+    const { classId, materialId, quizType, questionTypes, questionCount, sourceQuizId, allowPartialDraft, continueQuizId } = request.data || {};
     const teacherId = request.auth.uid;
 
     try {
@@ -834,6 +908,8 @@ exports.generateQuiz = onCall(
         questionTypes,
         questionCount,
         sourceQuizId,
+        allowPartialDraft,
+        continueQuizId,
       });
     } catch (error) {
       const failure = publicGenerationError(error);
@@ -887,6 +963,8 @@ exports.generateQuizHttp = onRequest(
         questionTypes: req.body.questionTypes,
         questionCount: req.body.questionCount,
         sourceQuizId: req.body.sourceQuizId,
+        allowPartialDraft: req.body.allowPartialDraft,
+        continueQuizId: req.body.continueQuizId,
       });
       return res.status(200).json(result);
     } catch (error) {

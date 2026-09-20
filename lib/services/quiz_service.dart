@@ -7,9 +7,11 @@ import 'firestore_provider.dart';
 
 /// Service managing quiz creation, generation, Firestore persistence, and streaming.
 class QuizService {
-  QuizService({FirebaseFirestore? firestore, QuizGenerationClient? generationClient})
-      : _firestore = firestore ?? getAppFirestore(),
-        _generationClient = generationClient ?? QuizGenerationClient();
+  QuizService({
+    FirebaseFirestore? firestore,
+    QuizGenerationClient? generationClient,
+  }) : _firestore = firestore ?? getAppFirestore(),
+       _generationClient = generationClient ?? QuizGenerationClient();
 
   final FirebaseFirestore _firestore;
 
@@ -19,9 +21,15 @@ class QuizService {
       _firestore.collection('quizzes');
 
   /// Streams all quizzes for a specific class, optionally filtered by type ("actual" or "practice").
-  Stream<List<QuizModel>> streamClassQuizzes(String classId, {String? type, bool publishedOnly = false}) {
-    Query<Map<String, dynamic>> query =
-        _quizzesCollection.where('classId', isEqualTo: classId);
+  Stream<List<QuizModel>> streamClassQuizzes(
+    String classId, {
+    String? type,
+    bool publishedOnly = false,
+  }) {
+    Query<Map<String, dynamic>> query = _quizzesCollection.where(
+      'classId',
+      isEqualTo: classId,
+    );
 
     if (type != null && type.isNotEmpty) {
       query = query.where('type', isEqualTo: type.toLowerCase());
@@ -49,17 +57,17 @@ class QuizService {
         .where('teacherId', isEqualTo: teacherId)
         .snapshots()
         .map((snapshot) {
-      final list = snapshot.docs
-          .map((doc) => QuizModel.fromFirestore(doc))
-          .toList();
-      list.sort((a, b) {
-        if (a.createdAt == null && b.createdAt == null) return 0;
-        if (a.createdAt == null) return 1;
-        if (b.createdAt == null) return -1;
-        return b.createdAt!.compareTo(a.createdAt!);
-      });
-      return list;
-    });
+          final list = snapshot.docs
+              .map((doc) => QuizModel.fromFirestore(doc))
+              .toList();
+          list.sort((a, b) {
+            if (a.createdAt == null && b.createdAt == null) return 0;
+            if (a.createdAt == null) return 1;
+            if (b.createdAt == null) return -1;
+            return b.createdAt!.compareTo(a.createdAt!);
+          });
+          return list;
+        });
   }
 
   /// Streams a single quiz by ID in real time.
@@ -77,7 +85,7 @@ class QuizService {
     return QuizModel.fromFirestore(doc);
   }
 
-  /// Generates and saves a quiz through the authenticated Firebase endpoint.
+  /// Generates and saves a quiz through the authenticated Edge Function.
   /// Preloaded values remain accepted for existing callers; the server reads the
   /// authoritative material and verifies teacher/class ownership.
   Future<QuizModel> generateQuiz({
@@ -100,11 +108,34 @@ class QuizService {
     sourceQuizId: sourceQuizId,
   );
 
+  Future<QuizModel> generateMore(QuizModel quiz) {
+    final requested = quiz.requestedQuestionCount;
+    if (!quiz.isDraft ||
+        requested == null ||
+        quiz.questionCount >= requested ||
+        quiz.extraGenerationAttempted ||
+        quiz.selectedQuestionTypes.isEmpty) {
+      throw StateError('This draft cannot generate more questions.');
+    }
+    return _generationClient.generate(
+      teacherId: quiz.teacherId,
+      classId: quiz.classId,
+      materialId: quiz.materialId,
+      isActual: quiz.isActual,
+      questionTypes: quiz.selectedQuestionTypes,
+      questionCount: requested,
+      sourceQuizId: quiz.sourceQuizId,
+      continueQuizId: quiz.id,
+    );
+  }
+
   /// Cleans and sanitizes Fill-in-the-Blank and Identification expected answers
   /// ensuring they do not contain extraneous punctuation, surrounding quotes, or leading articles.
   static String cleanFillInTheBlankAnswer(String raw) {
     var cleaned = ScoringUtils.cleanExpectedAnswer(raw).trim();
-    cleaned = cleaned.replaceAll(RegExp(r'^(the|a|an)\s+', caseSensitive: false), '').trim();
+    cleaned = cleaned
+        .replaceAll(RegExp(r'^(the|a|an)\s+', caseSensitive: false), '')
+        .trim();
     bool changed = true;
     while (changed) {
       final prev = cleaned;
@@ -131,8 +162,13 @@ class QuizService {
     if (tablePromptPattern.hasMatch(prompt)) return true;
 
     // Prompt asks about Column A, Header 1, etc.
-    if (RegExp(r'\b(?:column|header|col|row)\s+[a-z0-9]+\b', caseSensitive: false).hasMatch(prompt)) {
-      if (prompt.contains('what') || prompt.contains('which') || prompt.contains('identify')) {
+    if (RegExp(
+      r'\b(?:column|header|col|row)\s+[a-z0-9]+\b',
+      caseSensitive: false,
+    ).hasMatch(prompt)) {
+      if (prompt.contains('what') ||
+          prompt.contains('which') ||
+          prompt.contains('identify')) {
         return true;
       }
     }
@@ -148,7 +184,9 @@ class QuizService {
     if (q.type == QuizQuestionType.multipleChoice) {
       int structuralOptions = 0;
       for (final opt in q.options) {
-        final cleanOpt = ScoringUtils.normalizeText(ScoringUtils.cleanExpectedAnswer(opt));
+        final cleanOpt = ScoringUtils.normalizeText(
+          ScoringUtils.cleanExpectedAnswer(opt),
+        );
         if (structuralAnswerPattern.hasMatch(cleanOpt)) {
           structuralOptions++;
         }
@@ -174,7 +212,10 @@ class QuizService {
     );
     if (fillerPromptPattern.hasMatch(prompt)) return true;
 
-    if (RegExp(r'\b(?:on slide|in chapter|on page|published in|publication date|file name)\b', caseSensitive: false).hasMatch(prompt)) {
+    if (RegExp(
+      r'\b(?:on slide|in chapter|on page|published in|publication date|file name)\b',
+      caseSensitive: false,
+    ).hasMatch(prompt)) {
       return true;
     }
 
@@ -184,11 +225,16 @@ class QuizService {
     );
     if (fillerAnswerPattern.hasMatch(answer)) return true;
 
-    if (answer.contains('@') || answer.contains('http://') || answer.contains('https://') || answer.contains('www.')) {
+    if (answer.contains('@') ||
+        answer.contains('http://') ||
+        answer.contains('https://') ||
+        answer.contains('www.')) {
       return true;
     }
     if (RegExp(r'^(?:19|20)\d\d$').hasMatch(answer) &&
-        (prompt.contains('published') || prompt.contains('copyright') || prompt.contains('year'))) {
+        (prompt.contains('published') ||
+            prompt.contains('copyright') ||
+            prompt.contains('year'))) {
       return true;
     }
 
@@ -277,7 +323,9 @@ class QuizService {
           break;
         case QuizQuestionType.fillInTheBlank:
           if (q.correctAnswer.trim().length < 2) return false;
-          if (!q.question.contains('_______') && !q.question.contains('___')) return false;
+          if (!q.question.contains('_______') && !q.question.contains('___')) {
+            return false;
+          }
           final fibWords = q.correctAnswer.trim().split(RegExp(r'\s+'));
           if (fibWords.length > 3) return false;
           break;
@@ -309,8 +357,10 @@ class QuizService {
         if (candNormPrompt == existNormPrompt) return true;
 
         // High token similarity
-        final similarity =
-            tokenJaccardSimilarity(candidate.question, existing.question);
+        final similarity = tokenJaccardSimilarity(
+          candidate.question,
+          existing.question,
+        );
         if (similarity > 0.70) return true;
 
         // Same answer with moderate token similarity
@@ -325,12 +375,18 @@ class QuizService {
             existing.type == QuizQuestionType.multipleChoice &&
             candidate.options.length == existing.options.length) {
           final candOptions = candidate.options
-              .map((o) => ScoringUtils.normalizeText(
-                  ScoringUtils.cleanExpectedAnswer(o)))
+              .map(
+                (o) => ScoringUtils.normalizeText(
+                  ScoringUtils.cleanExpectedAnswer(o),
+                ),
+              )
               .toSet();
           final existOptions = existing.options
-              .map((o) => ScoringUtils.normalizeText(
-                  ScoringUtils.cleanExpectedAnswer(o)))
+              .map(
+                (o) => ScoringUtils.normalizeText(
+                  ScoringUtils.cleanExpectedAnswer(o),
+                ),
+              )
               .toSet();
           if (candOptions.containsAll(existOptions)) {
             return true;
@@ -347,13 +403,13 @@ class QuizService {
     }
 
     // Backfill if below targetCount
-    if (targetCount != null && targetCount > 0 && accepted.length < targetCount) {
+    if (targetCount != null &&
+        targetCount > 0 &&
+        accepted.length < targetCount) {
       final textForFallback =
           (extractedText != null && extractedText.trim().isNotEmpty)
-              ? extractedText
-              : accepted
-                  .map((q) => '${q.question} ${q.correctAnswer}')
-                  .join(' ');
+          ? extractedText
+          : accepted.map((q) => '${q.question} ${q.correctAnswer}').join(' ');
 
       if (textForFallback.trim().isNotEmpty) {
         final backfillCandidates = generateLocalFallbackQuestions(
@@ -373,7 +429,8 @@ class QuizService {
     }
 
     // Cap at targetCount if exceeded
-    final capped = (targetCount != null &&
+    final capped =
+        (targetCount != null &&
             targetCount > 0 &&
             accepted.length > targetCount)
         ? accepted.sublist(0, targetCount)
@@ -400,11 +457,58 @@ class QuizService {
     await _quizzesCollection.doc(quiz.id).update({
       'title': quiz.title,
       'questions': quiz.questions.map((q) => q.toMap()).toList(),
-      'totalPoints':
-          quiz.questions.fold<double>(0.0, (acc, q) => acc + q.points),
+      'totalPoints': quiz.questions.fold<double>(
+        0.0,
+        (acc, q) => acc + q.points,
+      ),
       'status': quiz.status,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  Future<QuizModel> appendManualQuestion(
+    String quizId,
+    QuizQuestion question,
+  ) async {
+    final validation = validateQuizQuestions([question]);
+    if (validation != null) throw StateError(validation);
+    final ref = _quizzesCollection.doc(quizId);
+    await _firestore.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      if (!snapshot.exists) throw StateError('This quiz no longer exists.');
+      final quiz = QuizModel.fromFirestore(snapshot);
+      if (!quiz.isDraft) {
+        throw StateError('Questions can only be added to a draft quiz.');
+      }
+      final normalized = question.question.trim().toLowerCase();
+      if (quiz.questions.any(
+        (existing) => existing.question.trim().toLowerCase() == normalized,
+      )) {
+        throw StateError('That question is already in this quiz.');
+      }
+      var nextNumber = quiz.questions.length + 1;
+      while (quiz.questions.any((existing) => existing.id == 'q_$nextNumber')) {
+        nextNumber++;
+      }
+      final nextQuestion = question.copyWith(
+        id: 'q_$nextNumber',
+        origin: 'manual',
+      );
+      final questions = [...quiz.questions, nextQuestion];
+      transaction.update(ref, {
+        'questions': questions.map((item) => item.toMap()).toList(),
+        'totalPoints': questions.fold<double>(
+          0,
+          (total, item) => total + item.points,
+        ),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+    final updated = await getQuiz(quizId);
+    if (updated == null) {
+      throw StateError('The saved quiz could not be loaded.');
+    }
+    return updated;
   }
 
   /// Validates a list of questions to ensure each question is complete and pedagogical.
@@ -542,7 +646,12 @@ class QuizService {
 
     final cleanSentences = rawSentences.where((s) {
       if (metadataRegex.hasMatch(s)) return false;
-      if (RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+:?$', caseSensitive: false).hasMatch(s)) return false;
+      if (RegExp(
+        r'^(?:column|header|col|row)\s+[a-z0-9]+:?$',
+        caseSensitive: false,
+      ).hasMatch(s)) {
+        return false;
+      }
       if (s.endsWith('?')) return false;
       if (RegExp(r'^\d+\.?\s*$').hasMatch(s)) return false;
       return true;
@@ -573,15 +682,60 @@ class QuizService {
 
     // Structural blacklist to prevent column/table labels, metadata, and filler words from becoming candidate terms
     const structuralBlacklist = {
-      'column', 'header', 'attribute', 'attributes', 'value', 'values',
-      'field', 'fields', 'table', 'tables', 'row', 'rows', 'item', 'items',
-      'category', 'categories', 'no', 'number', 'type', 'types',
-      'description', 'remarks', 'date', 'col',
-      'copyright', 'reserved', 'author', 'authors', 'professor', 'instructor', 'syllabus',
-      'lecture', 'slide', 'page', 'chapter', 'university', 'college', 'homework',
-      'summary', 'reference', 'references', 'license', 'acknowledgment',
-      'acknowledgments', 'welcome', 'reading', 'hours', 'grading', 'policy',
-      'edition', 'editions', 'email', 'emails', 'isbn',
+      'column',
+      'header',
+      'attribute',
+      'attributes',
+      'value',
+      'values',
+      'field',
+      'fields',
+      'table',
+      'tables',
+      'row',
+      'rows',
+      'item',
+      'items',
+      'category',
+      'categories',
+      'no',
+      'number',
+      'type',
+      'types',
+      'description',
+      'remarks',
+      'date',
+      'col',
+      'copyright',
+      'reserved',
+      'author',
+      'authors',
+      'professor',
+      'instructor',
+      'syllabus',
+      'lecture',
+      'slide',
+      'page',
+      'chapter',
+      'university',
+      'college',
+      'homework',
+      'summary',
+      'reference',
+      'references',
+      'license',
+      'acknowledgment',
+      'acknowledgments',
+      'welcome',
+      'reading',
+      'hours',
+      'grading',
+      'policy',
+      'edition',
+      'editions',
+      'email',
+      'emails',
+      'isbn',
     };
 
     // 2. Extract defined concepts and key academic terms
@@ -605,7 +759,10 @@ class QuizService {
             def.length >= 8 &&
             !candidateTerms.contains(term) &&
             !structuralBlacklist.contains(term.toLowerCase()) &&
-            !RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$', caseSensitive: false).hasMatch(term)) {
+            !RegExp(
+              r'^(?:column|header|col|row)\s+[a-z0-9]+$',
+              caseSensitive: false,
+            ).hasMatch(term)) {
           candidateTerms.add(term);
           conceptDefinitions[term] = def;
         }
@@ -618,7 +775,10 @@ class QuizService {
             def.length >= 8 &&
             !candidateTerms.contains(term) &&
             !structuralBlacklist.contains(term.toLowerCase()) &&
-            !RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$', caseSensitive: false).hasMatch(term)) {
+            !RegExp(
+              r'^(?:column|header|col|row)\s+[a-z0-9]+$',
+              caseSensitive: false,
+            ).hasMatch(term)) {
           candidateTerms.add(term);
           conceptDefinitions[term] = def;
         }
@@ -634,9 +794,13 @@ class QuizService {
             words[i].startsWith(RegExp(r'[A-Z]')) &&
             !candidateTerms.contains(clean) &&
             !structuralBlacklist.contains(clean.toLowerCase()) &&
-            !RegExp(r'^(?:column|header|col|row)\s+[a-z0-9]+$', caseSensitive: false).hasMatch(clean) &&
-            !RegExp(r'^(These|Those|There|Their|Which|After|Before|Because|However|When|Where|While|Since|Both|Each|Every)$')
-                .hasMatch(clean)) {
+            !RegExp(
+              r'^(?:column|header|col|row)\s+[a-z0-9]+$',
+              caseSensitive: false,
+            ).hasMatch(clean) &&
+            !RegExp(
+              r'^(These|Those|There|Their|Which|After|Before|Because|However|When|Where|While|Since|Both|Each|Every)$',
+            ).hasMatch(clean)) {
           candidateTerms.add(clean);
         }
       }
@@ -678,10 +842,32 @@ class QuizService {
 
     // Stopwords for keyword filtering
     const stopwords = {
-      'about', 'after', 'before', 'because', 'between', 'during',
-      'however', 'through', 'under', 'which', 'where', 'while',
-      'their', 'there', 'these', 'those', 'would', 'could', 'should',
-      'other', 'being', 'having', 'within', 'called', 'known', 'defined',
+      'about',
+      'after',
+      'before',
+      'because',
+      'between',
+      'during',
+      'however',
+      'through',
+      'under',
+      'which',
+      'where',
+      'while',
+      'their',
+      'there',
+      'these',
+      'those',
+      'would',
+      'could',
+      'should',
+      'other',
+      'being',
+      'having',
+      'within',
+      'called',
+      'known',
+      'defined',
     };
 
     List<String> getKeywordsForSentence(String s) {
@@ -713,9 +899,9 @@ class QuizService {
       double score = 5.0;
       if (defRegex.hasMatch(s) || colonDefRegex.hasMatch(s)) score += 10.0;
       if (RegExp(
-              r'\b(produces|synthesizes|catalyzes|regulates|converts|generates|membrane|pathway|reaction|structure|process)\b',
-              caseSensitive: false)
-          .hasMatch(s)) {
+        r'\b(produces|synthesizes|catalyzes|regulates|converts|generates|membrane|pathway|reaction|structure|process)\b',
+        caseSensitive: false,
+      ).hasMatch(s)) {
         score += 4.0;
       }
       if (s.length >= 45 && s.length <= 180) score += 3.0;
@@ -776,14 +962,19 @@ class QuizService {
           }
 
           final distractors = <String>[];
-          for (int d = 0; d < distractorPool.length && distractors.length < 3; d++) {
+          for (
+            int d = 0;
+            d < distractorPool.length && distractors.length < 3;
+            d++
+          ) {
             final cand = distractorPool[(i + d * 3) % distractorPool.length];
             if (!distractors.contains(cand)) {
               distractors.add(cand);
             }
           }
 
-          final allOptions = [targetWord, ...distractors]..shuffle(Random(i * 31 + 7));
+          final allOptions = [targetWord, ...distractors]
+            ..shuffle(Random(i * 31 + 7));
           const letters = ['A', 'B', 'C', 'D'];
           final formattedOptions = List<String>.generate(
             allOptions.length,
@@ -827,7 +1018,8 @@ class QuizService {
             question: mcqPrompt,
             options: formattedOptions,
             correctAnswer: correctAnswer,
-            explanation: 'The correct answer is $targetWord grounded in: "$sentence".',
+            explanation:
+                'The correct answer is $targetWord grounded in: "$sentence".',
             points: 1.0,
           );
           break;
@@ -843,13 +1035,23 @@ class QuizService {
             } else if (statement.contains(' can ')) {
               statement = statement.replaceFirst(' can ', ' cannot ');
             } else if (statement.contains(' produces ')) {
-              statement = statement.replaceFirst(' produces ', ' does not produce ');
+              statement = statement.replaceFirst(
+                ' produces ',
+                ' does not produce ',
+              );
             } else if (statement.contains(' requires ')) {
-              statement = statement.replaceFirst(' requires ', ' functions without ');
+              statement = statement.replaceFirst(
+                ' requires ',
+                ' functions without ',
+              );
             } else if (statement.contains(' occurs ')) {
-              statement = statement.replaceFirst(' occurs ', ' does not occur ');
+              statement = statement.replaceFirst(
+                ' occurs ',
+                ' does not occur ',
+              );
             } else {
-              statement = 'It is false that ${statement[0].toLowerCase()}${statement.substring(1)}';
+              statement =
+                  'It is false that ${statement[0].toLowerCase()}${statement.substring(1)}';
             }
           }
 
@@ -899,7 +1101,10 @@ class QuizService {
           String blankPrompt;
           if (sentence.toLowerCase().contains(targetWord.toLowerCase())) {
             blankPrompt = sentence.replaceFirst(
-              RegExp(r'\b' + RegExp.escape(targetWord) + r'\b', caseSensitive: false),
+              RegExp(
+                r'\b' + RegExp.escape(targetWord) + r'\b',
+                caseSensitive: false,
+              ),
               '_______',
             );
             if (!blankPrompt.contains('_______')) {
@@ -947,7 +1152,8 @@ class QuizService {
             question: fibPrompt,
             options: const [],
             correctAnswer: targetWord,
-            explanation: 'The missing term is "$targetWord". Context: "$sentence".',
+            explanation:
+                'The missing term is "$targetWord". Context: "$sentence".',
             points: 1.0,
           );
           break;
@@ -959,7 +1165,10 @@ class QuizService {
             description = conceptDefinitions[targetWord]!;
           }
           description = description.replaceAll(
-            RegExp(r'\b' + RegExp.escape(targetWord) + r'\b', caseSensitive: false),
+            RegExp(
+              r'\b' + RegExp.escape(targetWord) + r'\b',
+              caseSensitive: false,
+            ),
             '[this concept]',
           );
           description = description.replaceAll(
@@ -1099,7 +1308,10 @@ class QuizService {
           isDuplicate = true;
           break;
         }
-        final sim = tokenJaccardSimilarity(candidate.question, existing.question);
+        final sim = tokenJaccardSimilarity(
+          candidate.question,
+          existing.question,
+        );
         if (sim > 0.70) {
           isDuplicate = true;
           break;

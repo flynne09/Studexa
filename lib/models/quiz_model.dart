@@ -60,6 +60,7 @@ class QuizQuestion {
   final List<String> enumerationAnswers;
   final String explanation;
   final double points;
+  final String origin;
 
   const QuizQuestion({
     required this.id,
@@ -70,6 +71,7 @@ class QuizQuestion {
     this.enumerationAnswers = const [],
     this.explanation = '',
     this.points = 1.0,
+    this.origin = 'gemini',
   });
 
   factory QuizQuestion.fromMap(Map<String, dynamic> map, {int index = 0}) {
@@ -100,6 +102,7 @@ class QuizQuestion {
       enumerationAnswers: parsedEnum,
       explanation: (map['explanation'] as String?) ?? '',
       points: parsedPoints > 0 ? parsedPoints : 1.0,
+      origin: (map['origin'] as String?) ?? 'gemini',
     );
   }
 
@@ -113,6 +116,7 @@ class QuizQuestion {
       'enumerationAnswers': enumerationAnswers,
       'explanation': explanation,
       'points': points,
+      if (origin == 'manual') 'origin': origin,
     };
   }
 
@@ -125,6 +129,7 @@ class QuizQuestion {
     List<String>? enumerationAnswers,
     String? explanation,
     double? points,
+    String? origin,
   }) {
     return QuizQuestion(
       id: id ?? this.id,
@@ -135,6 +140,7 @@ class QuizQuestion {
       enumerationAnswers: enumerationAnswers ?? this.enumerationAnswers,
       explanation: explanation ?? this.explanation,
       points: points ?? this.points,
+      origin: origin ?? this.origin,
     );
   }
 }
@@ -152,6 +158,9 @@ class QuizModel {
   final String? sourceQuizId;
   final List<QuizQuestion> questions;
   final double totalPoints;
+  final int? requestedQuestionCount;
+  final List<String> selectedQuestionTypes;
+  final bool extraGenerationAttempted;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? publishedAt;
@@ -168,6 +177,9 @@ class QuizModel {
     this.sourceQuizId,
     this.questions = const [],
     this.totalPoints = 0.0,
+    this.requestedQuestionCount,
+    this.selectedQuestionTypes = const [],
+    this.extraGenerationAttempted = false,
     this.createdAt,
     this.updatedAt,
     this.publishedAt,
@@ -180,6 +192,8 @@ class QuizModel {
   bool get isPublished => status.toLowerCase() == 'published';
   bool get isClosed => status.toLowerCase() == 'closed';
   int get questionCount => questions.length;
+  bool get hasGenerationShortfall => isDraft &&
+      requestedQuestionCount != null && questionCount < requestedQuestionCount!;
   bool get isGeminiGenerated => generationMethod.toLowerCase() == 'gemini';
   bool get isFallbackGenerated => generationMethod.toLowerCase() == 'fallback';
   bool get isManual => generationMethod.toLowerCase() == 'manual';
@@ -243,6 +257,10 @@ class QuizModel {
       sourceQuizId: map['sourceQuizId'] as String?,
       questions: parsedQuestions,
       totalPoints: parsedTotalPoints,
+      requestedQuestionCount: (map['requestedQuestionCount'] as num?)?.toInt(),
+      selectedQuestionTypes: (map['selectedQuestionTypes'] as List?)
+              ?.map((value) => value.toString()).toList() ?? const [],
+      extraGenerationAttempted: map['extraGenerationAttempted'] == true,
       createdAt: parseTimestamp(map['createdAt']),
       updatedAt: parseTimestamp(map['updatedAt']),
       publishedAt: parseTimestamp(map['publishedAt']),
@@ -261,6 +279,9 @@ class QuizModel {
       'sourceQuizId': sourceQuizId,
       'questions': questions.map((q) => q.toMap()).toList(),
       'totalPoints': totalPoints,
+      if (requestedQuestionCount != null) 'requestedQuestionCount': requestedQuestionCount,
+      if (selectedQuestionTypes.isNotEmpty) 'selectedQuestionTypes': selectedQuestionTypes,
+      'extraGenerationAttempted': extraGenerationAttempted,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
       if (publishedAt != null) 'publishedAt': Timestamp.fromDate(publishedAt!),
@@ -279,6 +300,9 @@ class QuizModel {
     String? sourceQuizId,
     List<QuizQuestion>? questions,
     double? totalPoints,
+    int? requestedQuestionCount,
+    List<String>? selectedQuestionTypes,
+    bool? extraGenerationAttempted,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? publishedAt,
@@ -295,6 +319,9 @@ class QuizModel {
       sourceQuizId: sourceQuizId ?? this.sourceQuizId,
       questions: questions ?? this.questions,
       totalPoints: totalPoints ?? this.totalPoints,
+      requestedQuestionCount: requestedQuestionCount ?? this.requestedQuestionCount,
+      selectedQuestionTypes: selectedQuestionTypes ?? this.selectedQuestionTypes,
+      extraGenerationAttempted: extraGenerationAttempted ?? this.extraGenerationAttempted,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       publishedAt: publishedAt ?? this.publishedAt,

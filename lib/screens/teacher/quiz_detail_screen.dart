@@ -4,17 +4,25 @@ import '../../models/quiz_model.dart';
 import '../../services/class_service.dart';
 import '../../services/pdf_export_service.dart';
 import '../../services/quiz_service.dart';
+import '../../services/quiz_generation_client.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/studexa_background.dart';
 import '../../widgets/app_feedback.dart';
 import 'quiz_monitoring_screen.dart';
+import 'manual_question_dialog.dart';
 
 /// Screen allowing a teacher to review, edit, finalize, and publish a generated quiz.
 class QuizDetailScreen extends StatefulWidget {
   final QuizModel quiz;
   final ClassModel? initialClass;
+  final bool showShortfallPrompt;
 
-  const QuizDetailScreen({super.key, required this.quiz, this.initialClass});
+  const QuizDetailScreen({
+    super.key,
+    required this.quiz,
+    this.initialClass,
+    this.showShortfallPrompt = false,
+  });
 
   @override
   State<QuizDetailScreen> createState() => _QuizDetailScreenState();
@@ -46,6 +54,102 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       _teacherName = widget.initialClass?.teacherName;
     } else {
       _loadClassDetails();
+    }
+    if (widget.showShortfallPrompt && _currentQuiz.hasGenerationShortfall) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _showShortfallDialog();
+      });
+    }
+  }
+
+  Future<void> _showShortfallDialog() async {
+    if (!_currentQuiz.hasGenerationShortfall || !mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Quiz draft is ready'),
+        content: Text(_currentQuiz.extraGenerationAttempted
+            ? 'This draft has ${_currentQuiz.questionCount} of ${_currentQuiz.requestedQuestionCount} distinct questions. You can use these or add your own.'
+            : 'Generated ${_currentQuiz.questionCount} of ${_currentQuiz.requestedQuestionCount} distinct questions. You can use this draft, add your own question, or try once more for different questions.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, 'use'), child: const Text('Use these questions')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext, 'add'), child: const Text('Add my own')),
+          if (!_currentQuiz.extraGenerationAttempted)
+            ElevatedButton(onPressed: () => Navigator.pop(dialogContext, 'more'), child: const Text('Generate more')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'add') {
+      await _addManualQuestion();
+    }
+    if (choice == 'more') {
+      await _generateMore();
+    }
+  }
+
+  Future<void> _generateMore() async {
+    if (_isSaving || !_currentQuiz.hasGenerationShortfall ||
+        _currentQuiz.extraGenerationAttempted) {
+      return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      final updated = await _quizService.generateMore(_currentQuiz);
+      if (!mounted) return;
+      setState(() { _currentQuiz = updated; _isSaving = false; });
+      if (_currentQuiz.hasGenerationShortfall) {
+        await _showShortfallDialog();
+      } else {
+        AppFeedback.success(context, 'The draft now has ${updated.questionCount} distinct questions.', title: 'Quiz completed');
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      AppFeedback.error(context, error is QuizGenerationException ? error.message :
+          'Could not generate more questions. Your existing draft is safe; try again later.', title: 'More questions unavailable');
+    }
+  }
+
+  Future<void> _addManualQuestion() async {
+    if (_isSaving || !_currentQuiz.isDraft) return;
+    final question = await showDialog<QuizQuestion>(
+      context: context,
+      builder: (_) => const ManualQuestionDialog(),
+    );
+    if (question == null || !mounted) return;
+    final similar = _currentQuiz.questions.any((existing) {
+      final overlap = QuizService.tokenJaccardSimilarity(question.question, existing.question);
+      return overlap > 0.70 ||
+          (overlap > 0.45 && question.correctAnswer.trim().toLowerCase() ==
+              existing.correctAnswer.trim().toLowerCase());
+    });
+    if (similar) {
+      final proceed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Similar question found'),
+          content: const Text('This looks like another question in the draft. Add it only if it tests a different fact or reasoning skill.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('Review again')),
+            ElevatedButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('Add anyway')),
+          ],
+        ),
+      );
+      if (proceed != true || !mounted) return;
+    }
+    setState(() => _isSaving = true);
+    try {
+      final updated = await _quizService.appendManualQuestion(_currentQuiz.id, question);
+      if (!mounted) return;
+      setState(() { _currentQuiz = updated; _isSaving = false; });
+      AppFeedback.success(context, 'Your question was added to this private draft.', title: 'Question added');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isSaving = false);
+      AppFeedback.error(context, error is StateError ? error.message :
+          'The question could not be saved. Check your connection and try again.', title: 'Question not added');
     }
   }
 
@@ -706,6 +810,29 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
                   ),
 
                   const SizedBox(height: 8),
+
+                  if (_currentQuiz.isDraft)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _isSaving ? null : _addManualQuestion,
+                          icon: const Icon(Icons.add_circle_outline),
+                          label: const Text('Add Your Question'),
+                        ),
+                      ),
+                    ),
+
+                  if (_currentQuiz.hasGenerationShortfall && !_currentQuiz.extraGenerationAttempted)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextButton.icon(
+                        onPressed: _isSaving ? null : _generateMore,
+                        icon: const Icon(Icons.auto_awesome_outlined),
+                        label: Text('Generate more (${_currentQuiz.questionCount}/${_currentQuiz.requestedQuestionCount})'),
+                      ),
+                    ),
 
                   // ── Questions List ─────────────────────────────────
                   Expanded(

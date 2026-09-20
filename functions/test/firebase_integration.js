@@ -142,6 +142,30 @@ async function account(role) {
     assert.equal(practice.quiz.sourceQuizId, actual.quizId);
     assert.equal(practice.quiz.questions.length, 10);
     checks += 5;
+    if (fixtureBackend) {
+      const shortResponse = await invoke(teacher.token, { ...body, questionCount: 12, allowPartialDraft: true });
+      assert.equal(shortResponse.status, 200, await shortResponse.clone().text());
+      const shortDraft = await shortResponse.json();
+      assert.equal(shortDraft.quiz.questions.length, 10);
+      assert.equal(shortDraft.quiz.requestedQuestionCount, 12);
+      assert.equal(shortDraft.quiz.status, "draft");
+      const firestore = require("firebase-admin/firestore").getFirestore("default");
+      const shortRef = firestore.collection("quizzes").doc(shortDraft.quizId);
+      const manual = { id: "q_11", type: "identification", question: "Name the teacher-added concept.",
+        correctAnswer: "Teacher concept", options: [], enumerationAnswers: [], explanation: "", points: 1, origin: "manual" };
+      await shortRef.update({ questions: [...shortDraft.quiz.questions, manual], totalPoints: 11 });
+      const moreResponse = await invoke(teacher.token, { ...body, questionCount: 12,
+        allowPartialDraft: true, continueQuizId: shortDraft.quizId });
+      assert.equal(moreResponse.status, 200, await moreResponse.clone().text());
+      const continued = await moreResponse.json();
+      assert.equal(continued.quiz.questions.length, 11);
+      assert.equal(continued.quiz.questions[10].origin, "manual");
+      assert.equal(continued.quiz.extraGenerationAttempted, true);
+      const secondAttempt = await invoke(teacher.token, { ...body, questionCount: 12,
+        allowPartialDraft: true, continueQuizId: shortDraft.quizId });
+      assert.equal(secondAttempt.status, 412);
+      checks += 8;
+    }
     if (!fixtureBackend) {
       fs.mkdirSync("build/integration-evidence", { recursive: true });
       fs.writeFileSync("build/integration-evidence/emulated-backend-live-gemini.json", JSON.stringify({ actual: actual.quiz, practice: practice.quiz }, null, 2));
