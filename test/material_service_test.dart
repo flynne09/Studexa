@@ -472,4 +472,42 @@ void main() {
       },
     );
   });
+
+  group('External material download readiness', () {
+    MaterialModel officeMaterial(String storageUploadStatus) => MaterialModel(
+      id: 'mat_external',
+      teacherId: 'teacher_1',
+      classId: 'class_1',
+      fileName: 'lesson.docx',
+      fileType: 'docx',
+      fileRef: 'uploads/teacher_1/mat_external/lesson.docx',
+      storageProvider: 'supabase',
+      storageUploadStatus: storageUploadStatus,
+      status: 'ready',
+      createdAt: DateTime.now(),
+    );
+
+    test(
+      'reports an unfinished background upload without downloading',
+      () async {
+        final result = await MaterialService().prepareMaterialForExternalOpen(
+          officeMaterial('uploading'),
+        );
+
+        expect(result.status, MaterialDownloadStatus.uploadInProgress);
+        expect(result.file, isNull);
+        expect(result.message, contains('still uploading'));
+      },
+    );
+
+    test('reports a failed original upload without downloading', () async {
+      final result = await MaterialService().prepareMaterialForExternalOpen(
+        officeMaterial('failed'),
+      );
+
+      expect(result.status, MaterialDownloadStatus.uploadFailed);
+      expect(result.file, isNull);
+      expect(result.message, contains('upload it again'));
+    });
+  });
 }

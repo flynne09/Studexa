@@ -43,6 +43,7 @@ void main() {
         child: MaterialApp(
           home: TeacherHomeScreen(
             initialProfile: mockTeacher,
+            initialClassesStream: const Stream.empty(),
           ),
         ),
       );
@@ -63,8 +64,9 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify header titles
-      expect(find.text('Teacher Portal'), findsOneWidget);
+      expect(find.text('Teacher Account'), findsOneWidget);
       expect(find.text('My Classes & Materials'), findsOneWidget);
+      expect(find.byKey(const Key('teacher_header_app_icon')), findsOneWidget);
 
       // Verify teacher profile details are clearly visible
       expect(find.byKey(const Key('teacher_display_name_text')), findsOneWidget);
@@ -76,17 +78,16 @@ void main() {
       // Verify Avatar initial 'D'
       expect(find.text('D'), findsWidgets);
 
-      // Verify Log Out button is directly visible on the profile card
-      final logoutButton = find.byKey(const Key('teacher_logout_button'));
-      expect(logoutButton, findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, 'Log Out'), findsOneWidget);
+      // Logout is available from the header profile menu, not the profile card.
+      expect(find.byKey(const Key('teacher_header_avatar_menu')), findsOneWidget);
+      expect(find.byKey(const Key('teacher_logout_button')), findsNothing);
 
       // Verify Action Cards are visible
       expect(find.text('Upload Material'), findsOneWidget);
       expect(find.text('Create Class'), findsOneWidget);
     });
 
-    testWidgets('Tapping Log Out button displays confirmation dialog', (tester) async {
+    testWidgets('Tapping Log Out in profile menu displays confirmation dialog', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -97,19 +98,23 @@ void main() {
       await tester.pumpWidget(buildTestApp(size: const Size(360, 640)));
       await tester.pump();
 
-      final logoutButton = find.byKey(const Key('teacher_logout_button'));
-      await tester.tap(logoutButton);
+      await tester.tap(find.byKey(const Key('teacher_header_avatar_menu')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      final logoutItem = find.byKey(const Key('teacher_menu_logout'));
+      expect(logoutItem, findsOneWidget);
+      await tester.tap(logoutItem);
       await tester.pump();
 
       // Confirmation dialog should appear
       expect(find.text('Log Out'), findsWidgets);
-      expect(find.text('Are you sure you want to log out of Studexa?'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, 'Cancel'), findsOneWidget);
+      expect(find.textContaining('Are you sure you want to log out of Studexa?'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Cancel'), findsOneWidget);
 
       // Dismiss dialog
-      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
       await tester.pump();
-      expect(find.text('Are you sure you want to log out of Studexa?'), findsNothing);
+      expect(find.textContaining('Are you sure you want to log out of Studexa?'), findsNothing);
     });
 
     testWidgets('Teacher dashboard renders without overflow on narrow 320dp phone viewport', (tester) async {
@@ -125,7 +130,7 @@ void main() {
 
       // Zero render overflow on narrow 320dp screens
       expect(tester.takeException(), isNull);
-      expect(find.text('Teacher Portal'), findsOneWidget);
+      expect(find.text('Teacher Account'), findsOneWidget);
       expect(find.text('Dr. Elizabeth Stone'), findsOneWidget);
     });
   });

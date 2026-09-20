@@ -19,6 +19,29 @@ class MaterialValidationException implements Exception {
   String toString() => message;
 }
 
+enum MaterialDownloadStatus {
+  ready,
+  uploadInProgress,
+  uploadFailed,
+  unavailable,
+  unsupportedPlatform,
+  failed,
+}
+
+class MaterialDownloadResult {
+  final MaterialDownloadStatus status;
+  final File? file;
+  final String message;
+
+  const MaterialDownloadResult({
+    required this.status,
+    required this.message,
+    this.file,
+  });
+
+  bool get isReady => status == MaterialDownloadStatus.ready && file != null;
+}
+
 /// Service handling on-device material extraction, Supabase Storage
 /// persistence, and real-time Firestore tracking.
 class MaterialService {
@@ -349,22 +372,94 @@ class MaterialService {
     return null;
   }
 
-  /// Download material to temporary file directory for opening with native apps
-  Future<File?> downloadMaterialToTemp(MaterialModel material) async {
-    if (kIsWeb) return null;
-    try {
-      final bytes = await getMaterialFileBytes(material);
-      if (bytes == null || bytes.isEmpty) return null;
+  /// Download a material to a uniquely named temporary file for native apps.
+  /// Returns a structured result so the UI can distinguish an unfinished
+  /// upload, a failed upload, a missing object, and a local write failure.
+  Future<MaterialDownloadResult> prepareMaterialForExternalOpen(
+    MaterialModel material,
+  ) async {
+    if (kIsWeb) {
+      return const MaterialDownloadResult(
+        status: MaterialDownloadStatus.unsupportedPlatform,
+        message: 'Opening Office files in another app is unavailable on web.',
+      );
+    }
 
+    if (material.storageUploadStatus == 'uploading') {
+      return const MaterialDownloadResult(
+        status: MaterialDownloadStatus.uploadInProgress,
+        message:
+            'The original file is still uploading. Wait a moment, then try again.',
+      );
+    }
+
+    if (material.storageUploadStatus == 'failed') {
+      return const MaterialDownloadResult(
+        status: MaterialDownloadStatus.uploadFailed,
+        message:
+            'The original file was not uploaded successfully. Ask the teacher to upload it again.',
+      );
+    }
+
+    try {
       final tempDir = await getTemporaryDirectory();
+      final safeId = material.id.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final safeName = material.fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
-      final tempFile = File('${tempDir.path}/$safeName');
+      final tempFile = File(
+        '${tempDir.path}${Platform.pathSeparator}${safeId}_$safeName',
+      );
+
+      if (await tempFile.exists()) {
+        final cachedLength = await tempFile.length();
+        final expectedLength = material.fileSizeBytes;
+        if (cachedLength > 0 &&
+            (expectedLength == null ||
+                expectedLength <= 0 ||
+                cachedLength == expectedLength)) {
+          return MaterialDownloadResult(
+            status: MaterialDownloadStatus.ready,
+            file: tempFile,
+            message: 'The original file is ready to open.',
+          );
+        }
+      }
+
+      final bytes = await getMaterialFileBytes(material);
+      if (bytes == null || bytes.isEmpty) {
+        return const MaterialDownloadResult(
+          status: MaterialDownloadStatus.unavailable,
+          message:
+              'The original file could not be downloaded. Check your connection and try again.',
+        );
+      }
+
       await tempFile.writeAsBytes(bytes, flush: true);
-      return tempFile;
+      if (!await tempFile.exists() || await tempFile.length() == 0) {
+        return const MaterialDownloadResult(
+          status: MaterialDownloadStatus.failed,
+          message: 'The downloaded file could not be saved on this device.',
+        );
+      }
+
+      return MaterialDownloadResult(
+        status: MaterialDownloadStatus.ready,
+        file: tempFile,
+        message: 'The original file is ready to open.',
+      );
     } catch (e) {
       debugPrint('Error writing material to temp file: $e');
-      return null;
+      return const MaterialDownloadResult(
+        status: MaterialDownloadStatus.failed,
+        message:
+            'The original file could not be prepared. Check your connection and available storage, then try again.',
+      );
     }
+  }
+
+  /// Backward-compatible helper for callers that only need the downloaded file.
+  Future<File?> downloadMaterialToTemp(MaterialModel material) async {
+    final result = await prepareMaterialForExternalOpen(material);
+    return result.file;
   }
 
   /// Stream a single material document in real time to monitor extraction status
@@ -491,7 +586,10 @@ class MaterialService {
         : Future<void>.value();
 
     // 4. Concurrently clean up any cached local temporary file
-    final localCleanup = _cleanupLocalTempFile(fileName: fileName);
+    final localCleanup = _cleanupLocalTempFile(
+      materialId: materialId,
+      fileName: fileName,
+    );
 
     await Future.wait([
       firestoreDelete,
@@ -552,14 +650,24 @@ class MaterialService {
     }
   }
 
-  Future<void> _cleanupLocalTempFile({String? fileName}) async {
+  Future<void> _cleanupLocalTempFile({
+    required String materialId,
+    String? fileName,
+  }) async {
     if (kIsWeb || fileName == null || fileName.isEmpty) return;
     try {
       final tempDir = await getTemporaryDirectory();
+      final safeId = materialId.replaceAll(RegExp(r'[^\w\.-]'), '_');
       final safeName = fileName.replaceAll(RegExp(r'[^\w\.-]'), '_');
-      final file = File('${tempDir.path}/$safeName');
-      if (await file.exists()) {
-        await file.delete();
+      final files = <File>[
+        File('${tempDir.path}${Platform.pathSeparator}${safeId}_$safeName'),
+        // Remove files cached by the earlier filename-only implementation.
+        File('${tempDir.path}${Platform.pathSeparator}$safeName'),
+      ];
+      for (final file in files) {
+        if (await file.exists()) {
+          await file.delete();
+        }
       }
     } catch (e) {
       debugPrint('Notice: Local temp file cleanup error: $e');

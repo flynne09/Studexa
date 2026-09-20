@@ -86,7 +86,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify core header and dashboard sections remain intact
-      expect(find.text('Teacher Portal'), findsOneWidget);
+      expect(find.text('Teacher Account'), findsOneWidget);
       expect(find.text('My Classes & Materials'), findsOneWidget);
       expect(find.text('Dr. Elizabeth Stone'), findsOneWidget);
       expect(find.text('Upload Material'), findsOneWidget);

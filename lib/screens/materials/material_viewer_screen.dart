@@ -8,11 +8,16 @@ import '../../services/material_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_feedback.dart';
 
+typedef MaterialExternalFileOpener =
+    Future<ResultType> Function(String filePath, String mimeType);
+
 /// Screen and handler for viewing study materials.
 /// - PDF: Rendered in-app with Syncfusion PDF Viewer.
 /// - PPTX / DOCX: Rendered in-app via converted preview PDF, with fallback to external device app.
 /// - Fallback: In-app text viewer displaying the extracted text when files cannot be loaded or opened.
 class MaterialViewerScreen extends StatefulWidget {
+  static final Set<String> _openingMaterialIds = <String>{};
+
   final MaterialModel material;
   final bool initialShowExtractedText;
   final MaterialService? materialService;
@@ -29,74 +34,177 @@ class MaterialViewerScreen extends StatefulWidget {
     required BuildContext context,
     required MaterialModel material,
     MaterialService? materialService,
+    MaterialExternalFileOpener? fileOpener,
   }) async {
+    if (!_openingMaterialIds.add(material.id)) {
+      AppFeedback.info(
+        context,
+        '${material.fileName} is already being prepared.',
+        title: 'Opening file',
+      );
+      return;
+    }
+
     final service = materialService ?? MaterialService();
     final ext = material.fileType.toLowerCase();
     AppFeedback.info(
       context,
-      'Opening ${material.fileName} in a supported app.',
-      title: 'Opening file',
-      duration: const Duration(seconds: 2),
+      'Downloading ${material.fileName} securely from storage.',
+      title: 'Preparing file',
+      duration: const Duration(seconds: 30),
     );
 
     try {
-      final file = await service.downloadMaterialToTemp(material);
-      if (file != null && await file.exists()) {
-        final result = await OpenFilex.open(file.path);
-        if (result.type != ResultType.done) {
-          if (context.mounted) {
-            AppFeedback.warning(
-              context,
-              'No app on this device can open ${ext.toUpperCase()} files. Showing the extracted text instead.',
-              title: 'Original file unavailable',
-            );
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MaterialViewerScreen(
-                  material: material,
-                  initialShowExtractedText: true,
-                ),
-              ),
-            );
-          }
-        }
-      } else {
-        if (context.mounted) {
-          AppFeedback.info(
+      final download = await service.prepareMaterialForExternalOpen(material);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      if (!download.isReady || download.file == null) {
+        _showDownloadFailure(
+          context: context,
+          material: material,
+          result: download,
+          materialService: service,
+          fileOpener: fileOpener,
+        );
+        return;
+      }
+
+      final opener =
+          fileOpener ??
+          (path, mimeType) async {
+            final result = await OpenFilex.open(path, type: mimeType);
+            return result.type;
+          };
+      final openResult = await opener(
+        download.file!.path,
+        material.contentType,
+      );
+      if (!context.mounted) return;
+
+      switch (openResult) {
+        case ResultType.done:
+          AppFeedback.success(
             context,
-            'The original file is not available on this device. Showing the extracted text instead.',
-            title: 'Showing text version',
+            '${material.fileName} was sent to a compatible app.',
+            title: 'File opened',
           );
-          Navigator.push(
+        case ResultType.noAppToOpen:
+          await _showNoCompatibleAppDialog(context, material);
+        case ResultType.fileNotFound:
+          AppFeedback.error(
             context,
-            MaterialPageRoute(
-              builder: (_) => MaterialViewerScreen(
-                material: material,
-                initialShowExtractedText: true,
-              ),
-            ),
+            'The downloaded file is no longer available. Try opening it again.',
+            title: 'File not found',
           );
-        }
+        case ResultType.permissionDenied:
+          AppFeedback.error(
+            context,
+            'Studexa was not allowed to open this file. Check the device permissions and try again.',
+            title: 'Permission needed',
+          );
+        case ResultType.error:
+          AppFeedback.error(
+            context,
+            'The device could not open this ${ext.toUpperCase()} file. Try another compatible app.',
+            title: 'Unable to open file',
+          );
       }
     } catch (e) {
       if (context.mounted) {
         debugPrint('Failed to open original material: $e');
         AppFeedback.error(
           context,
-          'The original file could not be opened. Showing the extracted text instead.',
+          'The original file could not be opened. Check your connection and try again.',
           title: 'Unable to open file',
-        );
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => MaterialViewerScreen(
-              material: material,
-              initialShowExtractedText: true,
-            ),
+          actionLabel: 'Retry',
+          onAction: () => openExternal(
+            context: context,
+            material: material,
+            materialService: service,
+            fileOpener: fileOpener,
           ),
         );
       }
+    } finally {
+      _openingMaterialIds.remove(material.id);
+    }
+  }
+
+  static void _showDownloadFailure({
+    required BuildContext context,
+    required MaterialModel material,
+    required MaterialDownloadResult result,
+    required MaterialService materialService,
+    MaterialExternalFileOpener? fileOpener,
+  }) {
+    final canRetry =
+        result.status == MaterialDownloadStatus.uploadInProgress ||
+        result.status == MaterialDownloadStatus.unavailable ||
+        result.status == MaterialDownloadStatus.failed;
+    final title = switch (result.status) {
+      MaterialDownloadStatus.uploadInProgress => 'File still uploading',
+      MaterialDownloadStatus.uploadFailed => 'Original upload failed',
+      MaterialDownloadStatus.unsupportedPlatform => 'Unsupported on web',
+      _ => 'Unable to download file',
+    };
+
+    AppFeedback.error(
+      context,
+      result.message,
+      title: title,
+      actionLabel: canRetry ? 'Retry' : null,
+      onAction: canRetry
+          ? () => openExternal(
+              context: context,
+              material: material,
+              materialService: materialService,
+              fileOpener: fileOpener,
+            )
+          : null,
+    );
+  }
+
+  static Future<void> _showNoCompatibleAppDialog(
+    BuildContext context,
+    MaterialModel material,
+  ) async {
+    final ext = material.fileType.toUpperCase();
+    final hasExtractedText = material.extractedText.trim().isNotEmpty;
+    final viewText = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('No app can open $ext'),
+        content: Text(
+          'Install Microsoft ${ext == 'DOCX' ? 'Word' : 'PowerPoint'}, '
+          '${ext == 'DOCX' ? 'Google Docs' : 'Google Slides'}, or WPS Office '
+          'to view the original file.'
+          '${hasExtractedText ? ' You can view its extracted text instead.' : ''}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          if (hasExtractedText)
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('View Extracted Text'),
+            ),
+        ],
+      ),
+    );
+
+    if (viewText == true && context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MaterialViewerScreen(
+            material: material,
+            initialShowExtractedText: true,
+          ),
+        ),
+      );
     }
   }
 

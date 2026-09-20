@@ -124,7 +124,7 @@ void main() {
       await tester.pump();
 
       expect(tester.takeException(), isNull);
-      expect(find.text('Teacher Portal'), findsOneWidget);
+      expect(find.text('Teacher Account'), findsOneWidget);
       expect(find.text('My Classes & Materials'), findsOneWidget);
       expect(find.text('Professor Charles Xavier'), findsOneWidget);
       expect(find.text('CS 101 - Intro to Programming'), findsOneWidget);

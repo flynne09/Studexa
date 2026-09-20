@@ -64,8 +64,9 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // Verify header titles
-      expect(find.text('Student Portal'), findsOneWidget);
+      expect(find.text('Student Account'), findsOneWidget);
       expect(find.text('My Classes & Quizzes'), findsOneWidget);
+      expect(find.byKey(const Key('student_header_app_icon')), findsOneWidget);
 
       // Verify student profile details are clearly visible
       expect(find.byKey(const Key('student_display_name_text')), findsOneWidget);
@@ -104,7 +105,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      final logoutItem = find.text('Log Out');
+      final logoutItem = find.byKey(const Key('student_menu_logout'));
       expect(logoutItem, findsOneWidget);
       await tester.tap(logoutItem, warnIfMissed: false);
       await tester.pump();
@@ -112,14 +113,14 @@ void main() {
 
       // Verify confirmation dialog appears
       expect(find.text('Log Out'), findsWidgets);
-      expect(find.text('Are you sure you want to log out of Studexa?'), findsOneWidget);
-      expect(find.widgetWithText(TextButton, 'Cancel'), findsOneWidget);
+      expect(find.textContaining('Are you sure you want to log out of Studexa?'), findsOneWidget);
+      expect(find.widgetWithText(OutlinedButton, 'Cancel'), findsOneWidget);
 
       // Dismiss dialog
-      await tester.tap(find.widgetWithText(TextButton, 'Cancel'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('Are you sure you want to log out of Studexa?'), findsNothing);
+      expect(find.textContaining('Are you sure you want to log out of Studexa?'), findsNothing);
     });
 
     testWidgets('Dashboard renders cleanly on ultra-narrow 320dp viewport without overflow', (tester) async {

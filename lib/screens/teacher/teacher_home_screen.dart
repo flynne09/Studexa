@@ -6,6 +6,7 @@ import '../../models/user_profile.dart';
 import '../../models/class_model.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_feedback.dart';
+import '../../widgets/home_account_menu.dart';
 import '../../widgets/studexa_background.dart';
 import '../auth/role_selection_screen.dart';
 import 'upload_generate_quiz_screen.dart';
@@ -66,39 +67,9 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   Future<void> _handleLogout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surfaceWhite,
-        title: const Text(
-          'Log Out',
-          style: TextStyle(fontWeight: FontWeight.bold, color: _textPrimary),
-        ),
-        content: const Text(
-          'Are you sure you want to log out of Studexa?',
-          style: TextStyle(color: _textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
-              'Cancel',
-              style: TextStyle(color: _textSecondary),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
+    final confirm = await showStudexaLogoutDialog(context);
 
-    if (confirm == true) {
+    if (confirm) {
       await AuthService().signOut();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -516,25 +487,20 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Container(
-                                      width: 28,
-                                      height: 28,
-                                      decoration: BoxDecoration(
-                                        color: _primaryNavy.withValues(
-                                          alpha: 0.1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.school,
-                                        size: 16,
-                                        color: _primaryNavy,
+                                    ClipRRect(
+                                      key: const Key('teacher_header_app_icon'),
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.asset(
+                                        'assets/images/Studexa_icon.png',
+                                        width: 28,
+                                        height: 28,
+                                        fit: BoxFit.cover,
                                       ),
                                     ),
                                     const SizedBox(width: 8),
                                     const Flexible(
                                       child: Text(
-                                        'Teacher Portal',
+                                        'Teacher Account',
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
@@ -561,96 +527,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                             ),
                           ),
                           const SizedBox(width: 12),
-                          PopupMenuButton<String>(
+                          HomeAccountMenu(
                             key: const Key('teacher_header_avatar_menu'),
-                            tooltip: 'Account options',
-                            color: _surfaceWhite,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              side: const BorderSide(color: _outlineVariant),
-                            ),
-                            onSelected: (val) {
-                              if (val == 'logout') {
-                                _handleLogout();
-                              }
-                            },
-                            itemBuilder: (ctx) => [
-                              PopupMenuItem<String>(
-                                enabled: false,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      _teacherProfile?.displayName ??
-                                          'Teacher Account',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                        color: _textPrimary,
-                                      ),
-                                    ),
-                                    if (_teacherProfile?.email.isNotEmpty ??
-                                        false)
-                                      Text(
-                                        _teacherProfile!.email,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: _textSecondary,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuDivider(),
-                              const PopupMenuItem<String>(
-                                value: 'logout',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.logout,
-                                      color: Colors.redAccent,
-                                      size: 18,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Log Out',
-                                      style: TextStyle(
-                                        color: Colors.redAccent,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: _surfaceWhite,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: _outlineVariant),
-                              ),
-                              child: Center(
-                                child:
-                                    _teacherProfile != null &&
-                                        _teacherProfile!.displayName.isNotEmpty
-                                    ? Text(
-                                        _teacherProfile!.displayName[0]
-                                            .toUpperCase(),
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          color: _primaryNavy,
-                                          fontSize: 16,
-                                        ),
-                                      )
-                                    : const Icon(
-                                        Icons.person_outline,
-                                        color: _primaryNavy,
-                                        size: 22,
-                                      ),
-                              ),
-                            ),
+                            displayName:
+                                _teacherProfile?.displayName ?? 'Teacher',
+                            email: _teacherProfile?.email ?? '',
+                            roleLabel: 'Teacher',
+                            logoutItemKey:
+                                const Key('teacher_menu_logout'),
+                            onLogout: _handleLogout,
                           ),
                         ],
                       ),
@@ -673,8 +558,8 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                           Row(
                             children: [
                               Container(
-                                width: 52,
-                                height: 52,
+                                width: 56,
+                                height: 56,
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.14),
                                   shape: BoxShape.circle,
@@ -725,24 +610,40 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                         const SizedBox(width: 6),
                                         Container(
                                           padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
+                                            horizontal: 9,
+                                            vertical: 4,
                                           ),
                                           decoration: BoxDecoration(
                                             color: Colors.white.withValues(
-                                              alpha: 0.14,
+                                              alpha: 0.16,
                                             ),
                                             borderRadius: BorderRadius.circular(
-                                              4,
+                                              AppTheme.radiusPill,
+                                            ),
+                                            border: Border.all(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.22,
+                                              ),
                                             ),
                                           ),
-                                          child: const Text(
-                                            'Teacher',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w600,
-                                              color: Colors.white,
-                                            ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(
+                                                Icons.badge_outlined,
+                                                size: 12,
+                                                color: Colors.white,
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'Teacher',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ],
@@ -764,39 +665,6 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 14),
-                          Divider(
-                            height: 1,
-                            color: Colors.white.withValues(alpha: 0.18),
-                          ),
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              key: const Key('teacher_logout_button'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                side: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.35),
-                                ),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 9,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: AppTheme.borderRadiusMd,
-                                ),
-                              ),
-                              onPressed: _handleLogout,
-                              icon: const Icon(Icons.logout, size: 16),
-                              label: const Text(
-                                'Log Out',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
                           ),
                         ],
                       ),

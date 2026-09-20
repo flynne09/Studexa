@@ -3,11 +3,11 @@
 ## CURRENT STATUS
 - Overall status: `DEVELOPMENT_ACTIVE`
 - Current phase: `Supabase Storage Migration Live Verified`
-- Last completed task: Configured and live-tested private Supabase original-material storage with Firebase JWT authorization, including upload, download, object listing, delete, cross-user denial, and cleanup.
-- Current task: Supabase migration and live backend verification complete; a signed-in native device walkthrough remains pending.
-- NEXT TASK: Restart the IDE run configuration, sign in as a teacher, upload a fresh PDF, and confirm it opens from the class material list on the target device.
+- Last completed task: Built and verified a fresh Android release APK from the current checkout for local installation or sharing; Android signing verification passed, while on-device installation remains unverified because no device is connected.
+- Current task: External Office-app viewing is implemented and automated verification is complete; a signed-in native Android walkthrough remains pending.
+- NEXT TASK: On an Android device, upload fresh DOCX and PPTX materials, verify Word/PowerPoint or another compatible app opens each original, then repeat once with no compatible Office app installed to verify the extracted-text choice.
 - Blockers: No Android device/emulator is connected. Windows desktop build also requires Windows Developer Mode for plugin symlink support; configured web build succeeds.
-- Last verified: 2026-09-17: live Supabase RLS smoke test passed, configured web debug build passed, `flutter analyze` passed, focused material tests passed 16/16, and the preceding full Flutter suite passed 186/186.
+- Last verified: 2026-09-20: `flutter build apk --release` succeeded and Android `apksigner verify --verbose` confirmed the release APK's v2 signature. The 2026-09-19 `flutter analyze` and five focused Teacher/Student Home suites passed 15/15. The signed-in Office-app interaction matrix remains pending.
 
 ## PROJECT SOURCE OF TRUTH
 - Application: `Studexa`
@@ -63,6 +63,9 @@ Never claim a task or test is complete without evidence.
 - UI source: Preserve existing Studexa visual design language (Navy `#1A237E`, lavender-to-blue gradient `#F3F0FF` to `#EFF6FF`, rounded surfaces `#FBF9F8`).
 
 ## COMPLETED TASKS
+- [x] Fresh Android release APK: built `build/app/outputs/flutter-apk/app-release.apk` from the current checkout and verified its APK signature. This project currently signs release builds with the debug key, so the artifact is suitable for local installation/testing but is not configured for store publishing.
+- [x] Teacher and Student Home account-menu refinement: moved the Teacher logout action exclusively into the profile menu, improved the shared profile/logout presentation and confirmation dialog, upgraded both account cards, changed the header labels to `Teacher Account` / `Student Account`, and replaced the header education symbols with `assets/images/Studexa_icon.png` without changing auth or navigation behavior.
+- [x] Reliable external DOCX/PPTX viewing: added structured download readiness results, background-upload guards, authenticated Supabase download and unique temporary-file caching, correct Office MIME dispatch through `open_filex`, duplicate-open prevention, actionable retry/permission/missing-app feedback, explicit extracted-text choice, matching cache cleanup, and focused automated coverage.
 - [x] Supabase Storage-only migration: added Firebase third-party JWT initialization, private `study-materials` bucket/RLS SQL, non-blocking Supabase original-file upload, authenticated byte downloads, Supabase deletion, Firestore storage metadata, legacy download-URL compatibility, and explicit DOCX/PPTX preview fallback; removed the Flutter Firebase Storage dependency.
 - [x] App-wide feedback-message polish: added the shared `AppFeedback` component and replaced one-off SnackBars across authentication, splash/session recovery, class joining, material viewing/upload, quiz taking, publishing/finalizing/deleting, and assignment monitoring. Messages now state the outcome and next step, use existing semantic palette tokens, include live-region semantics, and keep raw exceptions in debug logs instead of exposing them to users.
 - [x] Studexa launcher icon spacing: changed only the Android adaptive foreground inset from 0% to 12%, regenerated native launcher assets from the unchanged source, and confirmed the fresh APK packages the inset adaptive icon.
@@ -133,6 +136,8 @@ Never claim a task or test is complete without evidence.
 - Shared-project changes were confirmed and deployed; use the updated enrollment and Practice-query client. No Android device is connected; Windows requires host symlink support and iOS requires macOS/Xcode. Intermittent Gemini 503 responses occurred, but the final real-provider backend check passed.
 
 ## FILES CHANGED
+- Release APK build checkpoint: no application source files changed; `build/app/outputs/flutter-apk/app-release.apk` was regenerated as an ignored build artifact and `docs/IMPLEMENTATION_LOG.md` records the result.
+- Home account-menu refinement: added `lib/widgets/home_account_menu.dart`; updated `lib/screens/teacher/teacher_home_screen.dart`, `lib/screens/student/student_home_screen.dart`, `test/teacher_phone_visibility_test.dart`, `test/student_phone_visibility_test.dart`, `test/teacher_home_workflow_removal_test.dart`, `test/teacher_visual_enhancement_test.dart`, and `docs/IMPLEMENTATION_LOG.md`. No package, theme, service, model, Firebase, database, or route change was made.
 - Feedback-message polish: added `lib/widgets/app_feedback.dart`; updated `lib/screens/auth/login_screen.dart`, `lib/screens/auth/register_screen.dart`, `lib/screens/splash_screen.dart`, `lib/screens/materials/material_viewer_screen.dart`, `lib/screens/student/answer_quiz_screen.dart`, `lib/screens/student/join_class_screen.dart`, `lib/screens/student/student_class_details_screen.dart`, `lib/screens/teacher/quiz_detail_screen.dart`, `lib/screens/teacher/quiz_monitoring_screen.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `lib/screens/teacher/teacher_home_screen.dart`, and `lib/screens/teacher/upload_generate_quiz_screen.dart`. No package, service, model, navigation, Firebase rule, or database change was made.
 - Launcher spacing refinement: `pubspec.yaml` (`adaptive_icon_foreground_inset: 12`), regenerated Android/iOS native launcher files from the unchanged source, and `docs/IMPLEMENTATION_LOG.md`. No Dart/application-flow file changed.
 - Student Home profile refinement: `lib/screens/student/student_home_screen.dart` only for application source; `docs/IMPLEMENTATION_LOG.md` updated for session discipline. `lib/theme/app_theme.dart` was not changed because the required navy already exists as `AppTheme.primaryNavy` (`#1A237E`).
@@ -271,6 +276,17 @@ Never claim a task or test is complete without evidence.
   - `materials/{materialId}` collection with `{ teacherId, classId, fileName, fileType, fileRef, status, errorReason?, extractedText, createdAt, extractedAt?, fileSizeBytes? }`.
 
 ## TESTS / VERIFICATION
+- `flutter build apk --release` (fresh APK for installation/sharing):
+  - Result: Passed; `build/app/outputs/flutter-apk/app-release.apk` is 75,953,401 bytes, modified 2026-09-20 06:36:25 local time; SHA-256 `8A842EB29F11ADEA64E3D1EBD13C873529E544E77562DAA93C565AC18BCAADE7`.
+  - Android `apksigner verify --verbose`: passed using APK Signature Scheme v2, one signer. `adb devices` found no connected device, so no installation or live run is claimed.
+  - Date: 2026-09-20
+- `flutter analyze` (Teacher/Student Home account-menu refinement):
+  - Result: No issues found.
+  - Date: 2026-09-19
+- Focused Teacher/Student Home suite (`teacher_phone_visibility_test.dart`, `student_phone_visibility_test.dart`, `teacher_home_workflow_removal_test.dart`, `teacher_visual_enhancement_test.dart`, `student_visual_enhancement_test.dart`):
+  - Result: 15 passed, 0 failed.
+  - Verified the profile-menu logout path and confirmation, removal of the direct Teacher Home logout button, Studexa header icons, updated account labels, and responsive layouts without overflow.
+  - Date: 2026-09-19
 - `flutter analyze` (feedback-message polish):
   - Result: No issues found.
   - Date: 2026-09-13
@@ -2086,3 +2102,34 @@ Connect an Android device or install an emulator system image, install `build/ap
 - After an IDE launch still omitted the dart-defines, embedded the public project URL/publishable key defaults, removed the no-longer-applicable missing-config test, and reran verification: `flutter analyze` passed and the 20 focused material service/viewer tests passed.
 - Files changed: `lib/config/supabase_config.dart`, `lib/main.dart`, `lib/models/material_model.dart`, `lib/services/material_service.dart`, `lib/screens/teacher/teacher_class_details_screen.dart`, `test/material_service_test.dart`, `pubspec.yaml`, `pubspec.lock`, generated Windows plugin registration, `supabase/migrations/202609170001_study_material_storage.sql`, `docs/SUPABASE_STORAGE_SETUP.md`, and `docs/IMPLEMENTATION_LOG.md`.
 - Next task: run the Supabase SQL migration, provide the Project URL and Publishable key through dart-defines, and perform an authenticated PDF upload/download smoke test.
+
+### 2026-09-18 - Reliable native DOCX/PPTX material opening
+- Preserved the established viewing contract: PDFs render inside Studexa, while new DOCX/PPTX originals use authenticated Supabase download and the phone's compatible Office application. No document-conversion service or public Storage URL was introduced.
+- Added `MaterialDownloadStatus` and `MaterialDownloadResult` so the viewer distinguishes upload-in-progress, upload-failed, unavailable, unsupported-web, local-preparation-failed, and ready outcomes instead of treating every failure as extracted text.
+- Added `prepareMaterialForExternalOpen`, which guards background upload state, downloads private bytes, writes a unique `{materialId}_{safeFileName}` temporary file, reuses a valid size-matched cache, and retains the earlier file-only helper for compatibility.
+- Updated external launch handling to pass DOCX/PPTX MIME types to `open_filex`, prevent duplicate opens for one material, preserve raw errors in debug output, and provide actionable retry, permission, missing-file, upload, and unsupported-platform messages.
+- Removed the automatic extracted-text redirect when no compatible app exists. The user now receives Word/PowerPoint, Google Docs/Slides, and WPS Office guidance and can explicitly choose extracted text when it is available.
+- Updated material deletion to remove both the new unique cache name and files created by the earlier filename-only cache implementation.
+- Added tests for background upload states, DOCX MIME dispatch, and the explicit PPTX missing-app/extracted-text choice.
+- Verification: `flutter analyze` passed with no issues; focused material service/viewer tests passed 24/24; the full Flutter test suite passed 190/190. `flutter run -d 584dac09 --debug --no-resident` built and installed the debug APK and launched Studexa successfully on the connected Android 11 CPH1933; Supabase initialization completed in device logs.
+- Files changed: `lib/services/material_service.dart`, `lib/screens/materials/material_viewer_screen.dart`, `test/material_service_test.dart`, `test/material_viewer_test.dart`, and `docs/IMPLEMENTATION_LOG.md`.
+- Next task: perform the Android device matrix with Word/PowerPoint installed and absent; automated tests cannot prove third-party app availability or Android intent behavior on a real phone.
+
+### 2026-09-19 - Teacher and student account menu refinement
+- Read `IMPLEMENTATION_LOG.md` before inspecting and changing the Home screens.
+- Removed the direct Teacher Home logout button from the account card. Teacher logout remains available from the top-right profile control (`teacher_header_avatar_menu` -> `teacher_menu_logout`) and continues to call the existing `_handleLogout`, `AuthService.signOut`, and role-selection navigation.
+- Kept Student logout in its top-right profile control (`student_header_avatar_menu` -> `student_menu_logout`) and introduced the shared `HomeAccountMenu` so both roles now receive the same improved identity summary, role badge, and clearly styled logout action.
+- Added a shared, palette-aligned logout confirmation dialog with Cancel and Log Out actions. No authentication, sign-out, route, or navigation behavior changed.
+- Changed the Home header labels from `Teacher Portal` and `Student Portal` to `Teacher Account` and `Student Account`. Replaced only their header education symbols with the existing `assets/images/Studexa_icon.png`; class and empty-state education icons remain semantically unchanged.
+- Refined both profile cards with stronger avatars and role badges using existing `AppTheme` colors, gradients, radii, borders, and shadows. The Student Join Class action and all dashboard workflows remain unchanged.
+- Verification: `flutter analyze` passed with no issues. The five focused responsive, workflow, and visual suites passed 15/15, covering 360/375/1440px layouts, both profile menus and logout dialogs, header icon/label changes, and the absence of the direct Teacher Home logout button. `git diff --check` reported no whitespace errors, only existing Windows line-ending notices.
+- Files changed: `lib/widgets/home_account_menu.dart`, `lib/screens/teacher/teacher_home_screen.dart`, `lib/screens/student/student_home_screen.dart`, `test/teacher_phone_visibility_test.dart`, `test/student_phone_visibility_test.dart`, `test/teacher_home_workflow_removal_test.dart`, `test/teacher_visual_enhancement_test.dart`, and `docs/IMPLEMENTATION_LOG.md`.
+- Next task remains the signed-in Android Office-app walkthrough for native DOCX/PPTX viewing.
+
+### 2026-09-20 - Fresh Android APK build for local installation
+- Read `IMPLEMENTATION_LOG.md`, confirmed Android is the primary target, checked Supabase's existing public client defaults, and inspected `android/app/build.gradle.kts` before building.
+- Ran `flutter build apk --release` from the repo root. It succeeded and generated `build/app/outputs/flutter-apk/app-release.apk` (75,953,401 bytes; SHA-256 `8A842EB29F11ADEA64E3D1EBD13C873529E544E77562DAA93C565AC18BCAADE7`).
+- Verified the APK with Android `apksigner verify --verbose`: one signer and valid v2 signature. The current Gradle release configuration intentionally uses the debug signing key, so this APK is for direct local installation/testing, not store release.
+- `adb devices` reported no attached Android device. Installation and live behavior were not verified in this checkpoint.
+- No app code, package, configuration, service, model, route, or database file was changed. Only this log was updated; the APK is an ignored build artifact.
+- Next task remains the signed-in Android Office-app walkthrough for native DOCX/PPTX viewing.

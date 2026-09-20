@@ -4,6 +4,7 @@ import '../../models/user_profile.dart';
 import '../../services/auth_service.dart';
 import '../../services/class_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/home_account_menu.dart';
 import '../../widgets/studexa_background.dart';
 import '../auth/role_selection_screen.dart';
 import 'join_class_screen.dart';
@@ -54,36 +55,9 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
   }
 
   Future<void> _handleLogout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surfaceWhite,
-        title: const Text(
-          'Log Out',
-          style: TextStyle(fontWeight: FontWeight.bold, color: _textPrimary),
-        ),
-        content: const Text(
-          'Are you sure you want to log out of Studexa?',
-          style: TextStyle(color: _textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: _textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
+    final confirm = await showStudexaLogoutDialog(context);
 
-    if (confirm == true) {
+    if (confirm) {
       await AuthService().signOut();
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -120,23 +94,20 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Container(
-                                  width: 28,
-                                  height: 28,
-                                  decoration: BoxDecoration(
-                                    color: _primaryNavy.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.menu_book,
-                                    size: 16,
-                                    color: _primaryNavy,
+                                ClipRRect(
+                                  key: const Key('student_header_app_icon'),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.asset(
+                                    'assets/images/Studexa_icon.png',
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
                                 const Flexible(
                                   child: Text(
-                                    'Student Portal',
+                                    'Student Account',
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -163,91 +134,14 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      PopupMenuButton<String>(
+                      HomeAccountMenu(
                         key: const Key('student_header_avatar_menu'),
-                        tooltip: 'Account options',
-                        color: _surfaceWhite,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: AppTheme.borderRadiusMd,
-                          side: const BorderSide(color: _outlineVariant),
-                        ),
-                        onSelected: (val) {
-                          if (val == 'logout') {
-                            _handleLogout();
-                          }
-                        },
-                        itemBuilder: (ctx) => [
-                          PopupMenuItem<String>(
-                            enabled: false,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _studentProfile?.displayName ??
-                                      'Student Account',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: _textPrimary,
-                                  ),
-                                ),
-                                if (_studentProfile?.email.isNotEmpty ?? false)
-                                  Text(
-                                    _studentProfile!.email,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: _textSecondary,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          const PopupMenuItem<String>(
-                            value: 'logout',
-                            child: Row(
-                              children: [
-                                Icon(Icons.logout,
-                                    color: Colors.redAccent, size: 18),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Log Out',
-                                  style: TextStyle(
-                                    color: Colors.redAccent,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: _surfaceWhite,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: _outlineVariant),
-                          ),
-                          child: Center(
-                            child: _studentProfile != null &&
-                                    _studentProfile!.displayName.isNotEmpty
-                                ? Text(
-                                    _studentProfile!.displayName[0]
-                                        .toUpperCase(),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: _primaryNavy,
-                                      fontSize: 16,
-                                    ),
-                                  )
-                                : const Icon(
-                                    Icons.person_outline,
-                                    color: _primaryNavy,
-                                    size: 22,
-                                  ),
-                          ),
-                        ),
+                        displayName:
+                            _studentProfile?.displayName ?? 'Student',
+                        email: _studentProfile?.email ?? '',
+                        roleLabel: 'Student',
+                        logoutItemKey: const Key('student_menu_logout'),
+                        onLogout: _handleLogout,
                       ),
                     ],
                   ),
@@ -271,14 +165,16 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                       Row(
                         children: [
                           Container(
-                            width: 52,
-                            height: 52,
+                            width: 56,
+                            height: 56,
                             decoration: BoxDecoration(
-                              color: AppTheme.primaryContainer,
+                              gradient: AppTheme.heroGradient,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: _primaryNavy.withValues(alpha: 0.16),
+                                color: _surfaceWhite,
+                                width: 2,
                               ),
+                              boxShadow: AppTheme.cardShadow,
                             ),
                             child: Center(
                               child: Text(
@@ -289,8 +185,8 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                     : 'S',
                                 style: const TextStyle(
                                   fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  color: _primaryNavy,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.onPrimary,
                                 ),
                               ),
                             ),
@@ -320,21 +216,38 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
                                     const SizedBox(width: 6),
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 2,
+                                        horizontal: 9,
+                                        vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
                                         color: AppTheme.primaryContainer,
-                                        borderRadius:
-                                            BorderRadius.circular(4),
-                                      ),
-                                      child: const Text(
-                                        'Student',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: _primaryNavy,
+                                        borderRadius: BorderRadius.circular(
+                                          AppTheme.radiusPill,
                                         ),
+                                        border: Border.all(
+                                          color: _primaryNavy.withValues(
+                                            alpha: 0.12,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.person_outline_rounded,
+                                            size: 12,
+                                            color: _primaryNavy,
+                                          ),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            'Student',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: _primaryNavy,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ],
