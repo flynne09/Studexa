@@ -13,6 +13,7 @@ import 'quiz_detail_screen.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/studexa_background.dart';
 import '../../widgets/app_feedback.dart';
+import '../../widgets/gemini_api_generation_guard.dart';
 
 /// Screen allowing a teacher to upload a study material (PDF/PPTX/DOCX),
 /// perform client-side text extraction, configure question parameters,
@@ -523,6 +524,8 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       return;
     }
 
+    if (!await confirmGeminiGeneration(context) || !mounted) return;
+
     final quizKind = isActual ? 'Actual Quiz (Exam)' : 'Practice Quiz';
 
     // Show persistent generation dialog
@@ -588,10 +591,8 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => QuizDetailScreen(
-            quiz: createdQuiz,
-            showShortfallPrompt: true,
-          ),
+          builder: (context) =>
+              QuizDetailScreen(quiz: createdQuiz, showShortfallPrompt: true),
         ),
       );
     } catch (e) {
@@ -601,11 +602,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       final errorMessage = e is QuizGenerationException
           ? e.message
           : 'The quiz could not be generated. Check the material and your connection, then try again.';
-      AppFeedback.error(
-        context,
-        errorMessage,
-        title: 'Quiz generation failed',
-      );
+      AppFeedback.error(context, errorMessage, title: 'Quiz generation failed');
     }
   }
 

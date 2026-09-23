@@ -11,6 +11,8 @@ class HomeAccountMenu extends StatelessWidget {
     required this.roleLabel,
     required this.logoutItemKey,
     required this.onLogout,
+    this.geminiSettingsItemKey,
+    this.onGeminiSettings,
   });
 
   final String displayName;
@@ -18,6 +20,8 @@ class HomeAccountMenu extends StatelessWidget {
   final String roleLabel;
   final Key logoutItemKey;
   final VoidCallback onLogout;
+  final Key? geminiSettingsItemKey;
+  final VoidCallback? onGeminiSettings;
 
   String get _initial {
     final trimmedName = displayName.trim();
@@ -41,6 +45,7 @@ class HomeAccountMenu extends StatelessWidget {
       ),
       onSelected: (value) {
         if (value == 'logout') onLogout();
+        if (value == 'gemini') onGeminiSettings?.call();
       },
       itemBuilder: (context) => [
         PopupMenuItem<String>(
@@ -120,6 +125,24 @@ class HomeAccountMenu extends StatelessWidget {
           ),
         ),
         const PopupMenuDivider(height: 1),
+        if (onGeminiSettings != null) ...[
+          PopupMenuItem<String>(
+            key: geminiSettingsItemKey,
+            value: 'gemini',
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: const ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8),
+              leading: Icon(Icons.key_rounded, color: AppTheme.primaryNavy),
+              title: Text(
+                'Gemini API Settings',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text('Manage your personal quiz-generation key'),
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+        ],
         PopupMenuItem<String>(
           key: logoutItemKey,
           value: 'logout',

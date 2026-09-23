@@ -105,18 +105,18 @@ graph TD
    ```
 
 3. **Configure Environment & Credentials**:
-   - **Firebase**: Ensure `android/app/google-services.json` and `lib/firebase_options.dart` are linked to your Firebase project.
+   - **Firebase**: Copy `firebase.config.example.json` to the ignored `firebase.config.json`, then replace its placeholders with the platform API keys from your Firebase app settings. Firebase client keys identify the project; protect data with Security Rules and App Check, and restrict each key to its intended Firebase APIs and application in Google Cloud Console.
    - **Supabase**: Configure your Supabase project URL and publishable key via `--dart-define` or default settings in [`lib/config/supabase_config.dart`](lib/config/supabase_config.dart).
    - **Edge Functions**: Deploy the `generate-quiz` Supabase Edge Function with your `GEMINI_API_KEY` secret as described in [`docs/SUPABASE_QUIZ_GENERATION_SETUP.md`](docs/SUPABASE_QUIZ_GENERATION_SETUP.md).
 
 4. **Run the Application**:
    ```bash
-   flutter run
+   flutter run --dart-define-from-file=firebase.config.json
    ```
 
 5. **Build Release APK**:
    ```bash
-   flutter build apk --release
+   flutter build apk --release --dart-define-from-file=firebase.config.json
    ```
 
 ---

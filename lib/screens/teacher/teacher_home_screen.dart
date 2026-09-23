@@ -11,6 +11,7 @@ import '../../widgets/studexa_background.dart';
 import '../auth/role_selection_screen.dart';
 import 'upload_generate_quiz_screen.dart';
 import 'teacher_class_details_screen.dart';
+import 'gemini_api_settings_screen.dart';
 
 /// Teacher Home Screen displaying the teacher's classes, quick actions
 /// to create classes or upload materials, and recent quiz activity.
@@ -77,6 +78,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
         (route) => false,
       );
     }
+  }
+
+  void _openGeminiSettings() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const GeminiApiSettingsScreen()));
   }
 
   Future<void> _showClassSelectionSheet() async {
@@ -533,8 +540,11 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
                                 _teacherProfile?.displayName ?? 'Teacher',
                             email: _teacherProfile?.email ?? '',
                             roleLabel: 'Teacher',
-                            logoutItemKey:
-                                const Key('teacher_menu_logout'),
+                            logoutItemKey: const Key('teacher_menu_logout'),
+                            geminiSettingsItemKey: const Key(
+                              'teacher_menu_gemini_settings',
+                            ),
+                            onGeminiSettings: _openGeminiSettings,
                             onLogout: _handleLogout,
                           ),
                         ],

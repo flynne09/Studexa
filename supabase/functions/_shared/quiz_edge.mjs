@@ -1,9 +1,9 @@
 import { QuizGenerationError, generateQuizQuestions, isRepeatedFact, validateRequest } from "./quiz_generator.mjs";
 import { isFillerOrBoilerplateQuestion, isTableHeaderQuestion } from "./question_filters.mjs";
 import { FirestoreError, firestoreClient } from "./firestore_rest.mjs";
+import { FirebaseIdentityError, FIREBASE_WEB_API_KEY, verifyFirebaseToken } from "./firebase_identity.mjs";
+import { CredentialStoreError, teacherCredentialStore } from "./teacher_credentials.mjs";
 
-// Firebase Web API keys are public client identifiers, not server credentials.
-const FIREBASE_WEB_API_KEY = "AIzaSyAv-Iwp6wylUC1aK-y4Ba--7cLjnKoveZQ";
 const TYPES = ["multiple_choice", "true_false", "fill_blank", "identification", "enumeration"];
 const BATCH_SIZE = 10;
 const CORS = {
@@ -35,19 +35,6 @@ function ensureExistingQuiz(quiz, expected, teacherId) {
   }
 }
 
-async function verifyFirebaseToken(token, fetchImpl, firebaseApiKey) {
-  const response = await fetchImpl(
-    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(firebaseApiKey)}`,
-    { method: "POST", headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(10000), body: JSON.stringify({ idToken: token }) },
-  );
-  if (!response.ok) fail("unauthenticated", "Sign in again to generate a quiz.");
-  const result = await response.json();
-  const user = result.users?.[0];
-  if (!user?.localId || user.disabled) fail("unauthenticated", "Sign in again to generate a quiz.");
-  return user.localId;
-}
-
 function chooseBatchTypes(types, existing, remaining) {
   const missing = types.filter((type) => !existing.some((question) => question.type === type));
   if (missing.length) return missing.slice(0, Math.min(BATCH_SIZE, remaining));
@@ -56,6 +43,106 @@ function chooseBatchTypes(types, existing, remaining) {
   return [...types].sort((a, b) =>
     existing.filter((q) => q.type === a).length - existing.filter((q) => q.type === b).length,
   ).slice(0, batchSize);
+}
+
+const backupEligible = (error) => error instanceof QuizGenerationError &&
+  ["resource-exhausted", "deadline-exceeded", "unavailable"].includes(error.code);
+
+function usageFromStatus(source, reason, status = {}) {
+  return {
+    source,
+    backupReason: reason || null,
+    graceRemaining: Number.isInteger(status.graceRemaining) ? status.graceRemaining : null,
+    fallbackRemainingToday: Number.isInteger(status.fallbackRemainingToday)
+      ? status.fallbackRemainingToday
+      : null,
+  };
+}
+
+async function generateForSession(request, uid, clientSessionId, options) {
+  const run = (apiKey) => options.generate(request, {
+    apiKey,
+    candidateModels: options.candidateModels,
+    timeoutMs: 38000,
+    maxRounds: 1,
+    fetchImpl: options.fetchImpl,
+    rejectQuestion: (q) => isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q),
+  });
+
+  // Test and local compatibility path. Production always provides the private
+  // credential store and therefore never treats the shared key as personal.
+  if (!options.credentialStore) {
+    if (!options.backupApiKey) fail("backup-unavailable", "Quiz generation is temporarily unavailable. Ask your administrator to check the backup service.");
+    return { questions: await run(options.backupApiKey), usage: usageFromStatus("backup", "legacy"), finish: async () => {} };
+  }
+
+  const credentials = options.credentialStore;
+  const existingBackup = await credentials.getBackupSession(uid, clientSessionId);
+  let reservation = existingBackup && ["reserved", "used"].includes(existingBackup.state)
+    ? existingBackup
+    : null;
+  const useBackup = async (reason) => {
+    if (!options.backupApiKey) fail("backup-unavailable", "The Studexa backup is unavailable. Add or update your Gemini API key and try again.");
+    if (!reservation) reservation = await credentials.reserveBackup(uid, clientSessionId, reason);
+    if (!reservation?.allowed) {
+      fail(reason === "grace" ? "personal-key-required" : "backup-limit-reached",
+        reason === "grace"
+          ? "Your three temporary generations have been used. Add your personal Gemini API key to continue."
+          : "Today’s two Studexa backup sessions have been used. Try your personal key again tomorrow or update it now.");
+    }
+    try {
+      const questions = await run(options.backupApiKey);
+      return {
+        questions,
+        usage: usageFromStatus("backup", reservation.reason || reason, reservation),
+        finish: async (success) => credentials.finishBackup(uid, clientSessionId, success),
+      };
+    } catch (error) {
+      if (reservation.state === "reserved") await credentials.finishBackup(uid, clientSessionId, false);
+      if (error instanceof QuizGenerationError && error.code === "credential-rejected") {
+        fail("backup-unavailable", "The Studexa backup is unavailable. Add or update your Gemini API key and try again.");
+      }
+      throw error;
+    }
+  };
+
+  if (reservation) return useBackup(reservation.reason);
+  const personal = await credentials.getCredential(uid);
+  if (!personal?.apiKey) return useBackup("grace");
+  if (personal.status !== "valid") {
+    fail("personal-key-invalid", "Your saved Gemini API key needs to be replaced before generating another quiz.");
+  }
+  try {
+    return {
+      questions: await run(personal.apiKey),
+      usage: usageFromStatus("personal", null, await credentials.status(uid)),
+      finish: async () => {},
+    };
+  } catch (error) {
+    if (backupEligible(error)) {
+      const reason = error.code === "resource-exhausted" ? "personal_quota" : "provider_unavailable";
+      return useBackup(reason);
+    }
+    if (error instanceof QuizGenerationError && error.code === "credential-rejected") {
+      await credentials.markInvalid(uid);
+      fail("personal-key-invalid", "Google rejected your saved Gemini API key. Replace it in Gemini API Settings.");
+    }
+    throw error;
+  }
+}
+
+async function reconcileSavedBackup(quiz, uid, clientSessionId, options) {
+  if (!quiz?.backupUsed || !options.credentialStore) return quiz;
+  const session = await options.credentialStore.getBackupSession(uid, clientSessionId);
+  if (!session) return quiz;
+  const status = session.state === "reserved"
+    ? await options.credentialStore.finishBackup(uid, clientSessionId, true)
+    : await options.credentialStore.status(uid);
+  return {
+    ...quiz,
+    backupGraceRemaining: status.graceRemaining,
+    backupFallbackRemainingToday: status.fallbackRemainingToday,
+  };
 }
 
 async function processGeneration(body, uid, store, options) {
@@ -94,15 +181,19 @@ async function processGeneration(body, uid, store, options) {
           quiz.classId !== classId || quiz.materialId !== materialId || quiz.type !== quizType) {
         fail("failed-precondition", "This generation request conflicts with another quiz.");
       }
-      return publicQuiz(quizId, quiz);
+      return publicQuiz(quizId, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
     }
   } else {
     ensureExistingQuiz(quiz, body, uid);
-    if (quiz.completedBatchIds?.includes(batchRequestId)) return publicQuiz(quizId, quiz);
+    if (quiz.completedBatchIds?.includes(batchRequestId)) {
+      return publicQuiz(quizId, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
+    }
     questionCount = quiz.requestedQuestionCount;
     questionTypes = quiz.selectedQuestionTypes;
     actualSourceId = quiz.sourceQuizId || null;
-    if (quiz.questions.length >= questionCount) return publicQuiz(quizId, quiz);
+    if (quiz.questions.length >= questionCount) {
+      return publicQuiz(quizId, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
+    }
     if (mode === "automatic" &&
         (quiz.generationSessionId !== clientSessionId || quiz.extraGenerationAttempted ||
          (quiz.automaticBatchesAttempted || 0) >= Math.ceil(questionCount / BATCH_SIZE) + 3)) {
@@ -120,7 +211,9 @@ async function processGeneration(body, uid, store, options) {
   validateRequest({ extractedText, questionTypes, questionCount });
   const previous = quiz?.questions || [];
   const remaining = questionCount - previous.length;
-  if (remaining <= 0) return publicQuiz(quizId, quiz);
+  if (remaining <= 0) {
+    return publicQuiz(quizId, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
+  }
   const batchCount = Math.min(BATCH_SIZE, remaining);
   const batchTypes = chooseBatchTypes(questionTypes, previous, remaining);
   if (batchTypes.some((type) => !TYPES.includes(type))) {
@@ -138,19 +231,24 @@ async function processGeneration(body, uid, store, options) {
     }
     sourceQuizContext = JSON.stringify(source.questions.map(({ question, correctAnswer }) => ({ question, correctAnswer })));
   }
-  const apiKey = options.geminiApiKey;
-  if (!apiKey) fail("failed-precondition", "Quiz generation is not configured. Ask your administrator to configure the AI service.");
-  const generated = await options.generate({
+  const generation = await generateForSession({
     extractedText, questionTypes: batchTypes, questionCount: batchCount,
     isActual: quizType === "actual", sourceQuizContext, allowPartial: true,
     existingQuestions: previous,
-  }, {
-    apiKey, candidateModels: options.candidateModels, timeoutMs: 38000, maxRounds: 1,
-    fetchImpl: options.fetchImpl,
-    rejectQuestion: (q) => isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q),
-  });
+  }, uid, clientSessionId, options);
+  const generated = generation.questions;
+  const usageFields = {
+    generationCredentialSource: generation.usage.source,
+    backupUsed: generation.usage.source === "backup",
+    backupUsageReason: generation.usage.backupReason,
+    backupGraceRemaining: generation.usage.graceRemaining,
+    backupFallbackRemainingToday: generation.usage.fallbackRemainingToday,
+  };
   if (mode === "initial") {
-    if (!generated.length) fail("data-loss", "The AI returned no usable questions. Try another document.");
+    if (!generated.length) {
+      await generation.finish(false);
+      fail("data-loss", "The AI returned no usable questions. Try another document.");
+    }
     const now = new Date().toISOString();
     const fileTitle = (material.fileName || "Study Material").replace(/\.[^/.]+$/, "");
     const data = {
@@ -162,17 +260,28 @@ async function processGeneration(body, uid, store, options) {
       extraGenerationAttempted: false, totalPoints: generated.reduce((sum, q) => sum + (q.points || 1), 0),
       generationSessionId: clientSessionId, completedBatchIds: [batchRequestId],
       automaticBatchesAttempted: 1, extraBatchesAttempted: 0,
+      ...usageFields,
       createdAt: now, updatedAt: now,
     };
     try {
       const saved = await store.create("quizzes", quizId, data);
+      const status = await generation.finish(true);
+      if (status) {
+        saved.data.backupGraceRemaining = status.graceRemaining;
+        saved.data.backupFallbackRemainingToday = status.fallbackRemainingToday;
+      }
       return publicQuiz(quizId, saved.data);
     } catch (error) {
-      if (!(error instanceof FirestoreError) || error.status !== 409) throw error;
+      if (!(error instanceof FirestoreError) || error.status !== 409) {
+        await generation.finish(false);
+        throw error;
+      }
       const duplicate = await store.findQuizBySession(classId, clientSessionId);
       if (duplicate?.id === quizId && duplicate.data.generationSessionId === clientSessionId && duplicate.data.teacherId === uid) {
+        await generation.finish(true);
         return publicQuiz(quizId, duplicate.data);
       }
+      await generation.finish(false);
       throw error;
     }
   }
@@ -181,7 +290,9 @@ async function processGeneration(body, uid, store, options) {
     existingDoc = await store.get("quizzes", quizId);
     quiz = existingDoc?.data;
     ensureExistingQuiz(quiz, body, uid);
-    if (quiz.completedBatchIds?.includes(batchRequestId)) return publicQuiz(quizId, quiz);
+    if (quiz.completedBatchIds?.includes(batchRequestId)) {
+      return publicQuiz(quizId, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
+    }
     if (mode === "automatic" && (quiz.extraGenerationAttempted || quiz.generationSessionId !== clientSessionId)) {
       fail("failed-precondition", "Automatic generation for this draft has ended.");
     }
@@ -206,15 +317,25 @@ async function processGeneration(body, uid, store, options) {
         extraGenerationSessionId: clientSessionId,
         extraBatchesAttempted: (quiz.extraBatchesAttempted || 0) + 1,
       } : {}),
+      ...usageFields,
     };
     try {
       await store.update("quizzes", quizId, changes, existingDoc.updateTime);
       const saved = await store.get("quizzes", quizId);
+      const status = await generation.finish(true);
+      if (status) {
+        saved.data.backupGraceRemaining = status.graceRemaining;
+        saved.data.backupFallbackRemainingToday = status.fallbackRemainingToday;
+      }
       return publicQuiz(quizId, saved.data);
     } catch (error) {
-      if (!(error instanceof FirestoreError) || error.status !== 412) throw error;
+      if (!(error instanceof FirestoreError) || error.status !== 412) {
+        await generation.finish(false);
+        throw error;
+      }
     }
   }
+  await generation.finish(false);
   fail("failed-precondition", "This draft changed while generating. Reopen it before trying again.");
 }
 
@@ -232,7 +353,8 @@ export async function handleQuizRequest(request, deps = {}) {
     const store = deps.store || firestoreClient(token, fetchImpl);
     const result = await processGeneration(body, uid, store, {
       fetchImpl, generate: deps.generate || generateQuizQuestions,
-      geminiApiKey: deps.geminiApiKey ?? globalThis.Deno?.env.get("GEMINI_API_KEY"),
+      backupApiKey: deps.geminiApiKey ?? globalThis.Deno?.env.get("GEMINI_API_KEY"),
+      credentialStore: deps.credentialStore || (deps.store ? null : teacherCredentialStore(fetchImpl)),
       candidateModels: deps.candidateModels || [
         globalThis.Deno?.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite",
         "gemini-3.1-flash-lite",
@@ -242,11 +364,18 @@ export async function handleQuizRequest(request, deps = {}) {
     return json(200, result);
   } catch (error) {
     if (error instanceof SyntaxError) return json(400, { error: "Request must contain valid JSON." });
+    if (error instanceof FirebaseIdentityError) return json(error.status, { error: error.message, code: "unauthenticated" });
     if (error instanceof QuizGenerationError) {
       const statuses = { "unauthenticated": 401, "invalid-argument": 400, "permission-denied": 403,
         "not-found": 404, "failed-precondition": 412, "data-loss": 422,
-        "resource-exhausted": 429, "deadline-exceeded": 504, unavailable: 503 };
+        "resource-exhausted": 429, "deadline-exceeded": 504, unavailable: 503,
+        "personal-key-required": 412, "personal-key-invalid": 412,
+        "backup-limit-reached": 429, "backup-unavailable": 503,
+        "credential-rejected": 412 };
       return json(statuses[error.code] || 500, { error: error.message, code: error.code });
+    }
+    if (error instanceof CredentialStoreError) {
+      return json(503, { error: "Teacher Gemini credentials are temporarily unavailable. Try again.", code: "credential-service-unavailable" });
     }
     if (error instanceof FirestoreError) {
       const status = [401, 403, 404, 409, 412].includes(error.status) ? error.status : 503;

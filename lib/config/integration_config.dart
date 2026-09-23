@@ -6,4 +6,10 @@ abstract final class IntegrationConfig {
     defaultValue:
         'https://zuidphgogdwyrtndbgkx.supabase.co/functions/v1/generate-quiz',
   );
+
+  static const teacherGeminiKeyUrl = String.fromEnvironment(
+    'TEACHER_GEMINI_KEY_URL',
+    defaultValue:
+        'https://zuidphgogdwyrtndbgkx.supabase.co/functions/v1/teacher-gemini-key',
+  );
 }

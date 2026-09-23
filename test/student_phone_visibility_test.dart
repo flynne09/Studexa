@@ -49,46 +49,60 @@ void main() {
       );
     }
 
-    testWidgets('Student dashboard renders without overflow on 360dp phone viewport', (tester) async {
-      tester.view.physicalSize = const Size(360, 640);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'Student dashboard renders without overflow on 360dp phone viewport',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(buildTestApp(size: const Size(360, 640)));
-      await tester.pump();
+        await tester.pumpWidget(buildTestApp(size: const Size(360, 640)));
+        await tester.pump();
 
-      // Ensure no Flutter overflow errors were logged
-      expect(tester.takeException(), isNull);
+        // Ensure no Flutter overflow errors were logged
+        expect(tester.takeException(), isNull);
 
-      // Verify header titles
-      expect(find.text('Student Account'), findsOneWidget);
-      expect(find.text('My Classes & Quizzes'), findsOneWidget);
-      expect(find.byKey(const Key('student_header_app_icon')), findsOneWidget);
+        // Verify header titles
+        expect(find.text('Student Account'), findsOneWidget);
+        expect(find.text('My Classes & Quizzes'), findsOneWidget);
+        expect(
+          find.byKey(const Key('student_header_app_icon')),
+          findsOneWidget,
+        );
 
-      // Verify student profile details are clearly visible
-      expect(find.byKey(const Key('student_display_name_text')), findsOneWidget);
-      expect(find.text('Alex Morgan'), findsOneWidget);
-      expect(find.byKey(const Key('student_email_text')), findsOneWidget);
-      expect(find.text('student.sample@university.edu'), findsOneWidget);
-      expect(find.text('Student'), findsOneWidget);
+        // Verify student profile details are clearly visible
+        expect(
+          find.byKey(const Key('student_display_name_text')),
+          findsOneWidget,
+        );
+        expect(find.text('Alex Morgan'), findsOneWidget);
+        expect(find.byKey(const Key('student_email_text')), findsOneWidget);
+        expect(find.text('student.sample@university.edu'), findsOneWidget);
+        expect(find.text('Student'), findsOneWidget);
 
-      // Verify Avatar initial 'A'
-      expect(find.text('A'), findsWidgets);
+        // Verify Avatar initial 'A'
+        expect(find.text('A'), findsWidgets);
 
-      // Verify Avatar menu is directly visible and rendered on the card
-      final avatarMenu = find.byKey(const Key('student_header_avatar_menu'));
-      expect(avatarMenu, findsOneWidget);
+        // Verify Avatar menu is directly visible and rendered on the card
+        final avatarMenu = find.byKey(const Key('student_header_avatar_menu'));
+        expect(avatarMenu, findsOneWidget);
 
-      // Verify Join Class button is visible
-      final joinButton = find.byKey(const Key('student_join_class_button'));
-      expect(joinButton, findsOneWidget);
-      expect(find.widgetWithText(ElevatedButton, 'Join Class'), findsOneWidget);
-    });
+        // Verify Join Class button is visible
+        final joinButton = find.byKey(const Key('student_join_class_button'));
+        expect(joinButton, findsOneWidget);
+        expect(
+          find.widgetWithText(ElevatedButton, 'Join Class'),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('Tapping Log Out in avatar menu displays confirmation dialog', (tester) async {
+    testWidgets('Tapping Log Out in avatar menu displays confirmation dialog', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -107,40 +121,56 @@ void main() {
 
       final logoutItem = find.byKey(const Key('student_menu_logout'));
       expect(logoutItem, findsOneWidget);
+      expect(find.text('Gemini API Settings'), findsNothing);
       await tester.tap(logoutItem, warnIfMissed: false);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
       // Verify confirmation dialog appears
       expect(find.text('Log Out'), findsWidgets);
-      expect(find.textContaining('Are you sure you want to log out of Studexa?'), findsOneWidget);
+      expect(
+        find.textContaining('Are you sure you want to log out of Studexa?'),
+        findsOneWidget,
+      );
       expect(find.widgetWithText(OutlinedButton, 'Cancel'), findsOneWidget);
 
       // Dismiss dialog
       await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.textContaining('Are you sure you want to log out of Studexa?'), findsNothing);
+      expect(
+        find.textContaining('Are you sure you want to log out of Studexa?'),
+        findsNothing,
+      );
     });
 
-    testWidgets('Dashboard renders cleanly on ultra-narrow 320dp viewport without overflow', (tester) async {
-      tester.view.physicalSize = const Size(320, 568);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
+    testWidgets(
+      'Dashboard renders cleanly on ultra-narrow 320dp viewport without overflow',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 568);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
 
-      await tester.pumpWidget(buildTestApp(size: const Size(320, 568)));
-      await tester.pump();
+        await tester.pumpWidget(buildTestApp(size: const Size(320, 568)));
+        await tester.pump();
 
-      // No overflow exceptions on 320dp
-      expect(tester.takeException(), isNull);
+        // No overflow exceptions on 320dp
+        expect(tester.takeException(), isNull);
 
-      // Elements remain visible
-      expect(find.text('Alex Morgan'), findsOneWidget);
-      expect(find.byKey(const Key('student_header_avatar_menu')), findsOneWidget);
-      expect(find.byKey(const Key('student_join_class_button')), findsOneWidget);
-    });
+        // Elements remain visible
+        expect(find.text('Alex Morgan'), findsOneWidget);
+        expect(
+          find.byKey(const Key('student_header_avatar_menu')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const Key('student_join_class_button')),
+          findsOneWidget,
+        );
+      },
+    );
   });
 }

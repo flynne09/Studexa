@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { handleQuizRequest } from "../_shared/quiz_edge.mjs";
 import { FirestoreError } from "../_shared/firestore_rest.mjs";
+import { QuizGenerationError } from "../_shared/quiz_generator.mjs";
 
 const text = "Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells. Mitochondria supply energy to the cell.";
 const copy = (value) => structuredClone(value);
@@ -69,16 +70,59 @@ function body(overrides = {}) {
   };
 }
 
-async function invoke(f, data, token = "teacher", generate = f.generate) {
+async function invoke(f, data, token = "teacher", generate = f.generate, credentialStore, backupApiKey = "fixture-key") {
   const request = new Request("https://example.test/generate-quiz", {
     method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   const response = await handleQuizRequest(request, {
-    store: f.store, generate, geminiApiKey: "fixture-key",
+    store: f.store, generate, geminiApiKey: backupApiKey,
+    credentialStore,
     fetchImpl: async () => new Response(JSON.stringify({ users: [{ localId: token }] }), { status: 200 }),
   });
   return { status: response.status, data: await response.json() };
+}
+
+function credentialFixture({ personalKey = null, personalStatus = "valid" } = {}) {
+  const sessions = new Map();
+  const used = { grace: 0, fallback: 0 };
+  const status = () => ({
+    configured: personalKey != null,
+    status: personalKey == null ? "missing" : personalStatus,
+    graceRemaining: Math.max(0, 3 - used.grace),
+    fallbackRemainingToday: Math.max(0, 2 - used.fallback),
+  });
+  return {
+    sessions, used,
+    async status() { return status(); },
+    async getCredential() {
+      return personalKey == null ? null : { apiKey: personalKey, status: personalStatus };
+    },
+    async markInvalid() { personalStatus = "invalid"; },
+    async getBackupSession(_uid, id) {
+      const item = sessions.get(id);
+      return item ? { ...status(), allowed: true, existing: true, ...item } : null;
+    },
+    async reserveBackup(_uid, id, reason) {
+      const group = reason === "grace" ? "grace" : "fallback";
+      const allowance = group === "grace" ? 3 : 2;
+      if (used[group] + [...sessions.values()].filter((s) =>
+        s.group === group && s.state === "reserved").length >= allowance) {
+        return { ...status(), allowed: false, reason };
+      }
+      const item = { allowed: true, existing: false, reason, state: "reserved", group };
+      sessions.set(id, item);
+      return { ...status(), ...item };
+    },
+    async finishBackup(_uid, id, success) {
+      const item = sessions.get(id);
+      if (item?.state === "reserved") {
+        item.state = success ? "used" : "failed";
+        if (success) used[item.group]++;
+      }
+      return status();
+    },
+  };
 }
 
 for (const target of [1, 10, 30, 50]) {
@@ -216,4 +260,74 @@ test("Generate more is one action, even when its shortfall needs multiple batche
     clientSessionId: "other_1234567890abcdef", batchRequestId: "other_batch_1234567890",
   }));
   assert.equal(second.status, 412);
+});
+
+test("three successful temporary sessions are allowed and the fourth is blocked", async () => {
+  const f = fixture();
+  const credentials = credentialFixture();
+  for (let index = 1; index <= 3; index++) {
+    const result = await invoke(f, body({
+      clientSessionId: `grace_${String(index).padStart(16, "0")}`,
+      batchRequestId: `grace_batch_${String(index).padStart(16, "0")}`,
+    }), "teacher", f.generate, credentials);
+    assert.equal(result.status, 200);
+    assert.equal(result.data.quiz.generationCredentialSource, "backup");
+    assert.equal(result.data.quiz.backupUsageReason, "grace");
+  }
+  const blocked = await invoke(f, body({
+    clientSessionId: "grace_0000000000000004",
+    batchRequestId: "grace_batch_000000000004",
+  }), "teacher", f.generate, credentials);
+  assert.equal(blocked.status, 412);
+  assert.equal(blocked.data.code, "personal-key-required");
+});
+
+test("personal key is primary and quota fallback is capped per teacher day", async () => {
+  const f = fixture();
+  const credentials = credentialFixture({ personalKey: "personal-key" });
+  let keys = [];
+  const generator = async (request, options) => {
+    keys.push(options.apiKey);
+    if (options.apiKey === "personal-key") {
+      throw new QuizGenerationError("resource-exhausted", "quota");
+    }
+    return f.generate(request);
+  };
+  for (let index = 1; index <= 2; index++) {
+    const result = await invoke(f, body({
+      clientSessionId: `fallback_${String(index).padStart(16, "0")}`,
+      batchRequestId: `fallback_batch_${String(index).padStart(16, "0")}`,
+    }), "teacher", generator, credentials);
+    assert.equal(result.status, 200);
+    assert.equal(result.data.quiz.backupUsageReason, "personal_quota");
+  }
+  const blocked = await invoke(f, body({
+    clientSessionId: "fallback_00000000000003",
+    batchRequestId: "fallback_batch_0000000003",
+  }), "teacher", generator, credentials);
+  assert.equal(blocked.status, 429);
+  assert.equal(blocked.data.code, "backup-limit-reached");
+  assert.deepEqual(keys.slice(0, 2), ["personal-key", "fixture-key"]);
+});
+
+test("a rejected personal key is marked invalid and never uses backup", async () => {
+  const f = fixture();
+  const credentials = credentialFixture({ personalKey: "rejected-personal-key" });
+  const keys = [];
+  const result = await invoke(f, body(), "teacher", async (_request, options) => {
+    keys.push(options.apiKey);
+    throw new QuizGenerationError("credential-rejected", "rejected");
+  }, credentials);
+  assert.equal(result.status, 412);
+  assert.equal(result.data.code, "personal-key-invalid");
+  assert.deepEqual(keys, ["rejected-personal-key"]);
+  assert.equal((await credentials.getCredential()).status, "invalid");
+});
+
+test("missing personal and backup credentials returns a structured unavailable error", async () => {
+  const f = fixture();
+  const credentials = credentialFixture();
+  const result = await invoke(f, body(), "teacher", f.generate, credentials, "");
+  assert.equal(result.status, 503);
+  assert.equal(result.data.code, "backup-unavailable");
 });

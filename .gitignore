@@ -46,10 +46,12 @@ app.*.map.json
 
 # Private API Keys & Credentials (Never commit)
 lib/config/gemini_config.dart
+firebase.config.json
 *.env
 .env.*
 **/.secret.local
 **/service-account*.json
 supabase.local.json
 docs/command.md
+supabase/.temp/
 

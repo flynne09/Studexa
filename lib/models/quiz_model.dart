@@ -39,11 +39,24 @@ enum QuizQuestionType {
   }
 
   static QuizQuestionType fromString(String? typeStr) {
-    if (typeStr == null || typeStr.isEmpty) return QuizQuestionType.multipleChoice;
-    final lower = typeStr.toLowerCase().trim().replaceAll(RegExp(r'[\s\-\/]'), '_');
-    if (lower.contains('multiple') || lower.contains('mcq')) return QuizQuestionType.multipleChoice;
-    if (lower.contains('true') || lower.contains('false') || lower.contains('tf')) return QuizQuestionType.trueFalse;
-    if (lower.contains('fill') || lower.contains('blank')) return QuizQuestionType.fillInTheBlank;
+    if (typeStr == null || typeStr.isEmpty) {
+      return QuizQuestionType.multipleChoice;
+    }
+    final lower = typeStr.toLowerCase().trim().replaceAll(
+      RegExp(r'[\s\-\/]'),
+      '_',
+    );
+    if (lower.contains('multiple') || lower.contains('mcq')) {
+      return QuizQuestionType.multipleChoice;
+    }
+    if (lower.contains('true') ||
+        lower.contains('false') ||
+        lower.contains('tf')) {
+      return QuizQuestionType.trueFalse;
+    }
+    if (lower.contains('fill') || lower.contains('blank')) {
+      return QuizQuestionType.fillInTheBlank;
+    }
     if (lower.contains('ident')) return QuizQuestionType.identification;
     if (lower.contains('enum')) return QuizQuestionType.enumeration;
     return QuizQuestionType.multipleChoice;
@@ -161,6 +174,11 @@ class QuizModel {
   final int? requestedQuestionCount;
   final List<String> selectedQuestionTypes;
   final bool extraGenerationAttempted;
+  final String generationCredentialSource;
+  final bool backupUsed;
+  final String? backupUsageReason;
+  final int? backupGraceRemaining;
+  final int? backupFallbackRemainingToday;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? publishedAt;
@@ -180,6 +198,11 @@ class QuizModel {
     this.requestedQuestionCount,
     this.selectedQuestionTypes = const [],
     this.extraGenerationAttempted = false,
+    this.generationCredentialSource = 'personal',
+    this.backupUsed = false,
+    this.backupUsageReason,
+    this.backupGraceRemaining,
+    this.backupFallbackRemainingToday,
     this.createdAt,
     this.updatedAt,
     this.publishedAt,
@@ -192,8 +215,10 @@ class QuizModel {
   bool get isPublished => status.toLowerCase() == 'published';
   bool get isClosed => status.toLowerCase() == 'closed';
   int get questionCount => questions.length;
-  bool get hasGenerationShortfall => isDraft &&
-      requestedQuestionCount != null && questionCount < requestedQuestionCount!;
+  bool get hasGenerationShortfall =>
+      isDraft &&
+      requestedQuestionCount != null &&
+      questionCount < requestedQuestionCount!;
   bool get isGeminiGenerated => generationMethod.toLowerCase() == 'gemini';
   bool get isFallbackGenerated => generationMethod.toLowerCase() == 'fallback';
   bool get isManual => generationMethod.toLowerCase() == 'manual';
@@ -225,7 +250,9 @@ class QuizModel {
         if (q is Map<String, dynamic>) {
           parsedQuestions.add(QuizQuestion.fromMap(q, index: i));
         } else if (q is Map) {
-          parsedQuestions.add(QuizQuestion.fromMap(Map<String, dynamic>.from(q), index: i));
+          parsedQuestions.add(
+            QuizQuestion.fromMap(Map<String, dynamic>.from(q), index: i),
+          );
         }
       }
     }
@@ -235,8 +262,10 @@ class QuizModel {
     if (rawPoints is num) {
       parsedTotalPoints = rawPoints.toDouble();
     } else {
-      parsedTotalPoints =
-          parsedQuestions.fold<double>(0.0, (acc, q) => acc + q.points);
+      parsedTotalPoints = parsedQuestions.fold<double>(
+        0.0,
+        (acc, q) => acc + q.points,
+      );
     }
 
     DateTime? parseTimestamp(dynamic val) {
@@ -258,9 +287,19 @@ class QuizModel {
       questions: parsedQuestions,
       totalPoints: parsedTotalPoints,
       requestedQuestionCount: (map['requestedQuestionCount'] as num?)?.toInt(),
-      selectedQuestionTypes: (map['selectedQuestionTypes'] as List?)
-              ?.map((value) => value.toString()).toList() ?? const [],
+      selectedQuestionTypes:
+          (map['selectedQuestionTypes'] as List?)
+              ?.map((value) => value.toString())
+              .toList() ??
+          const [],
       extraGenerationAttempted: map['extraGenerationAttempted'] == true,
+      generationCredentialSource:
+          (map['generationCredentialSource'] as String?) ?? 'personal',
+      backupUsed: map['backupUsed'] == true,
+      backupUsageReason: map['backupUsageReason'] as String?,
+      backupGraceRemaining: (map['backupGraceRemaining'] as num?)?.toInt(),
+      backupFallbackRemainingToday:
+          (map['backupFallbackRemainingToday'] as num?)?.toInt(),
       createdAt: parseTimestamp(map['createdAt']),
       updatedAt: parseTimestamp(map['updatedAt']),
       publishedAt: parseTimestamp(map['publishedAt']),
@@ -279,9 +318,18 @@ class QuizModel {
       'sourceQuizId': sourceQuizId,
       'questions': questions.map((q) => q.toMap()).toList(),
       'totalPoints': totalPoints,
-      if (requestedQuestionCount != null) 'requestedQuestionCount': requestedQuestionCount,
-      if (selectedQuestionTypes.isNotEmpty) 'selectedQuestionTypes': selectedQuestionTypes,
+      if (requestedQuestionCount != null)
+        'requestedQuestionCount': requestedQuestionCount,
+      if (selectedQuestionTypes.isNotEmpty)
+        'selectedQuestionTypes': selectedQuestionTypes,
       'extraGenerationAttempted': extraGenerationAttempted,
+      'generationCredentialSource': generationCredentialSource,
+      'backupUsed': backupUsed,
+      'backupUsageReason': backupUsageReason,
+      if (backupGraceRemaining != null)
+        'backupGraceRemaining': backupGraceRemaining,
+      if (backupFallbackRemainingToday != null)
+        'backupFallbackRemainingToday': backupFallbackRemainingToday,
       if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
       if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
       if (publishedAt != null) 'publishedAt': Timestamp.fromDate(publishedAt!),
@@ -303,6 +351,11 @@ class QuizModel {
     int? requestedQuestionCount,
     List<String>? selectedQuestionTypes,
     bool? extraGenerationAttempted,
+    String? generationCredentialSource,
+    bool? backupUsed,
+    String? backupUsageReason,
+    int? backupGraceRemaining,
+    int? backupFallbackRemainingToday,
     DateTime? createdAt,
     DateTime? updatedAt,
     DateTime? publishedAt,
@@ -319,9 +372,19 @@ class QuizModel {
       sourceQuizId: sourceQuizId ?? this.sourceQuizId,
       questions: questions ?? this.questions,
       totalPoints: totalPoints ?? this.totalPoints,
-      requestedQuestionCount: requestedQuestionCount ?? this.requestedQuestionCount,
-      selectedQuestionTypes: selectedQuestionTypes ?? this.selectedQuestionTypes,
-      extraGenerationAttempted: extraGenerationAttempted ?? this.extraGenerationAttempted,
+      requestedQuestionCount:
+          requestedQuestionCount ?? this.requestedQuestionCount,
+      selectedQuestionTypes:
+          selectedQuestionTypes ?? this.selectedQuestionTypes,
+      extraGenerationAttempted:
+          extraGenerationAttempted ?? this.extraGenerationAttempted,
+      generationCredentialSource:
+          generationCredentialSource ?? this.generationCredentialSource,
+      backupUsed: backupUsed ?? this.backupUsed,
+      backupUsageReason: backupUsageReason ?? this.backupUsageReason,
+      backupGraceRemaining: backupGraceRemaining ?? this.backupGraceRemaining,
+      backupFallbackRemainingToday:
+          backupFallbackRemainingToday ?? this.backupFallbackRemainingToday,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       publishedAt: publishedAt ?? this.publishedAt,

@@ -10,8 +10,11 @@ import '../config/supabase_config.dart';
 import '../models/quiz_model.dart';
 
 class QuizGenerationException implements Exception {
-  const QuizGenerationException(this.message);
+  const QuizGenerationException(this.message, {this.code});
   final String message;
+  final String? code;
+  bool get requiresApiKeySetup =>
+      code == 'personal-key-required' || code == 'personal-key-invalid';
   @override
   String toString() => message;
 }
@@ -214,6 +217,15 @@ class QuizGenerationClient {
       response = await send();
     }
     if (response.statusCode != 200) {
+      Map<String, dynamic>? errorBody;
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          errorBody = Map<String, dynamic>.from(decoded);
+        }
+      } on FormatException {
+        // Use the safe status-based message below.
+      }
       const messages = {
         400: 'Check the selected document, question types and question count.',
         401: 'Your session has ended. Sign in again to generate a quiz.',
@@ -230,8 +242,10 @@ class QuizGenerationClient {
         504: 'Quiz generation took too long. Try again with fewer questions.',
       };
       throw QuizGenerationException(
-        messages[response.statusCode] ??
+        errorBody?['error']?.toString() ??
+            messages[response.statusCode] ??
             'The quiz service is temporarily unavailable. Please try again.',
+        code: errorBody?['code']?.toString(),
       );
     }
     final body = jsonDecode(response.body) as Map<String, dynamic>;

@@ -276,6 +276,28 @@ void main() {
       expect(calls, 1);
     }
   });
+  test('preserves structured personal-key setup errors', () async {
+    final client = QuizGenerationClient(
+      tokenProvider: () async => 'test-token',
+      client: MockClient(
+        (_) async => http.Response(
+          jsonEncode({
+            'error': 'Add your personal Gemini API key to continue.',
+            'code': 'personal-key-required',
+          }),
+          412,
+        ),
+      ),
+    );
+    await expectLater(
+      generate(client),
+      throwsA(
+        isA<QuizGenerationException>()
+            .having((e) => e.requiresApiKeySetup, 'setup', isTrue)
+            .having((e) => e.code, 'code', 'personal-key-required'),
+      ),
+    );
+  });
   test(
     'network and timeout failures do not create a substitute quiz',
     () async {

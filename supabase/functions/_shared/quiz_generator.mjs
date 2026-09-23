@@ -231,7 +231,8 @@ ${!isActual && sourceQuizContext ? "This is PRACTICE: cover the reference Actual
             : new QuizGenerationError("unavailable", "The AI service is temporarily unavailable. Please try again.");
           continue;
         }
-        if ([400, 401, 403, 404].includes(response.status)) throw new QuizGenerationError("failed-precondition", "The AI service configuration was rejected. Ask your administrator to check its key, model and restrictions.");
+        if ([401, 403].includes(response.status)) throw new QuizGenerationError("credential-rejected", "The Gemini API key was rejected or is not permitted to use this service.");
+        if ([400, 404].includes(response.status)) throw new QuizGenerationError("failed-precondition", "The AI service configuration was rejected. Ask your administrator to check its model and request configuration.");
         if (response.status === 429) throw new QuizGenerationError("resource-exhausted", "The AI service has reached its request limit. Please try again later.");
         throw new QuizGenerationError("unavailable", "The AI service is temporarily unavailable. Please try again.");
       }

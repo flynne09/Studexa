@@ -1,0 +1,6 @@
+{
+  "FIREBASE_WEB_API_KEY": "replace-with-your-firebase-web-api-key",
+  "FIREBASE_ANDROID_API_KEY": "replace-with-your-firebase-android-api-key",
+  "FIREBASE_IOS_API_KEY": "replace-with-your-firebase-ios-api-key",
+  "FIREBASE_WINDOWS_API_KEY": "replace-with-your-firebase-windows-api-key"
+}
