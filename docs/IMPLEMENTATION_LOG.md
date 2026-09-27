@@ -3,11 +3,11 @@
 ## CURRENT STATUS
 - Overall status: `SUPABASE_MIGRATION_COMPLETE`
 - Current phase: `Supabase-only beta runtime live and Android release verified`
-- Last completed task: Rebuilt the Supabase release with the Teacher material Post/Unpost fix and installed the exact APK on the connected Android phone.
-- Current task: Current release installation is complete; the project is ready for beta use.
+- Last completed task: Published the complete Supabase migration, clean-beta cutover tooling, verification coverage, and material-post reliability update to `origin/main`.
+- Current task: Repository publication is complete; the project is ready for beta use.
 - NEXT TASK: Begin normal beta registration and testing. If Firebase billing is ever enabled, delete the three inaccessible legacy Function deployments.
 - Blockers: Google Cloud rejects deletion of the three legacy Firebase Functions with HTTP 403 because the Firebase project has no billing account. Windows desktop still requires Developer Mode and iOS requires macOS/Xcode; neither limits the required Android release.
-- Last verified: 2026-09-27: the current release built successfully and USB installation on phone `584dac09` returned `Success`. Local `Studexa.apk` and the installed `base.apk` share SHA-256 `8AC325B378EDBE2826CBAA137B309C383669919735AB7632D6A2DFEFB398A23A`; Android reports version `0.1.0`, `.MainActivity` resumed, and an empty crash buffer.
+- Last verified: 2026-09-27: commit `4c05144` (`Migrate Studexa runtime to Supabase`) pushed successfully from local `main` to `origin/main`. The staged publication contained no private Supabase config, generated APK, secret-like added line, oversized source artifact, or whitespace error.
 
 ## PROJECT SOURCE OF TRUTH
 - Application: `Studexa`
@@ -53,6 +53,7 @@ Never claim a task or test is complete without evidence.
 - UI source: Preserve existing Studexa visual design language (Navy `#1A237E`, lavender-to-blue gradient `#F3F0FF` to `#EFF6FF`, rounded surfaces `#FBF9F8`).
 
 ## COMPLETED TASKS
+- [x] Supabase migration publication: reviewed and staged 107 source/documentation files, excluded private/generated artifacts, audited added lines for secret patterns, committed as `4c05144`, and pushed `main` to `origin/main` successfully.
 - [x] Current Android release installation: rebuilt with `supabase.config.json`, refreshed `Studexa.apk`, installed it in place on phone `584dac09`, proved the installed APK hash matches the local artifact, cold-launched `.MainActivity`, and confirmed an empty crash buffer.
 - [x] Teacher material Post/Unpost reliability: confirmed the button is reachable at 375px and the confirmation dialog opens, required PostgREST to return the affected row before showing success, rejected zero-row/RLS-filtered updates, and cleared stale `postedAt` state when unposting.
 - [x] Physical Android post-cutover acceptance: installed the exact Supabase-only release, verified installed hash/package/version/activity and a clean crash buffer, completed native Google Teacher sign-in, created a class through the real UI, proved `subject == class name` and the entered section in Postgres, ran the complete live Teacher→Student backend journey, and removed all disposable data.
@@ -134,6 +135,7 @@ Never claim a task or test is complete without evidence.
 - Windows requires host symlink support for a desktop build, and iOS requires macOS/Xcode.
 
 ## FILES CHANGED
+- Git publication record: updated this log after pushing main migration commit `4c05144`; root `Studexa.apk` is now explicitly ignored and was not published.
 - Current Android installation: refreshed ignored generated artifacts `build/app/outputs/flutter-apk/app-release.apk` and root `Studexa.apk`; updated only this log among tracked source files.
 - Teacher material Post/Unpost reliability: updated `lib/services/material_service.dart`, `lib/models/material_model.dart`, `test/material_service_test.dart`, `test/teacher_visual_enhancement_test.dart`, and this log. No screen flow, schema, RLS policy, package, or production record changed.
 - Final Android/live acceptance: updated `tool/verify_live_supabase_cutover.mjs` for stream-only key input, posted-material visibility assertions, strict fixture cleanup, privacy-safe Auth auditing, and marked device-class audit/cleanup modes; updated `tool/audit_linked_supabase_zero_state.mjs` with explicit expected Auth/profile counts; updated `docs/PROJECT_UNDERSTANDING.md` and this log. The APK is an ignored generated artifact.
@@ -285,6 +287,7 @@ Never claim a task or test is complete without evidence.
   - `materials/{materialId}` collection with `{ teacherId, classId, fileName, fileType, fileRef, status, errorReason?, extractedText, createdAt, extractedAt?, fileSizeBytes? }`.
 
 ## TESTS / VERIFICATION
+- 2026-09-27 Git publication: fetched `origin/main` and confirmed local/remote divergence was `0/0` before committing; staged 107 files; added-line scanning found no private-key, service-key, JWT, OAuth-secret, or Google API-key pattern; `supabase.config.json` and `Studexa.apk` were not staged; `git diff --cached --check` passed. `git push origin main` advanced the remote from `3909ab1` to `4c05144`.
 - 2026-09-27 current Android installation: `flutter build apk --release --dart-define-from-file=supabase.config.json` passed; `adb install -r Studexa.apk` returned `Success`; the local and installed APK SHA-256 values both equal `8AC325B378EDBE2826CBAA137B309C383669919735AB7632D6A2DFEFB398A23A`. Android reports package `com.example.studexa`, version `0.1.0`, min SDK 24, target SDK 36, `.MainActivity` resumed, and no crash-buffer entry after launch.
 - 2026-09-27 Teacher material Post/Unpost check: focused `material_service_test.dart` and `teacher_visual_enhancement_test.dart` passed 24/24. Coverage confirms the Post button is hit-testable at 375px, opens the confirmation dialog, verifies successful Post/Unpost response rows, rejects a zero-row update, and clears `postedAt` on unpost. `flutter analyze` reports no issues.
 - 2026-09-27 physical-phone/live acceptance: `adb install -r Studexa.apk` returned `Success`; Android reported a cold launch of `com.example.studexa/.MainActivity`, version `0.1.0`, and installed `base.apk` SHA-256 exactly matching `3D4CFD3EB92DA718FEB60C44FA82B2DE816AABF2EA0E5E5EBFD3A5B3922991B7`. The crash buffer was empty. Native Google Teacher sign-in reached Teacher Home, and the real Create Class dialog/class-success path passed. The production verifier then passed role/RLS isolation, join code, unposted/posted Storage visibility, real Gemini Actual and Practice generation, idempotency, manual-question coexistence, publishing, assignment, drafts, two scored attempts, third-attempt rejection, Teacher results, and cleanup. Final expected-state database audit passed.
@@ -2426,3 +2429,10 @@ Begin normal beta registration/testing. If Firebase billing is enabled later, de
 - Verified the local and installed APK bytes match exactly: both have SHA-256 `8AC325B378EDBE2826CBAA137B309C383669919735AB7632D6A2DFEFB398A23A`. Android reports package `com.example.studexa`, version `0.1.0`, min SDK 24, target SDK 36, and update time `2026-09-27 14:14:26`.
 - Cold-launched `com.example.studexa/.MainActivity`; it became the resumed foreground activity and the cleared Android crash buffer remained empty.
 - Files changed: this log and ignored generated APK artifacts `build/app/outputs/flutter-apk/app-release.apk` and root `Studexa.apk`. No source, schema, policy, package, or production data changed during installation.
+
+### 2026-09-27 - Complete Supabase update pushed to GitHub
+- Reviewed the accumulated Supabase migration as one coherent release: Auth/Postgres/Realtime/Storage/Vault client migration, Edge Functions, SQL migrations and RLS tests, clean-beta recovery/cutover tools, documentation, Android verification, and the Teacher material Post/Unpost reliability fix.
+- Added `/Studexa.apk` to `.gitignore`. Confirmed neither the generated APK nor private `supabase.config.json` entered the staged set; no staged source file exceeded 1 MiB.
+- Staged 107 source/documentation files and scanned added lines for Google API keys, Supabase server keys, JWTs, private-key blocks, OAuth refresh tokens, and client secrets. No secret-like added line was found, and `git diff --cached --check` passed after removing one trailing blank line from a migration.
+- Confirmed local `main` and `origin/main` were aligned before publication. Created commit `4c05144` (`Migrate Studexa runtime to Supabase`) and successfully pushed `3909ab1..4c05144` to `origin/main` at `https://github.com/flynne09/Studexa.git`.
+- Files changed after the main publication commit: this log only. The documentation follow-up is committed and pushed separately so the successful publication can be recorded factually.
