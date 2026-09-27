@@ -70,6 +70,22 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     super.dispose();
   }
 
+  String _formatDate(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) {
+      if (diff.inHours == 0) {
+        if (diff.inMinutes <= 1) return 'Just now';
+        return '${diff.inMinutes}m ago';
+      }
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      return '${dt.month}/${dt.day}/${dt.year}';
+    }
+  }
+
   void _showStudentMaterialDetails(MaterialModel material) {
     showModalBottomSheet(
       context: context,
@@ -102,7 +118,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                         ),
                       ),
                       Text(
-                        ' • Posted ',
+                        '${material.formattedFileSize.isNotEmpty ? "${material.formattedFileSize} • " : ""}Posted ${_formatDate(material.postedAt ?? material.createdAt)}',
                         style: const TextStyle(
                           fontSize: 12,
                           color: _textSecondary,
@@ -417,7 +433,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     return StreamBuilder<List<MaterialModel>>(
       stream:
           widget.initialMaterialsStream ??
-          _materialService.streamClassMaterials(liveClass.id),
+          _materialService.streamClassMaterials(liveClass.id, postedOnly: true),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(
@@ -494,7 +510,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                     overflow: TextOverflow.ellipsis,
                   ),
                   subtitle: Text(
-                    ' • Posted ',
+                    '${mat.formattedFileSize.isNotEmpty ? "${mat.formattedFileSize} • " : ""}Posted ${_formatDate(mat.postedAt ?? mat.createdAt)}',
                     style: const TextStyle(fontSize: 12, color: _textSecondary),
                   ),
                   trailing: const Icon(
@@ -1195,10 +1211,6 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
                       fontWeight: FontWeight.bold,
                       color: _textPrimary,
                     ),
-                  ),
-                  subtitle: const Text(
-                    'Class Owner',
-                    style: TextStyle(fontSize: 12, color: _textSecondary),
                   ),
                 ),
               ),

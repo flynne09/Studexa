@@ -1,10 +1,9 @@
+import 'test_backend.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/class_model.dart';
 import 'package:studexa/models/material_model.dart';
 import 'package:studexa/models/quiz_model.dart';
@@ -15,25 +14,8 @@ import 'package:studexa/screens/student/student_class_details_screen.dart';
 import 'package:studexa/screens/student/student_home_screen.dart';
 import 'package:studexa/theme/app_theme.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
   final mockQuestions = [
     const QuizQuestion(

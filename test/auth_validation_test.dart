@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:studexa/models/user_profile.dart';
 import 'package:studexa/services/auth_service.dart';
 import 'package:studexa/widgets/google_logo.dart';
@@ -90,54 +90,24 @@ void main() {
       );
     });
 
-    test('AuthService.getErrorMessage mappings for FirebaseAuthException', () {
+    test('AuthService.getErrorMessage mappings for Supabase AuthException', () {
       expect(
         AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'email-already-in-use'),
+          const AuthException('User already registered'),
         ),
         'An account already exists with this email address.',
       );
       expect(
         AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'weak-password'),
+          const AuthException('Password should be at least 6 characters'),
         ),
         'Password must be at least 6 characters.',
       );
       expect(
         AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'invalid-email'),
+          const AuthException('Invalid login credentials'),
         ),
-        'The email address is invalid.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'operation-not-allowed'),
-        ),
-        'Email/password sign-in is not enabled. Please enable it in Firebase Console under Authentication > Sign-in method.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'configuration-not-found'),
-        ),
-        'Firebase Authentication is not enabled for this project. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          Exception('Failed to load resource: the server responded with a status of 400 (CONFIGURATION_NOT_FOUND)'),
-        ),
-        'Firebase Authentication is not enabled for this project. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'network-request-failed'),
-        ),
-        'Network error. Please check your internet connection.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseAuthException(code: 'account-exists-with-different-credential'),
-        ),
-        'An account already exists with this email using another sign-in method. Please sign in with your original method.',
+        'Invalid email or password. Please check your credentials.',
       );
       expect(
         AuthService.getErrorMessage(
@@ -149,34 +119,7 @@ void main() {
         AuthService.getErrorMessage(
           Exception('PlatformException(network_error, A network error occurred, null)'),
         ),
-        'Network error during Google sign-in. Please check your connection.',
-      );
-    });
-
-    test('AuthService.getErrorMessage mappings for FirebaseException', () {
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseException(plugin: 'cloud_firestore', code: 'permission-denied'),
-        ),
-        'Permission denied when accessing user profile. Please try again.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseException(plugin: 'cloud_firestore', code: 'unavailable'),
-        ),
-        'Database service is temporarily unavailable. Please check your connection.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseException(plugin: 'cloud_firestore', code: 'database-timeout'),
-        ),
-        'Database connection timed out. Please ensure Cloud Firestore is created in your Firebase Console.',
-      );
-      expect(
-        AuthService.getErrorMessage(
-          FirebaseException(plugin: 'cloud_firestore', code: 'not-found'),
-        ),
-        'Cloud Firestore database was not found. Please click "Create database" in Firebase Console > Firestore Database.',
+        'Network error. Please check your internet connection.',
       );
     });
 

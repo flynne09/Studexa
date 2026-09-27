@@ -1,9 +1,8 @@
+import 'test_backend.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:archive/archive.dart';
 import 'package:studexa/models/class_model.dart';
@@ -12,28 +11,11 @@ import 'package:studexa/services/material_service.dart';
 import 'package:studexa/screens/teacher/upload_generate_quiz_screen.dart';
 import 'package:studexa/utils/document_text_extractor.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
   group('Task 5: Teacher Upload Reliability & Error Handling Tests', () {
-    // ── 1. File Validation Pre-checks ──────────────────────────
+    // â”€â”€ 1. File Validation Pre-checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     test('1. Validates supported formats (PDF, PPTX, DOCX) and size limits', () {
       // PDF
       expect(
@@ -129,7 +111,7 @@ void main() {
       );
     });
 
-    // ── 2. Error Message & Reason Resilience ──────────────────
+    // â”€â”€ 2. Error Message & Reason Resilience â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     test('2. Formatted error reason covers file_bytes_unavailable and no_extractable_text', () {
       final unavailableModel = MaterialModel(
         id: 'mat_01',
@@ -165,8 +147,8 @@ void main() {
       );
     });
 
-    // ── 3. Format Verification: PDF Upload & Extraction ───────
-    test('3. Supported Format Verification — PDF extraction generates meaningful text', () async {
+    // â”€â”€ 3. Format Verification: PDF Upload & Extraction â”€â”€â”€â”€â”€â”€â”€
+    test('3. Supported Format Verification â€” PDF extraction generates meaningful text', () async {
       final doc = pw.Document();
       doc.addPage(
         pw.Page(
@@ -194,8 +176,8 @@ void main() {
       expect(DocumentTextExtractor.isMeaningfulText(extracted), true);
     });
 
-    // ── 4. Format Verification: PPTX Upload & Extraction ──────
-    test('4. Supported Format Verification — PPTX extraction parses multi-slide presentation', () async {
+    // â”€â”€ 4. Format Verification: PPTX Upload & Extraction â”€â”€â”€â”€â”€â”€
+    test('4. Supported Format Verification â€” PPTX extraction parses multi-slide presentation', () async {
       final archive = Archive();
       const slideXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
@@ -229,8 +211,8 @@ void main() {
       expect(DocumentTextExtractor.isMeaningfulText(extracted), true);
     });
 
-    // ── 5. Format Verification: DOCX Upload & Extraction ──────
-    test('5. Supported Format Verification — DOCX extraction parses document XML body', () async {
+    // â”€â”€ 5. Format Verification: DOCX Upload & Extraction â”€â”€â”€â”€â”€â”€
+    test('5. Supported Format Verification â€” DOCX extraction parses document XML body', () async {
       final archive = Archive();
       const docxXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
@@ -258,7 +240,7 @@ void main() {
       expect(DocumentTextExtractor.isMeaningfulText(extracted), true);
     });
 
-    // ── 6. FR-06 Failure State: Empty Document Extraction ─────
+    // â”€â”€ 6. FR-06 Failure State: Empty Document Extraction â”€â”€â”€â”€â”€
     test('6. FR-06 Empty document extraction sets failed status', () async {
       final archive = Archive();
       const emptyDocXml = '''<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -281,7 +263,7 @@ void main() {
       expect(isMeaningful, false);
     });
 
-    // ── 7. UI Verification: Ready Material Status Card ────────
+    // â”€â”€ 7. UI Verification: Ready Material Status Card â”€â”€â”€â”€â”€â”€â”€â”€
     testWidgets('7. UploadGenerateQuizScreen renders ready state with character count and unlocks generation', (tester) async {
       final readyMaterial = MaterialModel(
         id: 'mat_ready_101',
@@ -325,6 +307,7 @@ void main() {
       expect(find.text('Generate Quiz'), findsOneWidget);
       expect(find.text('Document Ready for Quiz Generation'), findsOneWidget);
       expect(find.textContaining('Successfully extracted'), findsOneWidget);
+      expect(find.text('Post Material to Class'), findsOneWidget);
       expect(find.text('Continue to Quiz Options'), findsOneWidget);
 
       // Verify generation buttons are enabled
@@ -339,7 +322,7 @@ void main() {
       expect(practiceQuizBtn.onPressed, isNotNull);
     });
 
-    // ── 8. UI Verification: Failed Extraction Card & Blocked Buttons ──
+    // â”€â”€ 8. UI Verification: Failed Extraction Card & Blocked Buttons â”€â”€
     testWidgets('8. UploadGenerateQuizScreen renders failure feedback card and blocks generation', (tester) async {
       final failedMaterial = MaterialModel(
         id: 'mat_failed_202',
@@ -399,8 +382,8 @@ void main() {
       expect(practiceQuizBtn.onPressed, isNull);
     });
 
-    // ── 9. Infinite Hang Prevention in retryMaterialExtraction ─
-    test('9. Infinite Hang Prevention — retryMaterialExtraction throws MaterialValidationException when bytes are unavailable', () async {
+    // â”€â”€ 9. Infinite Hang Prevention in retryMaterialExtraction â”€
+    test('9. Infinite Hang Prevention â€” retryMaterialExtraction throws MaterialValidationException when bytes are unavailable', () async {
       final materialService = MaterialService();
       expect(
         () => materialService.retryMaterialExtraction('non_existent_material_id'),
@@ -412,7 +395,7 @@ void main() {
       );
     });
 
-    // ── 10. File Extension and Byte Length Extraction Resilience ──
+    // â”€â”€ 10. File Extension and Byte Length Extraction Resilience â”€â”€
     test('10. Extension and Byte Length Extraction Resilience handles missing picker metadata', () {
       // Test fileName fallback when extension is blank
       const rawFileName = 'Chapter_3_Genetics.pptx';
@@ -439,6 +422,54 @@ void main() {
         ),
         returnsNormally,
       );
+    });
+
+    testWidgets('11. UploadGenerateQuizScreen blocks posting when upload is in progress and unlocks upon completion', (tester) async {
+      final uploadingMaterial = MaterialModel(
+        id: 'mat_uploading_101',
+        teacherId: 'teacher_99',
+        classId: 'cls_bio101',
+        fileName: 'Cellular_Respiration.pdf',
+        fileType: 'pdf',
+        fileRef: 'uploads/teacher_99/mat_uploading_101/Cellular_Respiration.pdf',
+        status: 'ready',
+        storageUploadStatus: 'uploading',
+        extractedText: 'Extracted text ready.',
+        createdAt: DateTime.now(),
+        fileSizeBytes: 1024 * 250,
+      );
+
+      final sampleClass = ClassModel(
+        id: 'cls_bio101',
+        name: 'General Biology',
+        joinCode: 'BIO-1011',
+        teacherId: 'teacher_99',
+        teacherName: 'Dr. Watson',
+        section: 'A',
+        subject: 'Science',
+        status: 'active',
+        rosterCount: 20,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: UploadGenerateQuizScreen(
+            preselectedClass: sampleClass,
+            preselectedMaterial: uploadingMaterial,
+            isClassLocked: true,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Verify posting button shows waiting state and is disabled
+      expect(find.text('Waiting for upload to finish...'), findsOneWidget);
+      final postBtn = tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Waiting for upload to finish...'),
+      );
+      expect(postBtn.onPressed, isNull);
     });
   });
 }

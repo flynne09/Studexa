@@ -1,96 +1,11 @@
 rules_version = '2';
+
+// Studexa moved all runtime data to Supabase. Keep the legacy Firestore
+// database closed so outdated APKs cannot read or write during the beta reset.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function ownsClass(classId) {
-      return signedIn() && get(/databases/$(database)/documents/classes/$(classId)).data.teacherId == request.auth.uid;
-    }
-    function memberOf(classId) {
-      return signedIn() && exists(/databases/$(database)/documents/classes/$(classId)/members/$(request.auth.uid));
-    }
-    function teacher() {
-      return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
-    }
-    function ownedWrite(data) {
-      return teacher() && data.teacherId == request.auth.uid && ownsClass(data.classId);
-    }
-    function unchangedOwner() {
-      return request.resource.data.teacherId == resource.data.teacherId &&
-        request.resource.data.classId == resource.data.classId;
-    }
-
-    match /users/{userId} {
-      allow read: if signedIn() && request.auth.uid == userId;
-      allow create: if signedIn() && request.auth.uid == userId &&
-        request.resource.data.uid == userId && request.resource.data.role in ['teacher', 'student'];
-      allow update: if signedIn() && request.auth.uid == userId &&
-        request.resource.data.uid == resource.data.uid && request.resource.data.role == resource.data.role;
-      allow delete: if false;
-      match /joinedClasses/{classId} {
-        allow read, write: if signedIn() && request.auth.uid == userId;
-      }
-      match /attempts/{attemptId} {
-        allow read, write: if signedIn() && request.auth.uid == userId;
-      }
-    }
-
-    match /classes/{classId} {
-      // Join-code lookup queries require signed-in class discovery.
-      allow read: if signedIn();
-      allow create: if teacher() && request.resource.data.teacherId == request.auth.uid;
-      allow update: if (ownsClass(classId) && request.resource.data.teacherId == resource.data.teacherId) ||
-        (signedIn() && resource.data.status == 'active' &&
-         !exists(/databases/$(database)/documents/classes/$(classId)/members/$(request.auth.uid)) &&
-         existsAfter(/databases/$(database)/documents/classes/$(classId)/members/$(request.auth.uid)) &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rosterCount', 'updatedAt']) &&
-         request.resource.data.rosterCount == resource.data.rosterCount + 1);
-      allow delete: if ownsClass(classId);
-      match /members/{memberId} {
-        allow read: if signedIn() && (memberId == request.auth.uid || memberOf(classId) || ownsClass(classId));
-        allow create: if signedIn() && memberId == request.auth.uid && request.resource.data.userId == memberId &&
-          ((request.resource.data.role == 'teacher' && teacher() &&
-            getAfter(/databases/$(database)/documents/classes/$(classId)).data.teacherId == memberId) ||
-           (request.resource.data.role == 'student' &&
-            get(/databases/$(database)/documents/users/$(memberId)).data.role == 'student' &&
-            get(/databases/$(database)/documents/classes/$(classId)).data.status == 'active'));
-        allow update: if signedIn() && memberId == request.auth.uid &&
-          request.resource.data.userId == resource.data.userId && request.resource.data.role == resource.data.role;
-        allow delete: if signedIn() && (memberId == request.auth.uid || ownsClass(classId));
-      }
-    }
-
-    match /materials/{materialId} {
-      allow read: if signedIn() && (resource.data.teacherId == request.auth.uid || memberOf(resource.data.classId));
-      allow create: if ownedWrite(request.resource.data);
-      allow update: if ownedWrite(resource.data) && unchangedOwner();
-      allow delete: if ownedWrite(resource.data);
-    }
-    match /quizzes/{quizId} {
-      // Class-scoped teacher queries must be provably authorized by classId;
-      // rules cannot infer a quiz's teacherId from that query alone.
-      allow read: if signedIn() && (ownsClass(resource.data.classId) ||
-        resource.data.teacherId == request.auth.uid ||
-        (resource.data.type == 'practice' && resource.data.status == 'published' && memberOf(resource.data.classId)));
-      allow create: if ownedWrite(request.resource.data);
-      allow update: if ownedWrite(resource.data) && unchangedOwner();
-      allow delete: if ownedWrite(resource.data);
-    }
-    match /quizAssignments/{assignmentId} {
-      allow read: if signedIn() && (resource.data.teacherId == request.auth.uid || memberOf(resource.data.classId));
-      allow create: if ownedWrite(request.resource.data);
-      allow update: if ownedWrite(resource.data) && unchangedOwner();
-      allow delete: if ownedWrite(resource.data);
-    }
-    match /attempts/{attemptId} {
-      allow read: if signedIn() && (resource.data.studentId == request.auth.uid || ownsClass(resource.data.classId));
-      allow create: if signedIn() && request.resource.data.studentId == request.auth.uid &&
-        memberOf(request.resource.data.classId) &&
-        get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.classId == request.resource.data.classId &&
-        get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.type == 'practice' &&
-        get(/databases/$(database)/documents/quizzes/$(request.resource.data.quizId)).data.status == 'published' &&
-        request.resource.data.score is number && request.resource.data.totalPoints is number &&
-        request.resource.data.score >= 0 && request.resource.data.score <= request.resource.data.totalPoints;
-      allow update, delete: if false;
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

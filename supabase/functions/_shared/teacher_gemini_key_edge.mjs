@@ -1,5 +1,5 @@
-import { FirebaseIdentityError, verifyFirebaseToken } from "./firebase_identity.mjs";
-import { FirestoreError, firestoreClient } from "./firestore_rest.mjs";
+import { SupabaseIdentityError, verifySupabaseToken } from "./supabase_identity.mjs";
+import { PostgresStoreError, postgresClient } from "./postgres_rest.mjs";
 import { CredentialStoreError, teacherCredentialStore, validateGeminiApiKey } from "./teacher_credentials.mjs";
 
 const CORS = {
@@ -24,9 +24,10 @@ export async function handleTeacherGeminiKeyRequest(request, deps = {}) {
   const fetchImpl = deps.fetchImpl || fetch;
   try {
     const token = auth.slice(7);
-    const uid = await (deps.verifyToken || verifyFirebaseToken)(token, fetchImpl, deps.firebaseApiKey);
-    const firestore = deps.firestore || firestoreClient(token, fetchImpl);
-    const profile = await firestore.get("users", uid);
+    const user = await (deps.verifyToken || verifySupabaseToken)(token, fetchImpl, deps.authOptions);
+    const uid = user.id || user;
+    const database = deps.database || deps.firestore || postgresClient(token, fetchImpl);
+    const profile = await database.get("profiles", uid);
     if (profile?.data.role !== "teacher") {
       return json(403, { error: "Only Teacher accounts can manage a Gemini API key." });
     }
@@ -54,8 +55,8 @@ export async function handleTeacherGeminiKeyRequest(request, deps = {}) {
     const status = await credentials.save(uid, validation.apiKey);
     return json(200, { success: true, status });
   } catch (error) {
-    if (error instanceof FirebaseIdentityError) return json(error.status, { error: error.message });
-    if (error instanceof FirestoreError) {
+    if (error instanceof SupabaseIdentityError) return json(error.status, { error: error.message });
+    if (error instanceof PostgresStoreError) {
       return json([401, 403].includes(error.status) ? error.status : 503, {
         error: "Could not verify your Teacher account. Try again.",
       });

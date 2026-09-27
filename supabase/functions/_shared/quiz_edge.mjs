@@ -1,7 +1,7 @@
 import { QuizGenerationError, generateQuizQuestions, isRepeatedFact, validateRequest } from "./quiz_generator.mjs";
 import { isFillerOrBoilerplateQuestion, isTableHeaderQuestion } from "./question_filters.mjs";
-import { FirestoreError, firestoreClient } from "./firestore_rest.mjs";
-import { FirebaseIdentityError, FIREBASE_WEB_API_KEY, verifyFirebaseToken } from "./firebase_identity.mjs";
+import { PostgresStoreError, postgresClient } from "./postgres_rest.mjs";
+import { SupabaseIdentityError, verifySupabaseToken } from "./supabase_identity.mjs";
 import { CredentialStoreError, teacherCredentialStore } from "./teacher_credentials.mjs";
 
 const TYPES = ["multiple_choice", "true_false", "fill_blank", "identification", "enumeration"];
@@ -63,7 +63,7 @@ async function generateForSession(request, uid, clientSessionId, options) {
   const run = (apiKey) => options.generate(request, {
     apiKey,
     candidateModels: options.candidateModels,
-    timeoutMs: 38000,
+    timeoutMs: 75000,
     maxRounds: 1,
     fetchImpl: options.fetchImpl,
     rejectQuestion: (q) => isTableHeaderQuestion(q) || isFillerOrBoilerplateQuestion(q),
@@ -157,7 +157,7 @@ async function processGeneration(body, uid, store, options) {
   }
 
   const [profile, classDoc, materialDoc] = await Promise.all([
-    store.get("users", uid), store.get("classes", classId), store.get("materials", materialId),
+    store.get("profiles", uid), store.get("classes", classId), store.get("materials", materialId),
   ]);
   if (!classDoc || !materialDoc) fail("not-found", "The selected class or material no longer exists.");
   const material = materialDoc.data;
@@ -167,7 +167,7 @@ async function processGeneration(body, uid, store, options) {
   }
   if (material.status !== "ready") fail("failed-precondition", "Wait for document text extraction to finish.");
   const extractedText = (material.extractedText || "").trim();
-  const quizId = mode === "initial" ? `gen_${clientSessionId}` : body.continueQuizId;
+  const quizId = mode === "initial" ? crypto.randomUUID() : body.continueQuizId;
   let existingDoc = mode === "initial"
     ? await store.findQuizBySession(classId, clientSessionId)
     : await store.get("quizzes", quizId);
@@ -177,11 +177,11 @@ async function processGeneration(body, uid, store, options) {
   let actualSourceId = sourceQuizId || null;
   if (mode === "initial") {
     if (existingDoc) {
-      if (existingDoc.id !== quizId || quiz.generationSessionId !== clientSessionId || quiz.teacherId !== uid ||
+      if (quiz.generationSessionId !== clientSessionId || quiz.teacherId !== uid ||
           quiz.classId !== classId || quiz.materialId !== materialId || quiz.type !== quizType) {
         fail("failed-precondition", "This generation request conflicts with another quiz.");
       }
-      return publicQuiz(quizId, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
+      return publicQuiz(existingDoc.id, await reconcileSavedBackup(quiz, uid, clientSessionId, options));
     }
   } else {
     ensureExistingQuiz(quiz, body, uid);
@@ -272,14 +272,14 @@ async function processGeneration(body, uid, store, options) {
       }
       return publicQuiz(quizId, saved.data);
     } catch (error) {
-      if (!(error instanceof FirestoreError) || error.status !== 409) {
+      if (!(error instanceof PostgresStoreError) || error.status !== 409) {
         await generation.finish(false);
         throw error;
       }
       const duplicate = await store.findQuizBySession(classId, clientSessionId);
-      if (duplicate?.id === quizId && duplicate.data.generationSessionId === clientSessionId && duplicate.data.teacherId === uid) {
+      if (duplicate?.data.generationSessionId === clientSessionId && duplicate.data.teacherId === uid) {
         await generation.finish(true);
-        return publicQuiz(quizId, duplicate.data);
+        return publicQuiz(duplicate.id, duplicate.data);
       }
       await generation.finish(false);
       throw error;
@@ -329,7 +329,7 @@ async function processGeneration(body, uid, store, options) {
       }
       return publicQuiz(quizId, saved.data);
     } catch (error) {
-      if (!(error instanceof FirestoreError) || error.status !== 412) {
+      if (!(error instanceof PostgresStoreError) || error.status !== 412) {
         await generation.finish(false);
         throw error;
       }
@@ -347,10 +347,11 @@ export async function handleQuizRequest(request, deps = {}) {
   const token = auth.slice(7);
   const fetchImpl = deps.fetchImpl || fetch;
   try {
-    const uid = await verifyFirebaseToken(token, fetchImpl, deps.firebaseApiKey || FIREBASE_WEB_API_KEY);
+    const user = await (deps.verifyToken || verifySupabaseToken)(token, fetchImpl, deps.authOptions);
+    const uid = user.id || user;
     const body = await request.json();
     if (!body || typeof body !== "object" || Array.isArray(body)) fail("invalid-argument", "Request must contain a JSON object.");
-    const store = deps.store || firestoreClient(token, fetchImpl);
+    const store = deps.store || postgresClient(token, fetchImpl);
     const result = await processGeneration(body, uid, store, {
       fetchImpl, generate: deps.generate || generateQuizQuestions,
       backupApiKey: deps.geminiApiKey ?? globalThis.Deno?.env.get("GEMINI_API_KEY"),
@@ -364,7 +365,7 @@ export async function handleQuizRequest(request, deps = {}) {
     return json(200, result);
   } catch (error) {
     if (error instanceof SyntaxError) return json(400, { error: "Request must contain valid JSON." });
-    if (error instanceof FirebaseIdentityError) return json(error.status, { error: error.message, code: "unauthenticated" });
+    if (error instanceof SupabaseIdentityError) return json(error.status, { error: error.message, code: "unauthenticated" });
     if (error instanceof QuizGenerationError) {
       const statuses = { "unauthenticated": 401, "invalid-argument": 400, "permission-denied": 403,
         "not-found": 404, "failed-precondition": 412, "data-loss": 422,
@@ -377,7 +378,7 @@ export async function handleQuizRequest(request, deps = {}) {
     if (error instanceof CredentialStoreError) {
       return json(503, { error: "Teacher Gemini credentials are temporarily unavailable. Try again.", code: "credential-service-unavailable" });
     }
-    if (error instanceof FirestoreError) {
+    if (error instanceof PostgresStoreError) {
       const status = [401, 403, 404, 409, 412].includes(error.status) ? error.status : 503;
       return json(status, { error: "Could not access the quiz data. Check your session and try again." });
     }

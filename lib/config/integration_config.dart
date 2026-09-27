@@ -12,4 +12,10 @@ abstract final class IntegrationConfig {
     defaultValue:
         'https://zuidphgogdwyrtndbgkx.supabase.co/functions/v1/teacher-gemini-key',
   );
+
+  static const submitQuizAttemptUrl = String.fromEnvironment(
+    'SUBMIT_QUIZ_ATTEMPT_URL',
+    defaultValue:
+        'https://zuidphgogdwyrtndbgkx.supabase.co/functions/v1/submit-quiz-attempt',
+  );
 }

@@ -1,32 +1,14 @@
+import 'test_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/quiz_model.dart';
 import 'package:studexa/screens/student/answer_quiz_screen.dart';
 import 'package:studexa/services/assignment_service.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
-  group('Task 2 — Quiz Draft Answers Persistence Tests', () {
+  group('Task 2 â€” Quiz Draft Answers Persistence Tests', () {
     final testQuiz = QuizModel(
       id: 'quiz_draft_persist_test',
       classId: 'class_cs_101',
@@ -62,7 +44,7 @@ void main() {
     );
 
     testWidgets('Draft answers are persisted on dispose and restored on reopen with correct scoring', (tester) async {
-      final assignmentService = AssignmentService(useFirestore: false);
+      final assignmentService = AssignmentService(useRemoteBackend: false);
 
       // Ensure fresh draft state
       await assignmentService.clearDraftAnswers(
@@ -71,7 +53,7 @@ void main() {
         attemptNumber: 1,
       );
 
-      // ── Step 1: Open Quiz for Attempt 1 ──────────────────────────────
+      // â”€â”€ Step 1: Open Quiz for Attempt 1 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       await tester.pumpWidget(
         MaterialApp(
           home: AnswerQuizScreen(
@@ -119,7 +101,7 @@ void main() {
       expect(draftsBeforeExit['q2'], equals('process'));
       expect(draftsBeforeExit['q3'], equals(['Running']));
 
-      // ── Step 2: Simulate Closing the Quiz (Dispose) ───────────────────
+      // â”€â”€ Step 2: Simulate Closing the Quiz (Dispose) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(body: Text('Closed Screen')),
@@ -128,7 +110,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Closed Screen'), findsOneWidget);
 
-      // ── Step 3: Reopen the Quiz Screen for Same Attempt ───────────────
+      // â”€â”€ Step 3: Reopen the Quiz Screen for Same Attempt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       await tester.pumpWidget(
         MaterialApp(
           home: AnswerQuizScreen(
@@ -164,7 +146,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Ready'), findsOneWidget);
 
-      // ── Step 4: Submit the Quiz ───────────────────────────────────────
+      // â”€â”€ Step 4: Submit the Quiz â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Last question reached; Submit Quiz button should be visible and clickable
       final submitButton = find.widgetWithText(ElevatedButton, 'Submit Quiz');
       expect(submitButton, findsOneWidget);
@@ -185,7 +167,7 @@ void main() {
       expect(find.text('4.0 / 4'), findsOneWidget);
       expect(find.text('100%'), findsOneWidget);
 
-      // ── Step 5: Verify Draft is Cleared on Submit ─────────────────────
+      // â”€â”€ Step 5: Verify Draft is Cleared on Submit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       final draftsAfterSubmit = await assignmentService.getDraftAnswers(
         studentId: 'guest_student',
         quizId: 'quiz_draft_persist_test',

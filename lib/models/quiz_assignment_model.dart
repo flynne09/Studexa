@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Represents an assigned Practice Quiz for a class with an optional deadline
 /// and open/closed availability toggle.
 class QuizAssignmentModel {
@@ -43,33 +41,25 @@ class QuizAssignmentModel {
     return 'Open';
   }
 
-  factory QuizAssignmentModel.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? {};
-    return QuizAssignmentModel.fromMap(data, id: doc.id);
-  }
-
   factory QuizAssignmentModel.fromMap(
     Map<String, dynamic> map, {
     String id = '',
   }) {
     DateTime? parseTimestamp(dynamic val) {
-      if (val is Timestamp) return val.toDate();
       if (val is String) return DateTime.tryParse(val);
       return null;
     }
 
     return QuizAssignmentModel(
       id: id.isNotEmpty ? id : ((map['id'] as String?) ?? ''),
-      quizId: (map['quizId'] as String?) ?? '',
-      classId: (map['classId'] as String?) ?? '',
-      teacherId: (map['teacherId'] as String?) ?? '',
-      quizTitle: (map['quizTitle'] as String?) ?? 'Untitled Quiz',
+      quizId: (map['quiz_id'] ?? map['quizId'])?.toString() ?? '',
+      classId: (map['class_id'] ?? map['classId'])?.toString() ?? '',
+      teacherId: (map['teacher_id'] ?? map['teacherId'])?.toString() ?? '',
+      quizTitle: (map['quiz_title'] ?? map['quizTitle'])?.toString() ?? 'Untitled Quiz',
       deadline: parseTimestamp(map['deadline']),
-      isClosed: (map['isClosed'] as bool?) ?? false,
-      createdAt: parseTimestamp(map['createdAt']),
-      closedAt: parseTimestamp(map['closedAt']),
+      isClosed: (map['is_closed'] ?? map['isClosed']) as bool? ?? false,
+      createdAt: parseTimestamp(map['created_at'] ?? map['createdAt']),
+      closedAt: parseTimestamp(map['closed_at'] ?? map['closedAt']),
     );
   }
 
@@ -80,9 +70,23 @@ class QuizAssignmentModel {
       'teacherId': teacherId,
       'quizTitle': quizTitle,
       'isClosed': isClosed,
-      if (deadline != null) 'deadline': Timestamp.fromDate(deadline!),
-      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
-      if (closedAt != null) 'closedAt': Timestamp.fromDate(closedAt!),
+      if (deadline != null) 'deadline': deadline!.toUtc().toIso8601String(),
+      if (createdAt != null)
+        'createdAt': createdAt!.toUtc().toIso8601String(),
+      if (closedAt != null) 'closedAt': closedAt!.toUtc().toIso8601String(),
+    };
+  }
+
+  Map<String, dynamic> toDatabaseMap() {
+    return {
+      'quiz_id': quizId,
+      'class_id': classId,
+      'teacher_id': teacherId,
+      'quiz_title': quizTitle,
+      'is_closed': isClosed,
+      if (deadline != null) 'deadline': deadline!.toUtc().toIso8601String(),
+      if (createdAt != null) 'created_at': createdAt!.toUtc().toIso8601String(),
+      if (closedAt != null) 'closed_at': closedAt!.toUtc().toIso8601String(),
     };
   }
 

@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/material_model.dart';
 import '../utils/document_text_extractor.dart';
-import 'firestore_provider.dart';
 
 /// Exception thrown when study material validation or processing fails.
 class MaterialValidationException implements Exception {
@@ -43,14 +42,11 @@ class MaterialDownloadResult {
 }
 
 /// Service handling on-device material extraction, Supabase Storage
-/// persistence, and real-time Firestore tracking.
+/// persistence, and real-time Supabase tracking.
 class MaterialService {
-  final FirebaseFirestore _firestore;
   final SupabaseClient? _injectedSupabase;
 
-  MaterialService({FirebaseFirestore? firestore, SupabaseClient? supabase})
-    : _firestore = getAppFirestore(firestore),
-      _injectedSupabase = supabase;
+  MaterialService({SupabaseClient? supabase}) : _injectedSupabase = supabase;
 
   SupabaseClient get _supabase {
     if (_injectedSupabase != null) return _injectedSupabase;
@@ -121,7 +117,7 @@ class MaterialService {
   }
 
   /// Uploads a study material file, extracts text on-device immediately,
-  /// and writes the ready document directly to Firestore.
+  /// and writes the ready material directly to Postgres.
   /// Supabase Storage upload is non-blocking so original-file network latency
   /// never delays the ready extracted text used for quiz generation.
   Future<MaterialModel> uploadStudyMaterial({
@@ -179,9 +175,8 @@ class MaterialService {
     // no Supabase request could have been made.
     final SupabaseClient supabase = _supabase;
 
-    // 2. Prepare Firestore document ID and storage path up front
-    final materialDocRef = _firestore.collection('materials').doc();
-    final materialId = materialDocRef.id;
+    // 2. Prepare the database ID and storage path up front.
+    final materialId = _uuidV4();
     final storageFileName = _safeStorageFileName(fileName);
     final storagePath = 'uploads/$teacherId/$materialId/$storageFileName';
 
@@ -232,7 +227,7 @@ class MaterialService {
 
     final String initialStatus = isExtracted ? 'ready' : 'failed';
 
-    // 5. Write Firestore document with status: 'ready' immediately
+    // 5. Write the ready database row immediately.
     final readyModel = MaterialModel(
       id: materialId,
       teacherId: teacherId,
@@ -251,15 +246,38 @@ class MaterialService {
       fileSizeBytes: resolvedBytes.length,
     );
 
+    final insertPayload = <String, dynamic>{
+      'id': materialId,
+      ...readyModel.toDatabaseMap(),
+      if (isExtracted) 'extracted_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
     try {
-      await materialDocRef
-          .set({
-            ...readyModel.toMap(),
-            'createdAt': FieldValue.serverTimestamp(),
-            if (isExtracted) 'extractedAt': FieldValue.serverTimestamp(),
-          })
-          .timeout(const Duration(seconds: 15));
-    } catch (_) {
+      try {
+        await _supabase
+            .from('materials')
+            .insert(insertPayload)
+            .timeout(const Duration(seconds: 15));
+      } on PostgrestException catch (pe) {
+        if (pe.code == '42703' &&
+            (pe.message.contains('is_posted') ||
+                pe.message.contains('posted_at'))) {
+          debugPrint(
+            'Supabase materials table missing is_posted column, falling back to legacy schema: ${pe.message}',
+          );
+          final legacyPayload = Map<String, dynamic>.from(insertPayload)
+            ..remove('is_posted')
+            ..remove('posted_at');
+          await _supabase
+              .from('materials')
+              .insert(legacyPayload)
+              .timeout(const Duration(seconds: 15));
+        } else {
+          rethrow;
+        }
+      }
+    } catch (e, st) {
+      debugPrint('Material Postgres insert error: $e\n$st');
       if (uploadFuture != null) {
         unawaited(
           uploadFuture.then(
@@ -267,6 +285,21 @@ class MaterialService {
             onError: (_) {},
           ),
         );
+      }
+      if (e is PostgrestException) {
+        if (e.code == '42501' ||
+            e.message.toLowerCase().contains('row-level security') ||
+            e.message.toLowerCase().contains('permission denied')) {
+          throw const MaterialValidationException(
+            'You do not have permission to upload materials to this class.',
+          );
+        }
+        throw MaterialValidationException(
+          'Could not save material: ${e.message}',
+        );
+      }
+      if (e is MaterialValidationException) {
+        rethrow;
       }
       throw const MaterialValidationException(
         'Could not save this material. Check your Internet connection and try again.',
@@ -278,14 +311,18 @@ class MaterialService {
       unawaited(() async {
         try {
           await uploadFuture;
-          await materialDocRef
-              .update({'storageUploadStatus': 'completed'})
+          await _supabase
+              .from('materials')
+              .update({'storage_upload_status': 'completed'})
+              .eq('id', materialId)
               .timeout(const Duration(seconds: 10));
         } catch (storageErr) {
           debugPrint('Background Supabase upload note: $storageErr');
           try {
-            await materialDocRef
-                .update({'storageUploadStatus': 'failed'})
+            await _supabase
+                .from('materials')
+                .update({'storage_upload_status': 'failed'})
+                .eq('id', materialId)
                 .timeout(const Duration(seconds: 10));
           } catch (updateErr) {
             debugPrint('Could not record Supabase upload failure: $updateErr');
@@ -303,7 +340,7 @@ class MaterialService {
 
   /// Fetch raw bytes from Supabase, with legacy URL support for old records.
   Future<Uint8List?> getMaterialFileBytes(MaterialModel material) async {
-    // 1. Preserve access to legacy records that have a direct Firebase URL.
+    // 1. Preserve access to archived records that have a direct download URL.
     if (material.downloadUrl != null && material.downloadUrl!.isNotEmpty) {
       try {
         final response = await http
@@ -464,27 +501,70 @@ class MaterialService {
 
   /// Stream a single material document in real time to monitor extraction status
   Stream<MaterialModel?> streamMaterial(String materialId) {
-    return _firestore.collection('materials').doc(materialId).snapshots().map((
-      snapshot,
-    ) {
-      if (!snapshot.exists || snapshot.data() == null) return null;
-      return MaterialModel.fromMap(snapshot.data()!, snapshot.id);
-    });
+    return _supabase
+        .from('materials')
+        .stream(primaryKey: ['id'])
+        .eq('id', materialId)
+        .map(
+          (rows) => rows.isEmpty
+              ? null
+              : MaterialModel.fromMap(rows.first, rows.first['id'].toString()),
+        );
   }
 
   /// Stream all materials belonging to a specific class in real time.
-  Stream<List<MaterialModel>> streamClassMaterials(String classId) {
-    return _firestore
-        .collection('materials')
-        .where('classId', isEqualTo: classId)
-        .snapshots()
-        .map((snapshot) {
-          final materials = snapshot.docs
-              .map((doc) => MaterialModel.fromMap(doc.data(), doc.id))
+  Stream<List<MaterialModel>> streamClassMaterials(
+    String classId, {
+    bool postedOnly = false,
+  }) {
+    return _supabase
+        .from('materials')
+        .stream(primaryKey: ['id'])
+        .eq('class_id', classId)
+        .order('created_at', ascending: false)
+        .map((rows) {
+          final list = rows
+              .map((row) => MaterialModel.fromMap(row, row['id'].toString()))
               .toList();
-          materials.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          return materials;
+          if (postedOnly) {
+            return list
+                .where((m) => m.isPosted && m.isReady && m.isUploadCompleted)
+                .toList();
+          }
+          return list;
         });
+  }
+
+  /// Explicitly publish / post an uploaded study material to the class,
+  /// making it visible and accessible to enrolled students.
+  Future<void> postMaterial(String materialId) async {
+    final now = DateTime.now().toUtc().toIso8601String();
+    final updatedRows = await _supabase
+        .from('materials')
+        .update({'is_posted': true, 'posted_at': now})
+        .eq('id', materialId)
+        .select('id, is_posted, posted_at')
+        .timeout(const Duration(seconds: 15));
+    if (updatedRows.isEmpty || updatedRows.first['is_posted'] != true) {
+      throw StateError(
+        'The material was not posted. It may no longer exist or you may not have permission to update it.',
+      );
+    }
+  }
+
+  /// Unpost / hide a study material from students while keeping it in the teacher's class.
+  Future<void> unpostMaterial(String materialId) async {
+    final updatedRows = await _supabase
+        .from('materials')
+        .update({'is_posted': false, 'posted_at': null})
+        .eq('id', materialId)
+        .select('id, is_posted, posted_at')
+        .timeout(const Duration(seconds: 15));
+    if (updatedRows.isEmpty || updatedRows.first['is_posted'] != false) {
+      throw StateError(
+        'The material was not unposted. It may no longer exist or you may not have permission to update it.',
+      );
+    }
   }
 
   /// Stream all materials uploaded by a teacher, optionally filtered by classId
@@ -492,32 +572,32 @@ class MaterialService {
     String teacherId, {
     String? classId,
   }) {
-    Query<Map<String, dynamic>> query = _firestore
-        .collection('materials')
-        .where('teacherId', isEqualTo: teacherId);
-
-    if (classId != null && classId.isNotEmpty) {
-      query = query.where('classId', isEqualTo: classId);
-    }
-
-    return query.snapshots().map((snapshot) {
-      final materials = snapshot.docs
-          .map((doc) => MaterialModel.fromMap(doc.data(), doc.id))
-          .toList();
-      materials.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return materials;
-    });
+    final stream = _supabase
+        .from('materials')
+        .stream(primaryKey: ['id'])
+        .eq('teacher_id', teacherId);
+    final filtered = classId != null && classId.isNotEmpty
+        ? stream.eq('class_id', classId)
+        : stream;
+    return filtered
+        .order('created_at', ascending: false)
+        .map(
+          (rows) => rows
+              .map((row) => MaterialModel.fromMap(row, row['id'].toString()))
+              .toList(),
+        );
   }
 
   /// Reset a failed extraction attempt and re-attempt extraction if bytes are retrievable
   Future<void> retryMaterialExtraction(String materialId) async {
     try {
-      final doc = await _firestore
-          .collection('materials')
-          .doc(materialId)
-          .get();
-      if (doc.exists && doc.data() != null) {
-        final mat = MaterialModel.fromMap(doc.data()!, doc.id);
+      final row = await _supabase
+          .from('materials')
+          .select()
+          .eq('id', materialId)
+          .maybeSingle();
+      if (row != null) {
+        final mat = MaterialModel.fromMap(row, materialId);
         final bytes = await getMaterialFileBytes(mat);
         if (bytes != null && bytes.isNotEmpty) {
           final extractionResult = await DocumentTextExtractor.extract(
@@ -525,14 +605,19 @@ class MaterialService {
             extension: mat.fileType,
           );
           final isExtracted = extractionResult.isSuccess;
-          await _firestore.collection('materials').doc(materialId).update({
-            'status': isExtracted ? 'ready' : 'failed',
-            'extractedText': extractionResult.text,
-            'extractedAt': isExtracted ? FieldValue.serverTimestamp() : null,
-            'errorReason': isExtracted
-                ? FieldValue.delete()
-                : (extractionResult.errorReason ?? 'no_extractable_text'),
-          });
+          await _supabase
+              .from('materials')
+              .update({
+                'status': isExtracted ? 'ready' : 'failed',
+                'extracted_text': extractionResult.text,
+                'extracted_at': isExtracted
+                    ? DateTime.now().toUtc().toIso8601String()
+                    : null,
+                'error_reason': isExtracted
+                    ? null
+                    : (extractionResult.errorReason ?? 'no_extractable_text'),
+              })
+              .eq('id', materialId);
           return;
         }
       }
@@ -543,10 +628,13 @@ class MaterialService {
     // If file bytes cannot be retrieved, do NOT set status to 'processing'
     // (which would hang indefinitely on free Spark tier). Mark as failed with clear reason.
     try {
-      await _firestore.collection('materials').doc(materialId).update({
-        'status': 'failed',
-        'errorReason': 'file_bytes_unavailable',
-      });
+      await _supabase
+          .from('materials')
+          .update({
+            'status': 'failed',
+            'error_reason': 'file_bytes_unavailable',
+          })
+          .eq('id', materialId);
     } catch (updateErr) {
       debugPrint('Status update error during retry failure: $updateErr');
     }
@@ -555,7 +643,7 @@ class MaterialService {
     );
   }
 
-  /// Delete a material from Firestore and Supabase Storage, and clean up
+  /// Delete a material from Postgres and Supabase Storage, and clean up
   /// any orphaned draft quizzes and locally cached temporary files.
   Future<void> deleteMaterial({
     required String materialId,
@@ -565,17 +653,16 @@ class MaterialService {
     String storageProvider = 'supabase',
     String? storageBucket,
   }) async {
-    // 1. Delete Firestore material doc immediately so real-time UI streams reflect deletion
-    final firestoreDelete = _firestore
-        .collection('materials')
-        .doc(materialId)
-        .delete();
+    // 1. Delete the row immediately so real-time UI streams reflect deletion.
+    final databaseDelete = _supabase
+        .from('materials')
+        .delete()
+        .eq('id', materialId);
 
     // 2. Concurrently clean up orphaned draft quizzes referencing this material
     final quizCleanup = _cleanupMaterialQuizzes(materialId);
 
-    // 3. Concurrently remove Supabase objects. Legacy Firebase objects are
-    // intentionally left untouched; their Firestore record is still removed.
+    // 3. Concurrently remove Supabase objects.
     final storageRefs = <String>[
       if (fileRef.isNotEmpty) fileRef,
       if (convertedPdfRef != null && convertedPdfRef.isNotEmpty)
@@ -592,7 +679,7 @@ class MaterialService {
     );
 
     await Future.wait([
-      firestoreDelete,
+      databaseDelete,
       quizCleanup,
       storageDelete,
       localCleanup,
@@ -619,30 +706,43 @@ class MaterialService {
     return safe.isEmpty ? 'material' : safe;
   }
 
+  static String _uuidV4() {
+    final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes
+        .map((value) => value.toRadixString(16).padLeft(2, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   Future<void> _cleanupMaterialQuizzes(String materialId) async {
     if (materialId.isEmpty) return;
     try {
-      final snapshot = await _firestore
-          .collection('quizzes')
-          .where('materialId', isEqualTo: materialId)
-          .get()
+      final rows = await _supabase
+          .from('quizzes')
+          .select('id,status')
+          .eq('material_id', materialId)
           .timeout(const Duration(seconds: 5));
-
-      if (snapshot.docs.isEmpty) return;
-
-      final batch = _firestore.batch();
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final status = data['status'] as String? ?? 'draft';
-        if (status == 'draft') {
-          // Clean up unfinalized draft quizzes tied to the deleted material
-          batch.delete(doc.reference);
-        } else {
-          // Unlink materialId from finalized or published quizzes to preserve student records
-          batch.update(doc.reference, {'materialId': ''});
-        }
+      final maps = List<Map<String, dynamic>>.from(rows);
+      final draftIds = maps
+          .where((row) => row['status'] == 'draft')
+          .map((row) => row['id'].toString())
+          .toList();
+      final retainedIds = maps
+          .where((row) => row['status'] != 'draft')
+          .map((row) => row['id'].toString())
+          .toList();
+      if (draftIds.isNotEmpty) {
+        await _supabase.from('quizzes').delete().inFilter('id', draftIds);
       }
-      await batch.commit().timeout(const Duration(seconds: 5));
+      if (retainedIds.isNotEmpty) {
+        await _supabase
+            .from('quizzes')
+            .update({'material_id': null})
+            .inFilter('id', retainedIds);
+      }
     } catch (e) {
       debugPrint(
         'Notice: Quizzes cleanup for material $materialId finished with: $e',

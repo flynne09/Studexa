@@ -6,7 +6,7 @@ import 'package:http/testing.dart';
 import 'package:studexa/services/teacher_gemini_key_service.dart';
 
 void main() {
-  test('GET uses Firebase token and exposes masked status only', () async {
+  test('GET uses Supabase token and exposes masked status only', () async {
     final client = TeacherGeminiKeyService(
       tokenProvider: () async => 'firebase-token',
       client: MockClient((request) async {

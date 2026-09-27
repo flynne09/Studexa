@@ -1,34 +1,16 @@
+import 'test_backend.dart';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/material_model.dart';
 import 'package:studexa/services/material_service.dart';
 import 'package:studexa/services/quiz_service.dart';
 import 'package:studexa/utils/document_text_extractor.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
-  group('Task 7 — PDF Upload and Text Extraction Optimization Tests', () {
+  group('Task 7 â€” PDF Upload and Text Extraction Optimization Tests', () {
     test('1. MaterialModel.contentTypeForExtension correctly maps document MIME types', () {
       expect(MaterialModel.contentTypeForExtension('pdf'), 'application/pdf');
       expect(MaterialModel.contentTypeForExtension('.PDF'), 'application/pdf');

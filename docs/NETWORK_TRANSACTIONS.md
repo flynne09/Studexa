@@ -1,387 +1,389 @@
-# Week 12 Demonstration Guide: Network Transactions & Code Integration Map
+# Studexa – Network Transactions & Week 12 Code Map
 
-This document serves as the official reference for the Week 12 project demonstration and instructor checking. It maps every network transaction, API call, database operation, and main user flow to its exact location in the codebase.
-
----
-
-## 1. Quick Reference Summary Table
-
-| Week 12 Requirement | Status | Main File | Main Class / Function / Widget | Primary Lines |
-| :--- | :--- | :--- | :--- | :--- |
-| **API Integration** | Found | `lib/services/quiz_generation_client.dart` | `QuizGenerationClient.generate()` | Lines 34–148 |
-| **Database Integration** | Found | `lib/services/firestore_provider.dart` | `getAppFirestore()` / `FirebaseFirestore` | Lines 4–15 |
-| **Upload Study Material** | Found | `lib/screens/teacher/upload_generate_quiz_screen.dart` | `_UploadGenerateQuizScreenState._pickAndUploadFile()` | Lines 158–284 |
-| **Take Quiz** | Found | `lib/screens/student/answer_quiz_screen.dart` | `AnswerQuizScreen` / `_AnswerQuizScreenState` | Lines 142–392 |
-| **Submit Quiz** | Found | `lib/screens/student/answer_quiz_screen.dart` | `_AnswerQuizScreenState._evaluateAndShowResults()` | Lines 533–665 |
-| **Firebase Authentication** | Found | `lib/services/auth_service.dart` | `AuthService` (`signInWithEmail`, `registerWithEmail`, `signInWithGoogle`) | Lines 56–300 |
-| **Cloud Firestore** | Found | `lib/services/firestore_provider.dart` & Services | `AuthService`, `ClassService`, `MaterialService`, `QuizService`, `AssignmentService` | Full services |
-| **Firebase Storage** | Found | `lib/services/material_service.dart` | `MaterialService.uploadStudyMaterial()` (`_storage.ref().putData`) | Lines 133–170 |
-| **AI / Gemini API Integration** | Found | `functions/quiz_generator.js` & `functions/index.js` | `generateSingleBatch()` (`DEFAULT_MODELS`) & `generateQuizHttp` | `quiz_generator.js`: 12–16, 131–202 |
-| **Maps / Location** | Not Found | N/A | Not implemented in this codebase | N/A |
-| **Other Network Transactions** | Found | `lib/services/assignment_service.dart` | `AssignmentService.submitAttempt()` & `saveDraftAnswers()` | Lines 126–210, 257–285 |
+> **Last updated:** 2026-09-25
+>
+> **Backend:** Supabase (Auth, Postgres, Storage, Edge Functions)
+>
+> **AI:** Google Gemini API (called from Edge Functions, not from the Flutter client)
+>
+> **Firebase:** ❌ Not used. The project was fully migrated to Supabase.
 
 ---
 
-## 2. API Integration
+## Quick Reference Summary
 
-* **Status:** Found
-* **Main File:** `lib/services/quiz_generation_client.dart`
-* **Related Files:**
-  * `lib/config/integration_config.dart`
-  * `lib/services/quiz_service.dart`
-  * `functions/index.js`
-  * `functions/quiz_generator.js`
-  * `lib/firebase_options.dart`
-  * `lib/main.dart`
-* **Class / Service:** `QuizGenerationClient` (Frontend) and `generateQuizHttp` / `processQuizGeneration` / `generateQuizQuestions` (Backend)
-* **Function / Method:**
-  * Frontend: `QuizGenerationClient.generate(...)`
-  * Backend: `exports.generateQuizHttp = onRequest(...)` and `processQuizGeneration(...)`
-  * AI Provider: `generateSingleBatch(...)`
-* **Relevant Code Location:**
-  * `lib/services/quiz_generation_client.dart`: Lines 34–148 (Attaches the user's `Bearer` ID token and sends an HTTP POST request to the cloud endpoint).
-  * `lib/config/integration_config.dart`: Lines 4–8 (Declares `IntegrationConfig.quizGenerationUrl`, default: `https://us-central1-studexa-b5e55.cloudfunctions.net/generateQuizHttp`).
-  * `functions/index.js`: Lines 849–901 (2nd Gen HTTP Cloud Function verifying the teacher ID token, validating ownership, and handling CORS).
-  * `functions/quiz_generator.js`: Lines 131–202 (Posts to Google Gemini API at `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`).
-  * `functions/quiz_generator.js`: Lines 12–16 (Defines candidate model pool with automated rotation: `gemini-3.5-flash`, `gemini-3.6-flash`, `gemini-flash-latest`).
-* **Purpose:** Handles end-to-end AI quiz synthesis. The Flutter app delegates quiz generation to a secure serverless backend, protecting API keys and enforcing teacher ownership before calling Gemini.
-* **Integration Flow:**
-  `UploadGenerateQuizScreen._generateQuiz()` -> `QuizService.generateQuiz()` -> `QuizGenerationClient.generate()` -> HTTP POST with Bearer token -> Cloud Function `generateQuizHttp` -> `generateQuizQuestions()` -> Google Gemini REST endpoint -> Firestore `quizzes` save -> returns generated quiz JSON to Flutter.
+| # | Requirement | Service | Flutter Client Code | Backend Code |
+|---|---|---|---|---|
+| 1 | API Integration (AI) | Gemini REST API | `lib/services/quiz_generation_client.dart` | `supabase/functions/_shared/quiz_generator.mjs` |
+| 2 | API Integration (Auth) | Supabase Auth | `lib/services/auth_service.dart` | Built-in Supabase Auth |
+| 3 | Database Integration | Supabase Postgres (PostgREST) | All `lib/services/*.dart` | `supabase/migrations/*.sql` |
+| 4 | File Upload | Supabase Storage | `lib/services/material_service.dart` | Storage bucket `study-materials` |
+| 5 | Take Quiz | Supabase Realtime + Postgres | `lib/screens/student/answer_quiz_screen.dart` | RLS policies on `quizzes` |
+| 6 | Submit Quiz | Edge Function `submit-quiz-attempt` | `lib/services/assignment_service.dart` | `supabase/functions/_shared/submit_quiz_attempt_edge.mjs` |
+| 7 | Teacher Gemini Key | Edge Function `teacher-gemini-key` | `lib/services/teacher_gemini_key_service.dart` | `supabase/functions/_shared/teacher_gemini_key_edge.mjs` |
 
 ---
 
-## 3. Database Integration (Cloud Firestore)
+## 1. API Integration
 
-* **Status:** Found
-* **Main File:** `lib/services/firestore_provider.dart`
-* **Related Files:**
-  * `lib/main.dart`
-  * `lib/firebase_options.dart`
-  * `lib/services/auth_service.dart`
-  * `lib/services/class_service.dart`
-  * `lib/services/material_service.dart`
-  * `lib/services/quiz_service.dart`
-  * `lib/services/assignment_service.dart`
-* **Class / Service:** `FirebaseFirestore` (obtained via `getAppFirestore()`), plus all feature domain services.
-* **Function / Method & Code Locations:**
-  * **Initialization:** `Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)` in `lib/main.dart:10`.
-  * **Provider:** `getAppFirestore([FirebaseFirestore? customInstance])` in `lib/services/firestore_provider.dart:4–15` (targets named database `'default'`).
-  * **Collections & CRUD Operations:**
-    1. **`users` Collection:**
-       * Create/Write: `_usersCollection.doc(uid).set(...)` in `AuthService._saveUserProfile` (`lib/services/auth_service.dart:143–157`).
-       * Read: `_usersCollection.doc(user.uid).get()` in `AuthService.signInWithEmail` (`lib/services/auth_service.dart:184`).
-       * Update: `_usersCollection.doc(user.uid).update({'photoUrl': newPhoto})` in `AuthService.signInWithGoogle` (`lib/services/auth_service.dart:295`).
-    2. **`classes` Collection & `classes/{classId}/members` Subcollection:**
-       * Create/Write: `batch.set(docRef, newClass.toMap())` and `batch.set(memberRef, ...)` in `ClassService.createClass` (`lib/services/class_service.dart:97–108`).
-       * Read/Stream: `_classesCollection.where('teacherId', isEqualTo: teacherId).snapshots()` in `ClassService.getTeacherClassesStream` (`lib/services/class_service.dart:114–129`).
-       * Update: `batch.update(classDoc.reference, {'rosterCount': FieldValue.increment(1)})` in `ClassService.joinClassByCode` (`lib/services/class_service.dart:227–231`).
-    3. **`users/{studentId}/joinedClasses` Subcollection:**
-       * Create/Write: `batch.set(userJoinedClassRef, ...)` in `ClassService.joinClassByCode` (`lib/services/class_service.dart:218–225`).
-       * Read/Stream: `_usersCollection.doc(studentId).collection('joinedClasses').snapshots()` in `ClassService.getStudentJoinedClassesStream` (`lib/services/class_service.dart:250–291`).
-    4. **`materials` Collection:**
-       * Create/Write: `materialDocRef.set(...)` in `MaterialService.uploadStudyMaterial` (`lib/services/material_service.dart:216–220`).
-       * Read/Stream: `_firestore.collection('materials').where('classId', isEqualTo: classId).snapshots()` in `MaterialService.streamClassMaterials` (`lib/services/material_service.dart:362–372`).
-       * Update: `materialDocRef.update({'status': ..., 'extractedText': ...})` in `MaterialService.retryMaterialExtraction` (`lib/services/material_service.dart:410–415`).
-       * Delete: `_firestore.collection('materials').doc(materialId).delete()` in `MaterialService.deleteMaterial` (`lib/services/material_service.dart:447`).
-    5. **`quizzes` Collection:**
-       * Create/Write: Server-side set in `processQuizGeneration` (`functions/index.js:787`).
-       * Read/Stream: `_quizzesCollection.where('classId', isEqualTo: classId).snapshots()` in `QuizService.streamClassQuizzes` (`lib/services/quiz_service.dart:22–44`).
-       * Update: `_quizzesCollection.doc(quizId).update({'status': 'published'})` in `QuizService.publishQuiz` (`lib/services/quiz_service.dart:484–488`).
-       * Delete: `_quizzesCollection.doc(quizId).delete()` in `QuizService.deleteQuiz` (`lib/services/quiz_service.dart:507`).
-    6. **`quizAssignments` Collection:**
-       * Create/Write: `docRef.set(...)` in `AssignmentService.createAssignment` (`lib/services/assignment_service.dart:63–66`).
-       * Read/Stream: `_assignmentsCollection.where('classId', isEqualTo: classId).snapshots()` in `AssignmentService.streamClassAssignments` (`lib/services/assignment_service.dart:95–111`).
-       * Update: `_assignmentsCollection.doc(id).update({'isClosed': true})` in `AssignmentService.closeAssignment` (`lib/services/assignment_service.dart:73–76`).
-    7. **`attempts` Collection:**
-       * Create/Write: `docRef.set(...)` with `FieldValue.serverTimestamp()` in `AssignmentService._submitAttempt` (`lib/services/assignment_service.dart:188–207`).
-       * Read/Stream: `_attemptsCollection.where('classId', isEqualTo: classId)...snapshots()` in `AssignmentService.streamClassQuizAttempts` (`lib/services/assignment_service.dart:217–232`).
-    8. **`users/{studentId}/attempts` (Active Draft Answers):**
-       * Create/Update: `docRef.set(..., SetOptions(merge: true))` in `AssignmentService.saveDraftAnswers` (`lib/services/assignment_service.dart:275–282`).
-       * Read: `docSnapshot = await docRef.get()` in `AssignmentService.getDraftAnswers` (`lib/services/assignment_service.dart:305`).
-       * Delete: `await docRef.delete()` in `AssignmentService.clearDraftAnswers` (`lib/services/assignment_service.dart:339`).
-* **Purpose:** Provides persistence, querying, multi-document batch operations, and real-time synchronization for all user, academic, and quiz data.
+### 1.1 Supabase Initialization
 
----
+| Item | File | Lines |
+|---|---|---|
+| `Supabase.initialize()` | `lib/main.dart` | L10–L14 |
+| URL + publishable key config | `lib/config/supabase_config.dart` | L6–L24 |
+| Edge Function endpoints | `lib/config/integration_config.dart` | L3–L21 |
 
-## 4. Upload Functionality
+**How it works:**
+- `main.dart` L10 checks `SupabaseConfig.isConfigured` then calls `Supabase.initialize(url, publishableKey)`.
+- Every service (Auth, Class, Material, Quiz, Assignment) obtains its `SupabaseClient` via `Supabase.instance.client`.
+- No Firebase SDK is imported or initialized anywhere in the app.
 
-* **Status:** Found
-* **Main File:** `lib/services/material_service.dart`
-* **Related Files:**
-  * `lib/screens/teacher/upload_generate_quiz_screen.dart`
-  * `lib/utils/document_text_extractor.dart`
-  * `lib/models/material_model.dart`
-* **Class / Widget:** `UploadGenerateQuizScreen` / `_UploadGenerateQuizScreenState`, `MaterialService`, `DocumentTextExtractor`
-* **Function / Method & Locations:**
-  * UI Entry Point: `_UploadGenerateQuizScreenState._pickAndUploadFile()` (`lib/screens/teacher/upload_generate_quiz_screen.dart:158–308`).
-  * File Picker: `FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['pdf', 'pptx', 'docx'])` (`upload_generate_quiz_screen.dart:179–182`).
-  * Validation: `MaterialService.validateUploadRequest()` and `MaterialService.validateFile()` (`lib/services/material_service.dart:37–85`).
-  * Processing / Upload: `MaterialService.uploadStudyMaterial()` (`lib/services/material_service.dart:91–258`).
-  * Storage Service: `uploadTask = storageRef.putData(resolvedBytes, metadata)` (`lib/services/material_service.dart:152`).
-  * Database Record: `materialDocRef.set(...)` in collection `materials` (`lib/services/material_service.dart:216–220`).
-* **Purpose:** Validates document extensions (`pdf`, `pptx`, `docx`) and file size (`<= 50MB`), uploads to Firebase Storage, extracts text on-device for instant quiz generation, and saves the material to Firestore.
+### 1.2 Supabase Auth API
 
----
+| Operation | File | Method | Lines |
+|---|---|---|---|
+| Email registration | `lib/services/auth_service.dart` | `registerWithEmail()` | L76–L104 |
+| Email login | `lib/services/auth_service.dart` | `signInWithEmail()` | L106–L122 |
+| Google sign-in | `lib/services/auth_service.dart` | `signInWithGoogle()` | L124–L153 |
+| Role claim (RPC) | `lib/services/auth_service.dart` | `_claimAndLoadProfile()` | L155–L193 |
+| Get profile | `lib/services/auth_service.dart` | `getCurrentUserProfile()` | L195–L205 |
+| Sign out | `lib/services/auth_service.dart` | `signOut()` | L207–L212 |
+| Auth state stream | `lib/services/auth_service.dart` | `authStateChanges` | L64–L74 |
 
-## 5. Main Integration Flow — Upload Study Material
+### 1.3 Gemini AI API (Quiz Generation)
 
-The complete lifecycle from teacher selection to quiz readiness:
+The Gemini API is **never called directly from the Flutter app**. The flow is:
 
 ```
-[Teacher selects document via FilePicker]
-               │
-               ▼
-[Validate format (.pdf, .docx, .pptx), size (<=50MB), and non-empty class ID]
-               │
-               ▼
-[Initiate Firebase Storage upload (putData)] ──► Concurrently run DocumentTextExtractor
-               │                                            │
-               ▼                                            ▼
-[Write Firestore document: 'materials' with status 'ready' & extractedText]
-               │
-               ▼
-[Material stream updates UI] ──► Enables "Generate Quiz" buttons
+Flutter Client                  Supabase Edge Function              Google Gemini
+     |                                 |                                |
+     |-- HTTP POST /generate-quiz ---->|                                |
+     |   (Bearer: Supabase JWT)        |-- REST POST to Gemini -------->|
+     |                                 |   (x-goog-api-key: teacher's   |
+     |                                 |    personal key or backup key) |
+     |                                 |<-- JSON quiz questions --------|
+     |<-- { quizId, quiz } ------------|                                |
 ```
 
-### Step-by-Step Code References:
-1. **User selects file:**
-   * File: `lib/screens/teacher/upload_generate_quiz_screen.dart`
-   * Method: `_UploadGenerateQuizScreenState._pickAndUploadFile()` (lines 178–187) calls `FilePicker.pickFile(...)`.
-2. **File is validated:**
-   * File: `lib/services/material_service.dart`
-   * Method: `MaterialService.validateUploadRequest()` & `validateFile()` (lines 37–85) verifies file extension, file name, positive byte count, 50MB maximum limit, and valid class ID.
-3. **File is uploaded and processed:**
-   * File: `lib/services/material_service.dart`
-   * Method: `MaterialService.uploadStudyMaterial()` (lines 91–258):
-     * Storage stream: `_storage.ref().child(storagePath).putData(resolvedBytes, metadata)` (lines 142–167).
-     * Local extraction: `DocumentTextExtractor.extract(bytes, extension)` (lines 179–185) from `lib/utils/document_text_extractor.dart`.
-4. **API / Service is called:**
-   * File: `lib/services/material_service.dart`
-   * Method: Background worker (lines 235–245) retrieves `storageRef.getDownloadURL()`. Cloud Storage trigger `extractText` in `functions/index.js` (lines 400–470) also serves as server fallback.
-5. **Database / Storage updated:**
-   * File: `lib/services/material_service.dart`
-   * Method: `materialDocRef.set({...readyModel.toMap(), 'createdAt': FieldValue.serverTimestamp()})` in Firestore `materials` (lines 216–220) and `update({'downloadUrl': url})` (line 241).
-6. **Material becomes available to Quiz Feature:**
-   * File: `lib/screens/teacher/upload_generate_quiz_screen.dart`
-   * Method: Real-time listener `_listenToMaterial()` (lines 422–443) receives document with `status == 'ready'`. The UI unlocks `_generateQuiz()` (lines 466–607).
+| Component | File | Lines | Details |
+|---|---|---|---|
+| Client sends HTTP POST | `lib/services/quiz_generation_client.dart` | L46–L171 | `generate()` method, bearer token from Supabase session |
+| Batch sending logic | `lib/services/quiz_generation_client.dart` | L173–L287 | `_sendBatch()`, adds `apikey` header for Supabase host |
+| Edge Function entry | `supabase/functions/generate-quiz/index.ts` | L1–L6 | `Deno.serve(handleQuizRequest)` |
+| Edge Function handler | `supabase/functions/_shared/quiz_edge.mjs` | L342–L388 | Auth verification, Postgres store, credential logic |
+| Gemini API call | `supabase/functions/_shared/quiz_generator.mjs` | L185–L280 | `generateSingleBatch()`, calls `generativelanguage.googleapis.com` |
+| Model pool (failover) | `supabase/functions/_shared/quiz_generator.mjs` | L13–L21 | `DEFAULT_MODELS`: gemini-3.5-flash-lite → 3.1-flash-lite → flash-lite-latest → 3-flash-preview → 3.5-flash → 3.6-flash → flash-latest |
+| Question validation | `supabase/functions/_shared/quiz_generator.mjs` | L135–L181 | Excerpt grounding, structure checks, stem dedup |
+
+### 1.4 Teacher Gemini Key Management API
+
+| Operation | File | Method | Lines |
+|---|---|---|---|
+| GET status | `lib/services/teacher_gemini_key_service.dart` | `getStatus()` | L60 |
+| PUT save & verify | `lib/services/teacher_gemini_key_service.dart` | `saveAndVerify()` | L62–L63 |
+| DELETE remove key | `lib/services/teacher_gemini_key_service.dart` | `remove()` | L65 |
+| HTTP request logic | `lib/services/teacher_gemini_key_service.dart` | `_request()` | L67–L150 |
+| Edge Function entry | `supabase/functions/teacher-gemini-key/index.ts` | L1–L4 | `Deno.serve(handleTeacherGeminiKeyRequest)` |
+| Edge Function handler | `supabase/functions/_shared/teacher_gemini_key_edge.mjs` | full file | GET/PUT/DELETE with Vault integration |
 
 ---
 
-## 6. Main Integration Flow — Take Quiz
+## 2. Database Integration
 
-The complete student quiz-taking lifecycle:
+### 2.1 Database: Supabase Postgres (via PostgREST)
 
-```
-[Student selects Quiz in StudentClassDetailsScreen]
-               │
-               ▼
-[Quiz questions streamed from Firestore collection 'quizzes']
-               │
-               ▼
-[AnswerQuizScreen initializes question queue and loads any cached draft answers]
-               │
-               ▼
-[Student selects / types answers across 5 question types]
-               │
-               ▼
-[Answers saved to in-memory state and Firestore draft attempt]
-               │
-               ▼
-[Student navigates via Next / Prev / Skip / Flag / Question Drawer]
-               │
-               ▼
-[Submit Quiz Confirmation Dialog shown]
-```
+All database operations use the `supabase_flutter` SDK which calls the PostgREST API under the hood. Tables are protected by Row Level Security (RLS).
 
-### Step-by-Step Code References:
-1. **User opens/selects a quiz:**
-   * File: `lib/screens/student/student_class_details_screen.dart`
-   * Method: `_buildPracticeQuizzesTab()` -> "Start Practice Quiz" button `onPressed` (lines 887–920) or "Retake #2" button (lines 860–883) launches `AnswerQuizScreen(quiz: quiz, attemptNumber: 1)`.
-2. **Quiz questions are retrieved:**
-   * File: `lib/services/quiz_service.dart`
-   * Method: `QuizService.streamClassQuizzes(classId, type: 'practice', publishedOnly: true)` (lines 22–44) reads from Firestore `quizzes`, parsed via `QuizModel.fromFirestore()`.
-3. **Questions are displayed:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Widget / State: `AnswerQuizScreen` / `_AnswerQuizScreenState.initState()` (lines 142–158) loads questions. `_loadCurrentAnswer()` (lines 250–262) and question builders display the active question.
-4. **User selects/types answers:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method:
-     * MCQ / True-False: Direct option tap records selection.
-     * Fill-in-the-Blank / Identification: Handled via `_textAnswerController` in `_saveCurrentAnswer()` (lines 264–274).
-     * Enumeration: Handled via `_enumInputController` in `_addEnumerationItem()` (lines 405–438).
-5. **Answers stored temporarily:**
-   * File: `lib/screens/student/answer_quiz_screen.dart` & `lib/services/assignment_service.dart`
-   * Method: `_persistDraftAnswers()` (lines 111–121) invokes `AssignmentService.saveDraftAnswers()` (lines 257–285), persisting answers to Firestore `users/{studentId}/attempts/draft_{quizId}_attempt_{attemptNumber}` and in-memory cache.
-6. **User proceeds through quiz:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method:
-     * `_goToNext()` (lines 336–371): Advances queue or routes to first unanswered question.
-     * `_goToPrevious()` (lines 373–381): Steps backward.
-     * `_skipCurrentQuestion()` (lines 306–334): Re-queues current question to the end.
-     * `_toggleFlag()` (lines 394–403): Flags question for later review.
-     * `_jumpToQuestion()` (lines 383–392): Direct jump from question grid drawer.
-7. **Quiz is submitted:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method: `_goToNext()` on last question or "Submit Quiz" button triggers `_showSubmitConfirmation()` (lines 453–531).
+### 2.2 Tables & Collections
 
----
+| Table | Purpose | Service File |
+|---|---|---|
+| `profiles` | User profiles (id, role, display_name) | `auth_service.dart` L198–L204 |
+| `classes` | Teacher-created classes | `class_service.dart` L56–L115 |
+| `class_members` | Class enrollment records | `class_service.dart` L63–L68 |
+| `materials` | Uploaded study documents, extracted text, and explicit posted/draft state | `material_service.dart` |
+| `quizzes` | Generated/manual quiz data | `quiz_service.dart` L21–L72, L442–L576 |
+| `quiz_assignments` | Teacher-assigned quizzes for classes | `assignment_service.dart` L39–L106 |
+| `quiz_attempts` | Student quiz submissions with scores | `assignment_service.dart` L108–L176 |
+| `quiz_drafts` | Autosaved student answers | `assignment_service.dart` L181–L237 |
 
-## 7. Main Integration Flow — Submit Quiz
+### 2.3 CRUD Operations
 
-What happens when the student presses **Submit**:
+#### CREATE (Insert)
 
-```
-[User confirms Submit in confirmation dialog]
-               │
-               ▼
-[_evaluateAndShowResults() gathers all user answers]
-               │
-               ▼
-[ScoringUtils grades all 5 types deterministically]
-               │
-               ▼
-[AssignmentService verifies: assignment active, not expired, max 2 attempts]
-               │
-               ▼
-[Write QuizAttemptModel to Firestore collection 'attempts' with server timestamp]
-               │
-               ▼
-[Delete temporary draft in 'users/{studentId}/attempts']
-               │
-               ▼
-[Display results modal dialog with score banner and question-by-question breakdown]
-```
+| What | File | Method | Lines |
+|---|---|---|---|
+| Create class (RPC) | `class_service.dart` | `createClass()` | L37–L54 |
+| Join class (RPC) | `class_service.dart` | `joinClassByCode()` | L70–L89 |
+| Upload material | `material_service.dart` | `uploadStudyMaterial()` | L249–L258 |
+| Create assignment | `assignment_service.dart` | `createAssignment()` | L39–L58 |
+| Save draft answers | `assignment_service.dart` | `saveDraftAnswers()` | L181–L199 |
+| Submit attempt (Edge Fn) | `assignment_service.dart` | `submitAttempt()` | L108–L152 |
+| Append manual question (RPC) | `quiz_service.dart` | `appendManualQuestion()` | L455–L476 |
 
-### Step-by-Step Code References:
-1. **Submit Quiz initiated:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method: Dialog 'Submit' button invokes `_evaluateAndShowResults()` (lines 522–527 & 533–536).
-2. **Collect answers:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method: `_evaluateAndShowResults()` loops over `_questions`, reading `_userAnswers[q.id]` (lines 540–544).
-3. **Validate submission:**
-   * File: `lib/screens/student/answer_quiz_screen.dart` & `lib/services/assignment_service.dart`
-   * Method:
-     * Pre-check: `_showSubmitConfirmation()` verifies `_allQuestionsAnswered` (lines 457–464).
-     * Auth verification: `user == null` check (lines 602–613).
-     * Backend verification: `AssignmentService._submitAttempt()` (lines 147–185) checks if assignment is closed (`isClosed`), expired (`isExpired`), or if student already has 2 submitted attempts.
-4. **Compare / Check answers:**
-   * File: `lib/screens/student/answer_quiz_screen.dart` & `lib/utils/scoring_utils.dart`
-   * Method:
-     * MCQ / True-False: Case-insensitive normalized string match (lines 550–556).
-     * Fill-in-the-Blank / Identification: `ScoringUtils.isFreeTextMatch()` in `scoring_utils.dart:27–55`.
-     * Enumeration: `ScoringUtils.scoreEnumeration()` in `scoring_utils.dart:58–104`.
-5. **Calculate score:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method: Lines 587–600 sum `totalEarned += earned` and calculate `percentage = totalEarned / totalPossible * 100`.
-6. **Save attempt / result:**
-   * File: `lib/screens/student/answer_quiz_screen.dart` & `lib/services/assignment_service.dart`
-   * Method: Constructs `QuizAttemptModel` (lines 615–645) and calls `_assignmentService.submitAttempt(attempt)` (line 648).
-7. **Database transaction:**
-   * File: `lib/services/assignment_service.dart`
-   * Method: `_submitAttempt()` lines 188–208 writes the attempt to collection `attempts` using `FieldValue.serverTimestamp()`. Draft answers are deleted via `clearDraftAnswers()` (lines 323–342).
-8. **Display results:**
-   * File: `lib/screens/student/answer_quiz_screen.dart`
-   * Method: Lines 678–750 display modal `AlertDialog` with trophy/checkmark header, score percentage, earned points, and expandable question review.
+#### READ (Select / Stream)
+
+| What | File | Method | Lines |
+|---|---|---|---|
+| Get user profile | `auth_service.dart` | `getCurrentUserProfile()` | L195–L205 |
+| Stream teacher classes | `class_service.dart` | `getTeacherClassesStream()` | L56–L61 |
+| Stream student classes | `class_service.dart` | `getStudentJoinedClassesStream()` | L92–L97 |
+| Stream class members | `class_service.dart` | `getClassMembersStream()` | L63–L68 |
+| Get class by ID | `class_service.dart` | `getClassById()` | L106–L115 |
+| Stream class materials | `material_service.dart` | `streamClassMaterials()` | L476–L485 |
+| Stream teacher materials | `material_service.dart` | `streamTeacherMaterials()` | L488–L502 |
+| Stream single material | `material_service.dart` | `streamMaterial()` | L467–L473 |
+| Stream class quizzes | `quiz_service.dart` | `streamClassQuizzes()` | L21–L39 |
+| Stream teacher quizzes | `quiz_service.dart` | `streamTeacherQuizzes()` | L42–L51 |
+| Stream single quiz | `quiz_service.dart` | `streamQuiz()` | L54–L62 |
+| Get single quiz | `quiz_service.dart` | `getQuiz()` | L65–L72 |
+| Stream class assignments | `assignment_service.dart` | `streamClassAssignments()` | L80–L91 |
+| Stream quiz attempts | `assignment_service.dart` | `streamClassQuizAttempts()` | L154–L164 |
+| Stream student attempts | `assignment_service.dart` | `streamStudentClassAttempts()` | L166–L176 |
+| Get draft answers | `assignment_service.dart` | `getDraftAnswers()` | L201–L220 |
+
+#### UPDATE
+
+| What | File | Method | Lines |
+|---|---|---|---|
+| Update quiz | `quiz_service.dart` | `updateQuiz()` | L442–L453 |
+| Publish quiz | `quiz_service.dart` | `publishQuiz()` | L545–L557 |
+| Finalize quiz | `quiz_service.dart` | `finalizeQuiz()` | L560–L571 |
+| Close assignment | `assignment_service.dart` | `closeAssignment()` | L60–L65 |
+| Reopen assignment | `assignment_service.dart` | `reopenAssignment()` | L67–L72 |
+| Update deadline | `assignment_service.dart` | `updateDeadline()` | L74–L78 |
+| Storage upload status | `material_service.dart` | background `unawaited` in `uploadStudyMaterial()` | L278–L297 |
+| Retry extraction | `material_service.dart` | `retryMaterialExtraction()` | L505–L551 |
+| Post material to Students | `material_service.dart` | `postMaterial()` | Current implementation |
+| Unpost material from Students | `material_service.dart` | `unpostMaterial()` | Current implementation |
+
+#### DELETE
+
+| What | File | Method | Lines |
+|---|---|---|---|
+| Delete quiz | `quiz_service.dart` | `deleteQuiz()` | L574–L576 |
+| Delete material + storage | `material_service.dart` | `deleteMaterial()` | L555–L592 |
+| Clear draft answers | `assignment_service.dart` | `clearDraftAnswers()` | L222–L237 |
+| Cleanup material quizzes | `material_service.dart` | `_cleanupMaterialQuizzes()` | L623–L653 |
 
 ---
 
-## 8. Network Transactions Reference
+## 3. Upload Functionality
 
-Comprehensive list of every network request across the entire application:
+### Upload Flow
 
-### 1. Firebase Authentication — Email Registration
-* **File:** `lib/services/auth_service.dart`
-* **Method:** `AuthService.registerWithEmail()` (lines 56–140)
-* **Service Contacted:** Firebase Authentication (`createUserWithEmailAndPassword`) & Cloud Firestore (`users/{uid}`)
-* **Data Sent:** Email, password, displayName, role (`teacher` / `student`)
-* **Data Received:** `UserCredential`, Firebase `User`, Firestore write ACK
-* **Failure Handling:** Catches `FirebaseAuthException` (`email-already-in-use`, `weak-password`, `invalid-email`), implements orphan account recovery, translates messages via `AuthService.getErrorMessage()`, surfaces error via `AppFeedback.error()`.
+```
+Teacher picks file (FilePicker)
+        |
+        v
+validateUploadRequest() ──── check: PDF/DOCX/PPTX, ≤50 MB
+        |
+        v
+  ┌─────┴──────┐
+  |            |
+  v            v
+Extract text   Upload to Supabase Storage
+on-device      bucket: "study-materials"
+(DocumentTextExtractor)  path: uploads/{uid}/{materialId}/{filename}
+  |            |
+  └─────┬──────┘
+        v
+INSERT INTO materials ──── status='ready' or 'failed', is_posted=false
+        |
+        v
+Background: update storage_upload_status
+        |
+        v
+Teacher confirms Post Material ──── is_posted=true, posted_at=now()
+        |
+        v
+Student RLS/stream exposes only posted + ready + completed materials
+```
 
-### 2. Firebase Authentication — Email Login
-* **File:** `lib/services/auth_service.dart`
-* **Method:** `AuthService.signInWithEmail()` (lines 161–213)
-* **Service Contacted:** Firebase Authentication (`signInWithEmailAndPassword`) & Cloud Firestore (`users/{uid}`)
-* **Data Sent:** Email, password
-* **Data Received:** `UserCredential`, `UserProfile` document snapshot
-* **Failure Handling:** Enforces role guarding: if profile role does not match expected role, immediately invokes `_auth.signOut()` and throws `AuthRoleMismatchException`.
-
-### 3. Firebase Authentication — Google Sign-In
-* **File:** `lib/services/auth_service.dart`
-* **Method:** `AuthService.signInWithGoogle()` (lines 220–300)
-* **Service Contacted:** Google Sign-In SDK, Firebase Auth (`signInWithCredential`), Cloud Firestore (`users/{uid}`)
-* **Data Sent:** Google OAuth `idToken` and `accessToken`, user profile payload
-* **Data Received:** `GoogleSignInAccount`, `AuthCredential`, `UserProfile`
-* **Failure Handling:** Returns `null` on cancellation; signs out from Google if role mismatch occurs; catches network timeout errors.
-
-### 4. Upload Study Material (Storage & Firestore)
-* **File:** `lib/services/material_service.dart`
-* **Method:** `MaterialService.uploadStudyMaterial()` (lines 91–258)
-* **Service Contacted:** Firebase Storage (`putData`) & Cloud Firestore (`materials.doc().set`)
-* **Data Sent:** Binary document bytes (`Uint8List`), MIME metadata, Firestore document fields
-* **Data Received:** Storage `UploadTask` progress snapshot stream, download URL, Firestore write ACK
-* **Failure Handling:** 15s timeout guard; cancels storage task if Firestore write fails; surfaces clean user message via `MaterialValidationException`.
-
-### 5. AI Quiz Synthesis (HTTP / Cloud Function to Gemini)
-* **File:** `lib/services/quiz_generation_client.dart` (Client) & `functions/index.js` / `functions/quiz_generator.js` (Server)
-* **Method:** `QuizGenerationClient.generate()` (lines 34–148)
-* **Service Contacted:** Cloud Function REST endpoint (`generateQuizHttp`) -> Google Gemini API (`generativelanguage.googleapis.com/.../generateContent`)
-* **Data Sent:** HTTP Headers (`Authorization: Bearer <Firebase_ID_Token>`), JSON body: `{ classId, materialId, quizType, questionTypes, questionCount, sourceQuizId }`
-* **Data Received:** JSON: `{ success: true, quizId: "...", quiz: { questions: [...] } }`
-* **Failure Handling:** 150-second client timeout; server auto-rotates across candidate models on HTTP `429` (quota) or `503` (unavailable); status codes (400, 401, 403, 404, 412, 422, 429, 504) are translated into user-friendly `QuizGenerationException` messages.
-
-### 6. Submit Quiz Attempt
-* **File:** `lib/services/assignment_service.dart`
-* **Method:** `AssignmentService.submitAttempt()` (lines 126–210)
-* **Service Contacted:** Cloud Firestore (`attempts` collection and `users/{studentId}/attempts`)
-* **Data Sent:** `QuizAttemptModel` JSON payload with student answers, points, and score
-* **Data Received:** Firestore write confirmation
-* **Failure Handling:** 20s timeout; checks assignment availability and attempt limit (throws `QuizUnavailableException`); on failure, answers remain safely in local device state for retry.
-
-### 7. Real-Time Data Streaming (Firestore Snapshots)
-* **File:** `lib/services/class_service.dart`, `lib/services/material_service.dart`, `lib/services/quiz_service.dart`, `lib/services/assignment_service.dart`
-* **Method:** `getTeacherClassesStream()`, `streamClassMaterials()`, `streamClassQuizzes()`, `streamClassAssignments()`, `streamClassQuizAttempts()`
-* **Service Contacted:** Cloud Firestore WebSocket / Long-Polling listener (`snapshots()`)
-* **Data Sent:** Query filters (`where()`)
-* **Data Received:** Real-time stream of updated document snapshots
-* **Failure Handling:** `onError` stream callbacks log errors and display non-blocking `AppFeedback` alerts.
-
-### 8. Download Original Material or Preview PDF
-* **File:** `lib/services/material_service.dart`
-* **Method:** `MaterialService.getMaterialFileBytes()` (lines 260–292) and `downloadMaterialToTemp()` (lines 330–346)
-* **Service Contacted:** HTTP GET (`downloadUrl`) with fallback to Firebase Storage SDK (`getData`)
-* **Data Sent:** Storage file URL or bucket path reference
-* **Data Received:** Binary file bytes (`Uint8List`)
-* **Failure Handling:** Returns `null` on timeout/failure; triggers automatic fallback to the extracted text viewer in `MaterialViewerScreen`.
+| Step | File | Method/Lines |
+|---|---|---|
+| File picker UI | `upload_generate_quiz_screen.dart` | `_pickFile()` ~L158 |
+| Validation | `material_service.dart` | `validateFile()` L65–L97, `validateUploadRequest()` L100–L117 |
+| Storage upload | `material_service.dart` | `uploadStudyMaterial()` L183–L201 |
+| Text extraction | `utils/document_text_extractor.dart` | `DocumentTextExtractor.extract()` |
+| DB insert | `material_service.dart` | L249–L258 |
+| Background status update | `material_service.dart` | L274–L300 |
+| Post/unpost update | `material_service.dart` | `postMaterial()` / `unpostMaterial()` |
 
 ---
 
-## 9. Other Week 12 API Integrations (Present vs. Not Present)
+## 4. Take Quiz Flow
 
-* **Firebase Authentication:** **Found** — `lib/services/auth_service.dart` (Email/Password & Google Sign-In).
-* **Cloud Firestore:** **Found** — `lib/services/firestore_provider.dart` (8 collections and subcollections).
-* **Firebase Storage:** **Found** — `lib/services/material_service.dart` (`studexa-b5e55.firebasestorage.app`).
-* **Gemini / AI API:** **Found** — `functions/quiz_generator.js` & `functions/index.js` (Google AI Studio REST endpoint).
-* **Maps / Google Maps:** **Not Found** — No mapping package or coordinates API integrated.
-* **Location Services:** **Not Found** — No GPS or geolocation package used.
-* **Push Notifications (FCM):** **Not Found** — No external FCM notification client installed; in-app feedback is used exclusively via `AppFeedback`.
-* **HTTP / REST APIs:** **Found** — `package:http` in `lib/services/quiz_generation_client.dart` and `lib/services/material_service.dart`.
-* **Google Cloud APIs (Backend):** **Found** — `googleapis` in `functions/index.js` for Google Drive API v3 PPTX/DOCX-to-PDF conversion.
+```
+Student → student_class_details_screen → sees assignments
+        |
+        v
+Taps quiz → answer_quiz_screen (loads quiz from Supabase)
+        |
+        v
+Answers questions → auto-save drafts to quiz_drafts table
+        |
+        v
+Submit → calls AssignmentService.submitAttempt()
+```
+
+| Step | File | Lines |
+|---|---|---|
+| View assignments | `lib/screens/student/student_class_details_screen.dart` | streams via `AssignmentService` |
+| Load quiz | `lib/screens/student/answer_quiz_screen.dart` | L1–L50 (init) |
+| Auto-save drafts | `lib/services/assignment_service.dart` | `saveDraftAnswers()` L181–L199 |
+| Answer recording | `lib/screens/student/answer_quiz_screen.dart` | Widget event handlers |
 
 ---
 
-## 10. Live Demo Cheatsheet for Instructor Checking
+## 5. Submit Quiz Flow
 
-When presenting each feature live on the laptop, open the corresponding file and line number:
+```
+Student taps Submit
+        |
+        v
+AssignmentService.submitAttempt()
+        |
+        v
+Supabase Edge Function: submit-quiz-attempt
+        |
+        v
+Server-side scoring (exact, typo-tolerant, partial enumeration)
+        |
+        v
+studexa_save_scored_attempt (RPC, service_role only)
+        |
+        v
+INSERT quiz_attempts + DELETE matching quiz_draft
+        |
+        v
+Return scored attempt to client → show results
+```
 
-| Feature to Show | Screen in App | Exact File to Show in IDE | Key Code Lines |
-| :--- | :--- | :--- | :--- |
-| **API Call (Gemini/Cloud Function)** | Teacher: Generate Quiz | `lib/services/quiz_generation_client.dart` | Lines 34–148 (`generate`) |
-| **Model Pool & Rotation** | Backend Server | `functions/quiz_generator.js` | Lines 12–16, 151–183 |
-| **File Picker & Upload** | Teacher: Upload Material | `lib/screens/teacher/upload_generate_quiz_screen.dart` | Lines 179–182, 237–257 |
-| **Storage Upload & Validation** | Backend / Storage | `lib/services/material_service.dart` | Lines 37–85, 142–170 |
-| **Taking a Quiz** | Student: Answer Quiz Screen | `lib/screens/student/answer_quiz_screen.dart` | Lines 142–158, 264–304 |
-| **Scoring & Quiz Submission** | Student: Submit Quiz | `lib/screens/student/answer_quiz_screen.dart` | Lines 533–665 |
-| **Saving Attempt to Database** | Student: Submitting Attempt | `lib/services/assignment_service.dart` | Lines 147–210 |
-| **Firestore Real-time Streams** | Teacher/Student Class Details | `lib/services/class_service.dart`, `quiz_service.dart` | `quiz_service.dart:22–44` |
-| **Role Guarding & Auth** | Login Screen | `lib/services/auth_service.dart` | Lines 161–213, 220–300 |
+| Step | File | Lines |
+|---|---|---|
+| Client submit call | `assignment_service.dart` | `submitAttempt()` L108–L152 |
+| Edge Function entry | `supabase/functions/submit-quiz-attempt/index.ts` | L1–L4 |
+| Server scoring logic | `supabase/functions/_shared/submit_quiz_attempt_edge.mjs` | `scoreQuiz()` L70+ |
+| Typo-tolerant matching | `supabase/functions/_shared/submit_quiz_attempt_edge.mjs` | `freeTextMatch()` L39–L46, `distance()` L23–L37 |
+| Enumeration scoring | `supabase/functions/_shared/submit_quiz_attempt_edge.mjs` | `scoreEnumeration()` L48–L68 |
+| Client-side scoring (fallback) | `lib/utils/scoring_utils.dart` | `ScoringUtils` class |
+
+---
+
+## 6. Network Transactions Summary
+
+| # | Transaction | Direction | Protocol | Service | Data Sent | Data Received | Failure Handling |
+|---|---|---|---|---|---|---|---|
+| 1 | User Registration | Client → Supabase Auth | HTTPS | `auth_service.dart` | email, password, role, display_name | Session + user object | `AuthException` → error message |
+| 2 | User Login | Client → Supabase Auth | HTTPS | `auth_service.dart` | email, password | Session + JWT | Role mismatch check, error mapping L232–L271 |
+| 3 | Google Sign-In | Client → Google → Supabase | HTTPS | `auth_service.dart` | Google ID/access tokens | Supabase session | Sign out on failure L148–L152 |
+| 4 | Class Create/Join | Client → Supabase RPC | HTTPS | `class_service.dart` | name, section / join_code | Class model | `ClassJoinException` L125–L140 |
+| 5 | Material Upload | Client → Supabase Storage + Postgres | HTTPS | `material_service.dart` | File bytes + metadata | Material model | Rollback storage on DB failure L259–L271 |
+| 6 | Quiz Generation | Client → Edge Fn → Gemini API | HTTPS | `quiz_generation_client.dart` | classId, materialId, types, count | Quiz model with questions | Model rotation, batch retry, `QuizGenerationException` |
+| 7 | Quiz Submission | Client → Edge Fn → Postgres | HTTPS | `assignment_service.dart` | quizId, classId, answers | Scored attempt with breakdown | `QuizUnavailableException` L138–L151 |
+| 8 | Gemini Key Mgmt | Client → Edge Fn → Vault | HTTPS | `teacher_gemini_key_service.dart` | GET/PUT/DELETE + API key | Status + masked key | `TeacherGeminiKeyException` L39–L45 |
+| 9 | Realtime Streams | Client ↔ Supabase Realtime | WSS | All `stream*()` methods | Table subscriptions | Live row changes | Auto-reconnect (SDK-managed) |
+| 10 | File Download | Client → Supabase Storage | HTTPS | `material_service.dart` | Storage path | File bytes | Fallback to legacy URL L306–L337 |
+
+---
+
+## 7. Configuration Files
+
+| File | Purpose |
+|---|---|
+| `lib/config/supabase_config.dart` | Supabase URL, publishable key, storage bucket, auth callback, Google client ID |
+| `lib/config/integration_config.dart` | Edge Function endpoint URLs (generate-quiz, teacher-gemini-key, submit-quiz-attempt) |
+| `lib/config/gemini_config.dart` | Legacy stub — credentials moved server-side |
+| `pubspec.yaml` | Flutter dependencies — `supabase_flutter`, `http`, `file_picker`, etc. |
+| `supabase/config.toml` | Supabase CLI local config |
+| `supabase/migrations/*.sql` | Database schema, RLS policies, RPCs, triggers |
+
+---
+
+## 8. What is NOT Used
+
+| Technology | Status |
+|---|---|
+| Firebase (Auth, Firestore, Storage, Functions) | ❌ Fully removed from `pubspec.yaml` and all code |
+| Docker | ❌ No Dockerfile or docker-compose anywhere |
+| Maps / Location Services | ❌ Not implemented |
+| FCM Push Notifications | ❌ Not implemented |
+| Local SQLite / Hive | ❌ Not used — all persistence is Supabase |
+
+---
+
+## 9. Live Demo Cheatsheet
+
+| Demo Step | What to Show | Where in Code |
+|---|---|---|
+| **App startup** | Supabase init, splash screen | `lib/main.dart` L10–L14 |
+| **Register** | Email signup → Supabase Auth | `auth_service.dart` L76–L104 |
+| **Login** | Email/Google sign-in | `auth_service.dart` L106–L153 |
+| **Create class** | RPC call → Postgres | `class_service.dart` L37–L54 |
+| **Join class** | Student enters code | `class_service.dart` L70–L89 |
+| **Upload material** | FilePicker → Storage + Postgres | `material_service.dart` L123–L303 |
+| **Text extraction** | On-device PDF/DOCX parsing | `utils/document_text_extractor.dart` |
+| **Set Gemini API key** | Teacher settings → Edge Function | `teacher_gemini_key_service.dart` L60–L65 |
+| **Generate quiz** | HTTP POST → Edge Fn → Gemini | `quiz_generation_client.dart` L46–L171 |
+| **Model failover** | 7 Gemini models rotate on 429/503 | `quiz_generator.mjs` L13–L21, L205–L278 |
+| **Edit quiz** | Add/remove questions, manual add | `quiz_service.dart` L442–L476 |
+| **Publish quiz** | Status → published | `quiz_service.dart` L545–L557 |
+| **Assign quiz** | Create assignment for class | `assignment_service.dart` L39–L58 |
+| **Take quiz** | Student answers, auto-save drafts | `answer_quiz_screen.dart` |
+| **Submit quiz** | Edge Fn scores server-side | `assignment_service.dart` L108–L152 |
+| **View results** | Score, breakdown, attempt history | `teacher_results_screen.dart` |
+| **Realtime updates** | `stream*()` methods → live UI | All services: `.stream(primaryKey: ['id'])` |
+| **Delete material** | Storage + Postgres + draft cleanup | `material_service.dart` L555–L592 |
+
+---
+
+## 10. Project Structure Overview
+
+```
+studexa/
+├── lib/
+│   ├── main.dart                          # App entry, Supabase init
+│   ├── config/
+│   │   ├── supabase_config.dart           # Supabase URL & keys
+│   │   ├── integration_config.dart        # Edge Function URLs
+│   │   └── gemini_config.dart             # Legacy stub
+│   ├── models/                            # Data models (class, material, quiz, etc.)
+│   ├── screens/
+│   │   ├── auth/                          # Login, Register, Role Selection
+│   │   ├── student/                       # Student Home, Class Details, Answer Quiz, Join Class
+│   │   └── teacher/                       # Teacher Home, Class Details, Upload/Generate, Quiz Detail,
+│   │                                      #   Quiz Monitoring, Results, Gemini API Settings
+│   ├── services/
+│   │   ├── auth_service.dart              # Supabase Auth (email, Google, role)
+│   │   ├── class_service.dart             # Classes + members (RPC + streams)
+│   │   ├── material_service.dart          # Upload, extraction, Storage, streams
+│   │   ├── quiz_service.dart              # Quiz CRUD, generation, validation, local fallback
+│   │   ├── quiz_generation_client.dart    # HTTP client to generate-quiz Edge Function
+│   │   ├── assignment_service.dart        # Assignments, attempts, drafts, submit via Edge Function
+│   │   ├── teacher_gemini_key_service.dart# Gemini API key management via Edge Function
+│   │   └── pdf_export_service.dart        # PDF export for quiz results
+│   ├── utils/                             # DocumentTextExtractor, ScoringUtils
+│   ├── widgets/                           # Shared UI components
+│   └── theme/                             # AppTheme
+├── supabase/
+│   ├── functions/
+│   │   ├── generate-quiz/index.ts         # Edge Function: quiz generation
+│   │   ├── submit-quiz-attempt/index.ts   # Edge Function: server-side scoring
+│   │   ├── teacher-gemini-key/index.ts    # Edge Function: credential management
+│   │   ├── _shared/
+│   │   │   ├── quiz_generator.mjs         # Gemini API caller, model rotation, validation
+│   │   │   ├── quiz_edge.mjs              # Quiz generation request handler
+│   │   │   ├── submit_quiz_attempt_edge.mjs # Scoring logic (exact, typo, enumeration)
+│   │   │   ├── teacher_gemini_key_edge.mjs  # Key CRUD + Vault
+│   │   │   ├── teacher_credentials.mjs    # Personal key + backup session store
+│   │   │   ├── postgres_rest.mjs          # PostgREST client for Edge Functions
+│   │   │   ├── supabase_identity.mjs      # JWT verification helper
+│   │   │   └── question_filters.mjs       # Table-header & filler detection
+│   │   └── test/                          # Unit tests for Edge Function modules
+│   └── migrations/                        # SQL migrations (schema, RLS, RPCs, triggers)
+├── pubspec.yaml                           # Flutter dependencies (supabase_flutter, http, etc.)
+└── docs/
+    └── NETWORK_TRANSACTIONS.md            # ← This file
+```

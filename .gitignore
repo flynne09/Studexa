@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/Studexa.apk
 
 # Symbolication related
 app.*.symbols
@@ -46,7 +47,7 @@ app.*.map.json
 
 # Private API Keys & Credentials (Never commit)
 lib/config/gemini_config.dart
-firebase.config.json
+supabase.config.json
 *.env
 .env.*
 **/.secret.local
@@ -54,4 +55,5 @@ firebase.config.json
 supabase.local.json
 docs/command.md
 supabase/.temp/
+supabase/.branches/
 

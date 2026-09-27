@@ -1,32 +1,14 @@
+import 'test_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/quiz_model.dart';
 import 'package:studexa/screens/student/answer_quiz_screen.dart';
 import 'package:studexa/services/assignment_service.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
-  group('Task 3 — Partial Enumeration Progress and Submission Tests', () {
+  group('Task 3 â€” Partial Enumeration Progress and Submission Tests', () {
     final testQuiz = QuizModel(
       id: 'quiz_partial_enum_test',
       classId: 'class_bio_101',
@@ -63,7 +45,7 @@ void main() {
     );
 
     testWidgets('Student enters 1 of 3 enumeration items, proceeds, and submits quiz receiving partial credit', (tester) async {
-      final assignmentService = AssignmentService(useFirestore: false);
+      final assignmentService = AssignmentService(useRemoteBackend: false);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -103,7 +85,7 @@ void main() {
       expect(find.text('2 answered'), findsOneWidget);
       expect(find.text('1 unanswered'), findsOneWidget);
 
-      // Proceed to Q3 — must NOT be blocked by any validation
+      // Proceed to Q3 â€” must NOT be blocked by any validation
       await tester.tap(find.text('Next Question'));
       await tester.pumpAndSettle();
 
@@ -117,7 +99,7 @@ void main() {
       expect(find.text('3 answered'), findsOneWidget);
       expect(find.text('0 unanswered'), findsOneWidget);
 
-      // Submit quiz — button must be active and not blocked
+      // Submit quiz â€” button must be active and not blocked
       final submitButton = find.widgetWithText(ElevatedButton, 'Submit Quiz');
       expect(submitButton, findsOneWidget);
       await tester.tap(submitButton);
@@ -146,7 +128,7 @@ void main() {
     });
 
     testWidgets('Typed enumeration item without tapping Add is auto-committed when advancing or submitting', (tester) async {
-      final assignmentService = AssignmentService(useFirestore: false);
+      final assignmentService = AssignmentService(useRemoteBackend: false);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -172,7 +154,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Tap Next Question — _saveCurrentAnswer commits 'Krebs Cycle'
+      // Tap Next Question â€” _saveCurrentAnswer commits 'Krebs Cycle'
       await tester.tap(find.text('Next Question'));
       await tester.pumpAndSettle();
 

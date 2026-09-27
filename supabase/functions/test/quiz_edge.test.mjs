@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { handleQuizRequest } from "../_shared/quiz_edge.mjs";
-import { FirestoreError } from "../_shared/firestore_rest.mjs";
+import { PostgresStoreError } from "../_shared/postgres_rest.mjs";
 import { QuizGenerationError } from "../_shared/quiz_generator.mjs";
 
 const text = "Cellular respiration produces ATP by oxidizing glucose molecules in eukaryotic cells. Mitochondria supply energy to the cell.";
 const copy = (value) => structuredClone(value);
 const base = () => ({
-  users: { teacher: { role: "teacher" }, student: { role: "student" } },
+  profiles: { teacher: { role: "teacher" }, student: { role: "student" } },
   classes: { class1: { teacherId: "teacher" } },
   materials: { material1: { teacherId: "teacher", classId: "class1", status: "ready", extractedText: text, fileName: "Cells.pdf" } },
   quizzes: {},
@@ -30,13 +30,13 @@ function fixture(seed = base()) {
       return data ? { data: copy(data), updateTime: String(versions.get(key(collection, id)) || 1) } : null;
     },
     async create(collection, id, data) {
-      if (records[collection][id]) throw new FirestoreError(409, "Already exists");
+      if (records[collection][id]) throw new PostgresStoreError(409, "Already exists");
       records[collection][id] = copy(data);
       versions.set(key(collection, id), 1);
       return { data: copy(data), updateTime: "1" };
     },
     async update(collection, id, changes, updateTime) {
-      if (String(versions.get(key(collection, id)) || 1) !== updateTime) throw new FirestoreError(412, "Conflict");
+      if (String(versions.get(key(collection, id)) || 1) !== updateTime) throw new PostgresStoreError(412, "Conflict");
       Object.assign(records[collection][id], copy(changes));
       versions.set(key(collection, id), Number(updateTime) + 1);
       return { data: copy(records[collection][id]), updateTime: String(Number(updateTime) + 1) };
@@ -78,7 +78,8 @@ async function invoke(f, data, token = "teacher", generate = f.generate, credent
   const response = await handleQuizRequest(request, {
     store: f.store, generate, geminiApiKey: backupApiKey,
     credentialStore,
-    fetchImpl: async () => new Response(JSON.stringify({ users: [{ localId: token }] }), { status: 200 }),
+    authOptions: { url: "https://example.supabase.co", apiKey: "test-anon-key" },
+    fetchImpl: async () => new Response(JSON.stringify({ id: token }), { status: 200 }),
   });
   return { status: response.status, data: await response.json() };
 }
@@ -129,7 +130,7 @@ for (const target of [1, 10, 30, 50]) {
   test(`${target} questions are saved in bounded batches`, async () => {
     const f = fixture();
     let result = await invoke(f, body({ questionCount: target }));
-    assert.equal(result.status, 200);
+    assert.equal(result.status, 200, JSON.stringify(result.data));
     assert.ok(result.data.quiz.questions.length <= 10);
     let batch = 1;
     while (result.data.quiz.questions.length < target) {
@@ -156,6 +157,7 @@ test("invalid token and student role are refused before Gemini", async () => {
   const badToken = await handleQuizRequest(new Request("https://example.test", {
     method: "POST", headers: { Authorization: "Bearer invalid-token" }, body: JSON.stringify(body()),
   }), { store: f.store, generate: generator,
+    authOptions: { url: "https://example.supabase.co", apiKey: "test-anon-key" },
     fetchImpl: () => new Response(JSON.stringify({ error: { message: "INVALID_ID_TOKEN" } }), { status: 400 }) });
   assert.equal(badToken.status, 401);
   assert.equal((await invoke(f, body(), "student", generator)).status, 403);
@@ -215,7 +217,7 @@ test("repeating an initial request returns its existing draft", async () => {
   assert.equal(retry.data.quiz.completedBatchIds.length, 1);
 });
 
-test("a Firestore update-time conflict retries against the teacher's latest edit", async () => {
+test("a Postgres update-time conflict retries against the teacher's latest edit", async () => {
   const f = fixture();
   const first = await invoke(f, body({ questionCount: 12 }));
   const id = first.data.quizId;

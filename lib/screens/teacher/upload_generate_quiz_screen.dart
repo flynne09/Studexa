@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/class_model.dart';
 import '../../models/material_model.dart';
 import '../../services/class_service.dart';
+import '../../services/auth_service.dart';
 import '../../services/material_service.dart';
 import '../../services/quiz_service.dart';
 import '../../services/quiz_generation_client.dart';
@@ -50,7 +50,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   final ClassService _classService = ClassService();
   final QuizService _quizService = QuizService();
 
-  // ── Upload & Firestore Material State ───────────────────────
+  // ── Upload and material state ───────────────────────────────
   String? _materialId;
   String? _actualQuizId;
   String? _actualQuizMaterialId;
@@ -112,7 +112,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   }
 
   void _initClasses() {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserId = AuthService().currentUser?.uid;
     if (currentUserId != null) {
       _classesSubscription = _classService
           .getTeacherClassesStream(currentUserId)
@@ -157,7 +157,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
 
   /// Real file picker and upload workflow with client-side text extraction
   Future<void> _pickAndUploadFile() async {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserId = AuthService().currentUser?.uid;
     if (currentUserId == null) {
       AppFeedback.error(
         context,
@@ -315,7 +315,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       return;
     }
 
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserId = AuthService().currentUser?.uid;
     if (currentUserId == null) {
       AppFeedback.error(
         context,
@@ -419,7 +419,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     }
   }
 
-  /// Listen in real time to the materials/{materialId} Firestore document
+  /// Listen in real time to the selected material row.
   void _listenToMaterial(String materialId) {
     _materialSubscription?.cancel();
     _materialSubscription = _materialService
@@ -464,6 +464,119 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     }
   }
 
+  Future<void> _postMaterialToClass() async {
+    final mat = _material;
+    if (mat == null || !mat.canBePosted) return;
+
+    final targetClassName = _classes
+            .where((c) => c.id == _selectedClassId)
+            .map((c) => c.name)
+            .firstOrNull ??
+        widget.preselectedClass?.name ??
+        'this class';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Post Material to Class?'),
+        content: Text(
+          'Are you sure you want to publish "${mat.fileName}" to $targetClassName? '
+          'All enrolled students will be able to view and download this file.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[700],
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Post to Class'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _materialService.postMaterial(mat.id);
+      if (!mounted) return;
+      setState(() {
+        _material = mat.copyWith(isPosted: true, postedAt: DateTime.now());
+      });
+      AppFeedback.success(
+        context,
+        '"${mat.fileName}" is now published to $targetClassName.',
+        title: 'Material posted',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('Failed to post material: $e');
+      AppFeedback.error(
+        context,
+        'Could not post material. Check your connection and try again.',
+        title: 'Posting failed',
+      );
+    }
+  }
+
+  Future<void> _unpostMaterialFromClass() async {
+    final mat = _material;
+    if (mat == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hide Material from Class?'),
+        content: Text(
+          'Students will no longer be able to see or download "${mat.fileName}". '
+          'You can still generate quizzes and post it again later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[800],
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Unpost Material'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _materialService.unpostMaterial(mat.id);
+      if (!mounted) return;
+      setState(() {
+        _material = mat.copyWith(isPosted: false);
+      });
+      AppFeedback.info(
+        context,
+        '"${mat.fileName}" is now hidden from students.',
+        title: 'Material unposted',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      debugPrint('Failed to unpost material: $e');
+      AppFeedback.error(
+        context,
+        'Could not unpost material. Check your connection and try again.',
+        title: 'Action failed',
+      );
+    }
+  }
+
   Future<void> _generateQuiz({required bool isActual}) async {
     // Check if material is loaded and ready
     if (_material == null) {
@@ -491,7 +604,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
       return;
     }
 
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserId = AuthService().currentUser?.uid;
     if (currentUserId == null) {
       AppFeedback.error(
         context,
@@ -723,7 +836,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
                             ),
                             const SizedBox(height: 4),
                             const Text(
-                              'Uploads to Firebase Storage & extracts text server-side',
+                              'Uploads privately and extracts text on this device',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: _textSecondary,
@@ -1170,7 +1283,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     );
   }
 
-  /// Real-time Material Status Card reflecting Firestore document updates
+  /// Real-time material status card reflecting database updates.
   Widget _buildRealtimeStatusCard() {
     final material = _material;
     final fileTypeBadge = (_selectedFileType ?? '').toUpperCase();
@@ -1450,6 +1563,126 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
             Text(
               'Successfully extracted $previewLen characters from $_selectedFileName ($fileSizeText).',
               style: const TextStyle(fontSize: 12, color: _textSecondary),
+            ),
+            const SizedBox(height: 12),
+            // ── Posting Confirmation Section ──
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: material.isPosted
+                    ? Colors.green.withValues(alpha: 0.08)
+                    : (material.canBePosted
+                        ? _primaryNavy.withValues(alpha: 0.06)
+                        : Colors.amber.withValues(alpha: 0.08)),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: material.isPosted
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : (material.canBePosted
+                          ? _primaryNavy.withValues(alpha: 0.25)
+                          : Colors.amber.withValues(alpha: 0.3)),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        material.isPosted
+                            ? Icons.check_circle_outline
+                            : (material.canBePosted
+                                ? Icons.publish
+                                : Icons.cloud_upload_outlined),
+                        size: 18,
+                        color: material.isPosted
+                            ? Colors.green
+                            : (material.canBePosted
+                                ? _primaryNavy
+                                : Colors.amber[900]),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          material.isPosted
+                              ? 'Posted to Class (Visible to students)'
+                              : (material.canBePosted
+                                  ? 'Upload Complete • Ready to Post'
+                                  : 'Uploading original file to cloud storage...'),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: material.isPosted
+                                ? Colors.green[800]
+                                : (material.canBePosted
+                                    ? _primaryNavy
+                                    : Colors.amber[900]),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    material.isPosted
+                        ? 'Enrolled students can view and download this study document in the class.'
+                        : (material.canBePosted
+                            ? 'Students cannot see this file until you post it. Confirm below when you want students to access it.'
+                            : 'Students cannot see this file until upload completes and you confirm posting.'),
+                    style: const TextStyle(fontSize: 12, color: _textSecondary),
+                  ),
+                  const SizedBox(height: 10),
+                  if (material.isPosted) ...[
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange[800],
+                        side: BorderSide(
+                          color: Colors.orange.withValues(alpha: 0.5),
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: _unpostMaterialFromClass,
+                      icon: const Icon(Icons.visibility_off_outlined, size: 16),
+                      label: const Text('Unpost (Hide from Students)'),
+                    ),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: material.canBePosted
+                              ? Colors.green[700]
+                              : Colors.grey[400],
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: material.canBePosted
+                            ? _postMaterialToClass
+                            : null,
+                        icon: material.isUploadInProgress
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.send_rounded, size: 16),
+                        label: Text(
+                          material.isUploadInProgress
+                              ? 'Waiting for upload to finish...'
+                              : 'Post Material to Class',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             SizedBox(

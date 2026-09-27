@@ -1,13 +1,13 @@
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:google_sign_in/google_sign_in.dart';
-import '../models/user_profile.dart';
-import 'firestore_provider.dart';
 
-/// Exception thrown when a user attempts to log in under a role that differs
-/// from their registered account role (e.g., teacher logging in as student).
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../config/supabase_config.dart';
+import '../models/user_profile.dart';
+
 class AuthRoleMismatchException implements Exception {
   const AuthRoleMismatchException({
     required this.actualRole,
@@ -18,308 +18,222 @@ class AuthRoleMismatchException implements Exception {
   final String attemptedRole;
 
   @override
-  String toString() {
-    return 'This account is registered as a $actualRole, not a $attemptedRole. Please select the correct role on the start screen.';
-  }
+  String toString() =>
+      'This account is registered as a $actualRole, not a $attemptedRole. Please select the correct role on the start screen.';
 }
 
-/// Service managing user authentication with Firebase Auth and profile synchronization
-/// with Cloud Firestore `users/{uid}`.
-class AuthService {
-  /// OAuth 2.0 Web Client ID registered in Firebase Console / Google Cloud.
-  static const String webGoogleClientId =
-      '669223676992-tn4l6k5tnh5n7lr6hs8imtphd0i7grhd.apps.googleusercontent.com';
+class EmailConfirmationRequiredException implements Exception {
+  const EmailConfirmationRequiredException(this.email);
+  final String email;
 
-  AuthService({
-    FirebaseAuth? auth,
-    FirebaseFirestore? firestore,
-    GoogleSignIn? googleSignIn,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = getAppFirestore(firestore),
+  @override
+  String toString() =>
+      'Check $email for a verification link, then return to Studexa and sign in.';
+}
+
+/// Authentication and immutable Studexa role management backed by Supabase.
+class AuthService {
+  AuthService({SupabaseClient? client, GoogleSignIn? googleSignIn})
+      : _injectedClient = client,
         _googleSignIn = googleSignIn ??
             GoogleSignIn(
-              clientId: kIsWeb ? webGoogleClientId : null,
+              clientId: kIsWeb && SupabaseConfig.googleWebClientId.isNotEmpty
+                  ? SupabaseConfig.googleWebClientId
+                  : null,
+              serverClientId:
+                  !kIsWeb && SupabaseConfig.googleWebClientId.isNotEmpty
+                      ? SupabaseConfig.googleWebClientId
+                      : null,
             );
 
-  final FirebaseAuth _auth;
-  final FirebaseFirestore _firestore;
+  final SupabaseClient? _injectedClient;
   final GoogleSignIn _googleSignIn;
 
-  User? get currentUser => _auth.currentUser;
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  SupabaseClient get _client => _injectedClient ?? Supabase.instance.client;
 
-  CollectionReference<Map<String, dynamic>> get _usersCollection =>
-      _firestore.collection('users');
+  AuthenticatedUser? get currentUser {
+    final user = _client.auth.currentUser;
+    if (user == null) return null;
+    return AuthenticatedUser(
+      uid: user.id,
+      email: user.email,
+      displayName: _displayName(user),
+      photoUrl: _photoUrl(user),
+    );
+  }
 
-  /// Registers a new user with email and password and creates their profile
-  /// document in Cloud Firestore.
+  Stream<AuthenticatedUser?> get authStateChanges =>
+      _client.auth.onAuthStateChange.map((event) {
+        final user = event.session?.user;
+        if (user == null) return null;
+        return AuthenticatedUser(
+          uid: user.id,
+          email: user.email,
+          displayName: _displayName(user),
+          photoUrl: _photoUrl(user),
+        );
+      });
+
   Future<UserProfile> registerWithEmail({
     required String email,
     required String password,
     required String displayName,
     required String role,
   }) async {
-    final normalizedRole = role.trim().toLowerCase();
-    if (normalizedRole != 'teacher' && normalizedRole != 'student') {
-      throw ArgumentError("Role must be 'teacher' or 'student'.");
-    }
-
+    final normalizedRole = _validatedRole(role);
     final cleanEmail = email.trim().toLowerCase();
-    final cleanDisplayName = displayName.trim();
-
-    User? user;
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: cleanEmail,
-        password: password,
-      );
-      user = credential.user;
-    } on FirebaseAuthException catch (e) {
-      // Recovery for orphaned account: if previous registration created auth account
-      // but failed during Firestore document write, retry signing in to recover and write profile.
-      if (e.code == 'email-already-in-use') {
-        try {
-          final signInCredential = await _auth.signInWithEmailAndPassword(
-            email: cleanEmail,
-            password: password,
-          );
-          user = signInCredential.user;
-          if (user != null) {
-            final existing = await _usersCollection.doc(user.uid).get(
-              const GetOptions(source: Source.server),
-            ).timeout(const Duration(seconds: 15));
-            if (existing.exists) {
-              await _auth.signOut();
-              rethrow; // A real duplicate account is not orphan recovery.
-            }
-          }
-        } catch (_) {
-          // Re-throw original exception if sign-in also fails (e.g. wrong password or real duplicate account)
-          rethrow;
-        }
-      } else {
-        rethrow;
-      }
-    }
-
-    if (user == null) {
-      throw FirebaseAuthException(
-        code: 'user-null',
-        message: 'User creation failed. Please try again.',
-      );
-    }
-
-    final profile = UserProfile(
-      uid: user.uid,
+    final cleanName = displayName.trim();
+    final response = await _client.auth.signUp(
       email: cleanEmail,
-      displayName: cleanDisplayName.isNotEmpty
-          ? cleanDisplayName
-          : cleanEmail.split('@').first,
-      role: normalizedRole,
-      createdAt: DateTime.now(),
-      photoUrl: user.photoURL,
+      password: password,
+      emailRedirectTo:
+          kIsWeb ? Uri.base.origin : SupabaseConfig.authCallbackUrl,
+      data: {
+        'studexa_role': normalizedRole,
+        'display_name': cleanName.isEmpty
+            ? cleanEmail.split('@').first
+            : cleanName,
+      },
     );
-
-    // Concurrently update Firebase Auth display name and persist user profile to Firestore
-    try {
-      await Future.wait([
-        if (cleanDisplayName.isNotEmpty)
-          user.updateDisplayName(cleanDisplayName).catchError((_) {}),
-        _saveUserProfile(user.uid, profile),
-      ]);
-    } on TimeoutException {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'database-timeout',
-        message:
-            'Database connection timed out. Please ensure Cloud Firestore is created in your Firebase Console.',
-      );
+    if (response.user == null) {
+      throw const AuthException('Account creation failed. Please try again.');
     }
-
-    return profile;
+    if (response.session == null) {
+      throw EmailConfirmationRequiredException(cleanEmail);
+    }
+    return _claimAndLoadProfile(normalizedRole);
   }
 
-  /// Writes user profile to Firestore with timeout guarding against uncreated databases.
-  Future<void> _saveUserProfile(String uid, UserProfile profile) async {
-    try {
-      await _usersCollection
-          .doc(uid)
-          .set(profile.toMap(), SetOptions(merge: true))
-          .timeout(const Duration(seconds: 15));
-    } on TimeoutException {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'database-timeout',
-        message:
-            'Database connection timed out. Please ensure Cloud Firestore is created in your Firebase Console.',
-      );
-    }
-  }
-
-  /// Signs in an existing user with email and password, verifies their Firestore
-  /// profile, and enforces role compatibility.
   Future<UserProfile> signInWithEmail({
     required String email,
     required String password,
     required String expectedRole,
   }) async {
-    final targetRole = expectedRole.trim().toLowerCase();
-    if (targetRole != 'teacher' && targetRole != 'student') {
-      throw ArgumentError("Choose Teacher or Student before signing in.");
-    }
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: email.trim(),
+    final role = _validatedRole(expectedRole);
+    await _client.auth.signInWithPassword(
+      email: email.trim().toLowerCase(),
       password: password,
     );
-
-    final user = credential.user;
-    if (user == null) {
-      throw FirebaseAuthException(
-        code: 'user-null',
-        message: 'Sign-in failed. Please try again.',
-      );
+    try {
+      return await _claimAndLoadProfile(role);
+    } catch (_) {
+      await _client.auth.signOut();
+      rethrow;
     }
-
-    // Fetch user profile from Cloud Firestore
-    final docSnapshot = await _usersCollection.doc(user.uid).get().timeout(const Duration(seconds: 15));
-    UserProfile profile;
-
-    if (!docSnapshot.exists || docSnapshot.data() == null) {
-      // Fallback: If Firestore profile document does not exist yet, create it with the requested role
-      profile = UserProfile(
-        uid: user.uid,
-        email: user.email ?? email.trim(),
-        displayName: user.displayName ?? email.split('@').first,
-        role: targetRole,
-        createdAt: DateTime.now(),
-        photoUrl: user.photoURL,
-      );
-      await _saveUserProfile(user.uid, profile);
-    } else {
-      profile = UserProfile.fromFirestore(docSnapshot);
-    }
-
-    // Enforce role guarding
-    if (profile.role.toLowerCase() != targetRole) {
-      // Sign out immediately to preserve role boundary
-      await _auth.signOut();
-      throw AuthRoleMismatchException(
-        actualRole: profile.role,
-        attemptedRole: targetRole,
-      );
-    }
-
-    return profile;
   }
 
-  /// Signs in or registers a user using Google Sign-In, syncs/verifies their
-  /// Firestore profile document in `users/{uid}`, and enforces role compatibility.
-  ///
-  /// Returns [UserProfile] on success, or `null` if the user cancelled the sign-in prompt.
-  /// Throws [AuthRoleMismatchException] if the existing account belongs to a different role.
   Future<UserProfile?> signInWithGoogle({required String role}) async {
-    final normalizedRole = role.trim().toLowerCase();
-    if (normalizedRole != 'teacher' && normalizedRole != 'student') {
-      throw ArgumentError("Role must be 'teacher' or 'student'.");
+    final normalizedRole = _validatedRole(role);
+    if (SupabaseConfig.googleWebClientId.trim().isEmpty) {
+      throw const AuthException(
+        'Google sign-in is not configured for this build.',
+      );
     }
-
-    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-    if (googleUser == null) {
-      // User cancelled the sign-in flow
-      return null;
+    final googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) return null;
+    final googleAuth = await googleUser.authentication;
+    final idToken = googleAuth.idToken;
+    final accessToken = googleAuth.accessToken;
+    if (idToken == null || idToken.isEmpty || accessToken == null) {
+      throw const AuthException(
+        'Google did not return the credentials required to sign in.',
+      );
     }
-
-    final GoogleSignInAuthentication googleAuth =
-        await googleUser.authentication;
-    final AuthCredential credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
+    await _client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: accessToken,
     );
-
-    final userCredential = await _auth.signInWithCredential(credential);
-    final user = userCredential.user;
-    if (user == null) {
-      throw FirebaseAuthException(
-        code: 'user-null',
-        message: 'Google sign-in failed. Please try again.',
-      );
+    try {
+      return await _claimAndLoadProfile(normalizedRole);
+    } catch (e) {
+      debugPrint('Google sign in profile claim error: $e');
+      await _client.auth.signOut();
+      await _googleSignIn.signOut().catchError((_) => null);
+      rethrow;
     }
+  }
 
-    // Check if user profile already exists in Cloud Firestore
-    final docSnapshot = await _usersCollection.doc(user.uid).get().timeout(const Duration(seconds: 15));
-    UserProfile profile;
-
-    if (!docSnapshot.exists || docSnapshot.data() == null) {
-      // New user: persist initial profile with selected role and Google account info
-      final cleanDisplayName = (user.displayName != null &&
-              user.displayName!.trim().isNotEmpty)
-          ? user.displayName!.trim()
-          : (googleUser.displayName != null &&
-                  googleUser.displayName!.trim().isNotEmpty
-              ? googleUser.displayName!.trim()
-              : (user.email?.split('@').first ?? 'User'));
-
-      profile = UserProfile(
-        uid: user.uid,
-        email: (user.email ?? googleUser.email).trim().toLowerCase(),
-        displayName: cleanDisplayName,
-        role: normalizedRole,
-        createdAt: DateTime.now(),
-        photoUrl: user.photoURL ?? googleUser.photoUrl,
+  Future<UserProfile> _claimAndLoadProfile(String expectedRole) async {
+    dynamic response;
+    try {
+      response = await _client.rpc(
+        'claim_studexa_role',
+        params: {'p_role': expectedRole},
       );
-
-      await _saveUserProfile(user.uid, profile);
-    } else {
-      profile = UserProfile.fromFirestore(docSnapshot);
-
-      // Enforce role guarding
-      if (profile.role.toLowerCase() != normalizedRole) {
-        // Sign out immediately to preserve role boundary
-        await _auth.signOut();
-        try {
-          await _googleSignIn.signOut();
-        } catch (_) {}
+    } on PostgrestException catch (error) {
+      final match = RegExp(
+        r'registered as a (teacher|student), not a (teacher|student)',
+        caseSensitive: false,
+      ).firstMatch(error.message);
+      if (match != null) {
         throw AuthRoleMismatchException(
-          actualRole: profile.role,
-          attemptedRole: normalizedRole,
+          actualRole: match.group(1)!.toLowerCase(),
+          attemptedRole: match.group(2)!.toLowerCase(),
         );
       }
-
-      // Sync avatar if existing profile didn't have one
-      if (profile.photoUrl == null &&
-          (user.photoURL != null || googleUser.photoUrl != null)) {
-        final newPhoto = user.photoURL ?? googleUser.photoUrl;
-        profile = profile.copyWith(photoUrl: newPhoto);
-        _usersCollection
-            .doc(user.uid)
-            .update({'photoUrl': newPhoto}).catchError((_) {});
-      }
+      rethrow;
     }
-
+    final map = response is Map
+        ? Map<String, dynamic>.from(response)
+        : response is List && response.isNotEmpty && response.first is Map
+            ? Map<String, dynamic>.from(response.first as Map)
+            : null;
+    final profile = map == null
+        ? await getCurrentUserProfile()
+        : UserProfile.fromMap(map);
+    if (profile == null || profile.role.isEmpty) {
+      throw const AuthException('Your Studexa profile could not be loaded.');
+    }
+    if (profile.role != expectedRole) {
+      throw AuthRoleMismatchException(
+        actualRole: profile.role,
+        attemptedRole: expectedRole,
+      );
+    }
     return profile;
   }
 
-  /// Retrieves the current authenticated user's Firestore profile, or null if unauthenticated.
   Future<UserProfile?> getCurrentUserProfile() async {
-    final user = _auth.currentUser;
+    final user = _client.auth.currentUser;
     if (user == null) return null;
-
-    final doc = await _usersCollection.doc(user.uid).get().timeout(const Duration(seconds: 15));
-    if (!doc.exists || doc.data() == null) return null;
-    return UserProfile.fromFirestore(doc);
+    final data = await _client
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+    if (data == null) return null;
+    return UserProfile.fromMap(Map<String, dynamic>.from(data));
   }
 
-  /// Signs out the current user from Firebase Auth and Google Sign-In.
   Future<void> signOut() async {
-    await _auth.signOut();
+    await _client.auth.signOut();
     try {
       await _googleSignIn.signOut();
     } catch (_) {}
   }
 
-  /// Converts common Firebase Auth & Firestore errors into friendly user-facing messages.
+  static String _validatedRole(String role) {
+    final value = role.trim().toLowerCase();
+    if (value != 'teacher' && value != 'student') {
+      throw ArgumentError("Role must be 'teacher' or 'student'.");
+    }
+    return value;
+  }
+
+  static String? _displayName(User user) =>
+      (user.userMetadata?['display_name'] ??
+              user.userMetadata?['full_name'] ??
+              user.userMetadata?['name'])
+          ?.toString();
+
+  static String? _photoUrl(User user) =>
+      (user.userMetadata?['avatar_url'] ?? user.userMetadata?['picture'])
+          ?.toString();
+
   static String getErrorMessage(Object error) {
-    if (error is AuthRoleMismatchException) {
+    if (error is EmailConfirmationRequiredException ||
+        error is AuthRoleMismatchException) {
       return error.toString();
     }
     if (error is TimeoutException) {
@@ -328,67 +242,50 @@ class AuthService {
     if (error is ArgumentError) {
       return error.message?.toString() ?? error.toString();
     }
-
-    final rawStr = error.toString();
-    if (rawStr.toUpperCase().contains('CONFIGURATION_NOT_FOUND')) {
-      return 'Firebase Authentication is not enabled for this project. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.';
+    if (error is AuthException) {
+      final message = error.message.toLowerCase();
+      if (message.contains('invalid login credentials')) {
+        return 'Invalid email or password. Please check your credentials.';
+      }
+      if (message.contains('email not confirmed')) {
+        return 'Confirm your email first, then return to Studexa and sign in.';
+      }
+      if (message.contains('already registered') ||
+          message.contains('already exists')) {
+        return 'An account already exists with this email address.';
+      }
+      if (message.contains('password')) {
+        return 'Password must be at least 6 characters.';
+      }
+      if (message.contains('rate limit')) {
+        return 'Too many attempts. Please try again in a few minutes.';
+      }
+      return error.message;
     }
-    if (rawStr.contains('sign_in_canceled') || rawStr.contains('canceled')) {
+    if (error is PostgrestException) {
+      return error.message;
+    }
+    if (error is PlatformException) {
+      final code = error.code;
+      final message = error.message ?? '';
+      if (message.contains('10') || code.contains('10')) {
+        return 'Google Sign-In configuration error (ApiException: 10). Ensure the SHA-1 matches and your account is added under Test Users in Google Cloud Console.';
+      }
+      if (message.contains('12500') || code.contains('12500')) {
+        return 'Google Sign-In failed (ApiException: 12500). Check Google Cloud OAuth consent configuration.';
+      }
+      if (code == 'sign_in_failed') {
+        return 'Google sign-in could not be completed. ($message)';
+      }
+      return error.message ?? error.code;
+    }
+    final raw = error.toString();
+    if (raw.contains('sign_in_canceled') || raw.contains('canceled')) {
       return 'Google sign-in was cancelled.';
     }
-    if (rawStr.contains('network_error')) {
-      return 'Network error during Google sign-in. Please check your connection.';
+    if (raw.contains('SocketException') || raw.contains('network_error')) {
+      return 'Network error. Please check your internet connection.';
     }
-
-    if (error is FirebaseAuthException) {
-      final code = error.code.toLowerCase();
-      if (code.contains('configuration-not-found') ||
-          (error.message != null &&
-              error.message!.toUpperCase().contains('CONFIGURATION_NOT_FOUND'))) {
-        return 'Firebase Authentication is not enabled for this project. Please go to Firebase Console > Authentication > Sign-in method and enable Email/Password.';
-      }
-
-      switch (code) {
-        case 'user-not-found':
-          return 'No user found with this email address.';
-        case 'wrong-password':
-          return 'Incorrect password. Please try again.';
-        case 'invalid-credential':
-          return 'Invalid email or password. Please check your credentials.';
-        case 'email-already-in-use':
-          return 'An account already exists with this email address.';
-        case 'account-exists-with-different-credential':
-          return 'An account already exists with this email using another sign-in method. Please sign in with your original method.';
-        case 'invalid-email':
-          return 'The email address is invalid.';
-        case 'weak-password':
-          return 'Password must be at least 6 characters.';
-        case 'user-disabled':
-          return 'This account has been disabled.';
-        case 'too-many-requests':
-          return 'Too many attempts. Please try again in a few minutes.';
-        case 'network-request-failed':
-          return 'Network error. Please check your internet connection.';
-        case 'operation-not-allowed':
-          return 'Email/password sign-in is not enabled. Please enable it in Firebase Console under Authentication > Sign-in method.';
-        default:
-          return error.message ?? 'Authentication error occurred.';
-      }
-    }
-    if (error is FirebaseException) {
-      switch (error.code) {
-        case 'permission-denied':
-          return 'Permission denied when accessing user profile. Please try again.';
-        case 'unavailable':
-          return 'Database service is temporarily unavailable. Please check your connection.';
-        case 'database-timeout':
-          return 'Database connection timed out. Please ensure Cloud Firestore is created in your Firebase Console.';
-        case 'not-found':
-          return 'Cloud Firestore database was not found. Please click "Create database" in Firebase Console > Firestore Database.';
-        default:
-          return error.message ?? 'A database error occurred (${error.code}).';
-      }
-    }
-    return error.toString();
+    return 'Studexa could not complete this request. Please try again.';
   }
 }

@@ -1,71 +1,91 @@
-# Supabase Storage Setup for Studexa
+# Supabase Storage Setup
 
-Studexa keeps Firebase Authentication and Cloud Firestore. Only original study
-material files are stored in the private Supabase `study-materials` bucket.
+Studexa stores original PDF, DOCX, and PPTX material in the private Supabase
+bucket `study-materials`. Authentication and authorization use native Supabase
+Auth sessions; the earlier Firebase third-party JWT integration is obsolete.
 
-## Dashboard setup
+## Project setup
 
-1. In Supabase, confirm **Authentication > Third-party Auth > Firebase** lists
-   Firebase project ID `studexa-b5e55` and is enabled.
-2. Open **SQL Editor**, paste the complete contents of
-   `supabase/migrations/202609170001_study_material_storage.sql`, and select
-   **Run**. This creates the private bucket, the 50 MB/MIME restrictions, and
-   Firebase-JWT-based upload, read, and delete policies.
-3. Open **Project Settings > API** (or the project's **Connect** dialog) and
-   copy the **Project URL** and **Publishable key**. Never use the secret or
-   service-role key in Flutter.
+1. Link the repository to Supabase project `zuidphgogdwyrtndbgkx`.
+2. Apply every versioned migration:
 
-## Run Studexa with the Supabase configuration
+   ```powershell
+   npx supabase db push --linked
+   ```
 
-The project includes its public Supabase Project URL and publishable client key
-as safe defaults in `lib/config/supabase_config.dart`. The git-ignored
-`supabase.local.json` and dart-defines can still override these defaults for a
-different Supabase project. Never replace the publishable key with a secret or
-service-role key.
+3. Confirm bucket `study-materials` exists and is private.
+4. Confirm these Storage policies from the full-backend and later
+   `202609250002_material_post_confirmation.sql` migrations are present:
+   - `Studexa teachers upload originals`
+   - `Studexa class members read originals`
+   - `Studexa teachers delete originals`
+5. Do not add the Supabase secret/service-role key to Flutter configuration.
 
-Stop the currently running app completely and rebuild/start `main.dart` again.
-Hot reload does not replace compile-time configuration in an already running
-application.
+## Object layout
 
-PowerShell:
+Every original uses:
 
-```powershell
-flutter run --dart-define="SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co" --dart-define="SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY"
+```text
+study-materials/uploads/{supabaseAuthUid}/{materialId}/{safeFileName}
 ```
 
-For an APK:
+The first path segment is fixed to `uploads`; the second must equal
+`auth.uid()`. The matching `materials.file_ref` stores the object path. A class
+member can download the object only while the related material row authorizes
+that class access. The owner can read the draft; enrolled Students can read the
+object only after the material is explicitly posted, ready, and fully uploaded.
 
-```powershell
-flutter build apk --debug --dart-define="SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co" --dart-define="SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLISHABLE_KEY"
+## Flutter configuration
+
+Copy `supabase.config.example.json` to ignored `supabase.config.json` and fill
+the public values:
+
+```json
+{
+  "SUPABASE_URL": "https://YOUR_PROJECT_REF.supabase.co",
+  "SUPABASE_PUBLISHABLE_KEY": "YOUR_SUPABASE_PUBLISHABLE_KEY",
+  "GOOGLE_WEB_CLIENT_ID": "YOUR_GOOGLE_WEB_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+}
 ```
 
-The publishable key is intended for client apps. Authorization is enforced by
-the private bucket's Row Level Security policies. Do not commit or pass a
-Supabase secret/service-role key through `--dart-define`.
+Run or build with:
 
-## Expected behavior
+```powershell
+flutter run --dart-define-from-file=supabase.config.json
+flutter build apk --release --dart-define-from-file=supabase.config.json
+```
 
-- The original file uploads in the background to
-  `study-materials/uploads/{firebaseUid}/{materialId}/{safeFileName}`.
-- On-device extraction still saves ready text to Firestore immediately.
-- PDFs load from private Supabase bytes in the in-app viewer.
-- DOCX/PPTX originals download from Supabase and open in a compatible device
-  app; extracted-text viewing remains available.
-- New DOCX/PPTX records use `conversionStatus: unsupported` because the old
-  Firebase Storage-triggered Office-to-PDF converter does not receive Supabase
-  upload events.
+## Current upload behavior
+
+`MaterialService.uploadStudyMaterial()` extracts readable text on-device and
+uploads the original file to Supabase. New material rows begin with
+`is_posted = false`. After upload/extraction is ready, the Teacher explicitly
+posts the material; `postMaterial()` sets `is_posted = true` and `posted_at`.
+Unposting hides the row and original from Students without deleting either.
+Material state records upload, extraction, posting, and conversion status in
+Postgres. Supabase does not invoke the historical Firebase Storage
+`extractText` trigger.
+
+PDFs can be rendered inside Studexa. DOCX and PPTX originals are downloaded to
+an authenticated local cache and opened through a compatible installed app.
+The original Office document is preserved; extracted text is used for Gemini
+quiz grounding.
 
 ## Verification
 
-1. Sign in as a teacher and upload a small PDF.
-2. Confirm a file appears in Supabase Storage under `study-materials/uploads`.
-3. Confirm the Firestore material contains `storageProvider: supabase`,
-   `storageBucket: study-materials`, and eventually
-   `storageUploadStatus: completed`.
-4. Open the PDF from both the teacher and an enrolled student account.
-5. Upload a DOCX or PPTX and verify **Open Original** and extracted text.
-6. Attempt an upload without signing in; Supabase must reject it.
+Use temporary Teacher, Student, and unrelated-Teacher accounts:
 
-Supabase recommends resumable TUS uploads for files above 6 MB. The current
-integration supports the project's existing 50 MB limit through the standard
-upload API, but large-file resumable progress is a separate enhancement.
+1. Teacher uploads under their own UID path: allowed.
+2. Teacher uploads under another UID path: denied.
+3. Enrolled Student cannot read/download the unposted draft.
+4. Teacher posts the ready/completed material; enrolled Student can then read
+   and download it.
+5. Unrelated account downloads it: denied.
+6. Teacher unposts it; enrolled Student loses read/download access.
+7. Owning Teacher deletes it: allowed.
+8. Student or unrelated Teacher deletes it: denied.
+
+The production cutover verifier `tool/verify_live_supabase_cutover.mjs`
+exercises the allowed upload, enrolled read, unrelated denial, and cleanup
+paths. It accepts a temporary private key file only at execution time; that key
+file must remain ignored and be deleted immediately afterward.

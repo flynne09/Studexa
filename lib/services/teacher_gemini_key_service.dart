@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/integration_config.dart';
 import '../config/supabase_config.dart';
@@ -51,7 +51,7 @@ class TeacherGeminiKeyService {
     this.endpoint = IntegrationConfig.teacherGeminiKeyUrl,
   }) : _tokenProvider =
            tokenProvider ??
-           (() async => FirebaseAuth.instance.currentUser?.getIdToken());
+           (() async => Supabase.instance.client.auth.currentSession?.accessToken);
 
   final http.Client? client;
   final Future<String?> Function() _tokenProvider;
@@ -85,7 +85,7 @@ class TeacherGeminiKeyService {
       throw const TeacherGeminiKeyException(
         'Session verification took too long. Check your connection and try again.',
       );
-    } on FirebaseAuthException {
+    } on AuthException {
       throw const TeacherGeminiKeyException(
         'Could not verify your session. Sign in again.',
       );
@@ -136,7 +136,7 @@ class TeacherGeminiKeyService {
       throw const TeacherGeminiKeyException(
         'The request took too long. Check your connection and try again.',
       );
-    } on FirebaseAuthException {
+    } on AuthException {
       throw const TeacherGeminiKeyException(
         'Could not verify your session. Sign in again.',
       );

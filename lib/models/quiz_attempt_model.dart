@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Represents a student's graded attempt for a practice quiz stored under `attempts/{attemptId}`.
 class QuizAttemptModel {
   final String id;
@@ -35,19 +33,11 @@ class QuizAttemptModel {
       '${score.toStringAsFixed(1)} / ${totalPoints.toStringAsFixed(0)}';
   bool get isPassed => percentage >= 70.0;
 
-  factory QuizAttemptModel.fromFirestore(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
-    final data = doc.data() ?? {};
-    return QuizAttemptModel.fromMap(data, id: doc.id);
-  }
-
   factory QuizAttemptModel.fromMap(
     Map<String, dynamic> map, {
     String id = '',
   }) {
     DateTime? parseTimestamp(dynamic val) {
-      if (val is Timestamp) return val.toDate();
       if (val is String) return DateTime.tryParse(val);
       return null;
     }
@@ -56,7 +46,7 @@ class QuizAttemptModel {
     double parsedScore = 0.0;
     if (rawScore is num) parsedScore = rawScore.toDouble();
 
-    final rawTotal = map['totalPoints'];
+    final rawTotal = map['total_points'] ?? map['totalPoints'];
     double parsedTotal = 0.0;
     if (rawTotal is num) parsedTotal = rawTotal.toDouble();
 
@@ -86,16 +76,16 @@ class QuizAttemptModel {
 
     return QuizAttemptModel(
       id: id.isNotEmpty ? id : ((map['id'] as String?) ?? ''),
-      quizId: (map['quizId'] as String?) ?? '',
-      assignmentId: map['assignmentId'] as String?,
-      classId: (map['classId'] as String?) ?? '',
-      studentId: (map['studentId'] as String?) ?? '',
-      studentName: (map['studentName'] as String?) ?? 'Student',
+      quizId: (map['quiz_id'] ?? map['quizId'])?.toString() ?? '',
+      assignmentId: (map['assignment_id'] ?? map['assignmentId'])?.toString(),
+      classId: (map['class_id'] ?? map['classId'])?.toString() ?? '',
+      studentId: (map['student_id'] ?? map['studentId'])?.toString() ?? '',
+      studentName: (map['student_name'] ?? map['studentName'])?.toString() ?? 'Student',
       answers: parsedAnswers,
       score: parsedScore,
       totalPoints: parsedTotal,
       percentage: parsedPercentage,
-      submittedAt: parseTimestamp(map['submittedAt']),
+      submittedAt: parseTimestamp(map['submitted_at'] ?? map['submittedAt']),
       breakdown: parsedBreakdown,
     );
   }
@@ -111,7 +101,25 @@ class QuizAttemptModel {
       'score': score,
       'totalPoints': totalPoints,
       'percentage': percentage,
-      if (submittedAt != null) 'submittedAt': Timestamp.fromDate(submittedAt!),
+      if (submittedAt != null)
+        'submittedAt': submittedAt!.toUtc().toIso8601String(),
+      'breakdown': breakdown,
+    };
+  }
+
+  Map<String, dynamic> toDatabaseMap() {
+    return {
+      'quiz_id': quizId,
+      'assignment_id': assignmentId,
+      'class_id': classId,
+      'student_id': studentId,
+      'student_name': studentName,
+      'answers': answers,
+      'score': score,
+      'total_points': totalPoints,
+      'percentage': percentage,
+      if (submittedAt != null)
+        'submitted_at': submittedAt!.toUtc().toIso8601String(),
       'breakdown': breakdown,
     };
   }

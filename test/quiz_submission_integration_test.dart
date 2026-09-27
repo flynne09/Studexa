@@ -5,10 +5,10 @@ import 'package:studexa/models/quiz_attempt_model.dart';
 import 'package:studexa/models/quiz_model.dart';
 import 'package:studexa/screens/student/answer_quiz_screen.dart';
 import 'package:studexa/services/assignment_service.dart';
-import 'quiz_draft_persistence_test.dart' as firebase_setup;
+import 'test_backend.dart';
 
 class ControlledAssignmentService extends AssignmentService {
-  ControlledAssignmentService() : super(useFirestore: false);
+  ControlledAssignmentService() : super(useRemoteBackend: false);
   final pending = Completer<QuizAttemptModel>();
   QuizAttemptModel? submitted;
   int submitCalls = 0;
@@ -41,7 +41,7 @@ Future<void> startSubmission(WidgetTester tester, ControlledAssignmentService se
 }
 
 void main() {
-  setUpAll(firebase_setup.setupMockFirebase);
+  setUpAll(setupMockSupabase);
   testWidgets('results wait for persistence; submitting blocks another save; dispose does not recreate a cleared draft', (tester) async {
     final service = ControlledAssignmentService();
     await startSubmission(tester, service);

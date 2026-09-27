@@ -2,17 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { teacherCredentialStore, validateGeminiApiKey } from "../_shared/teacher_credentials.mjs";
 
-test("credential RPC uses only the server secret and never a Firebase user header", async () => {
+test("credential RPC uses only the server secret and never a user token header", async () => {
   const requests = [];
   const store = teacherCredentialStore(async (url, init) => {
     requests.push({ url, init });
     return new Response(JSON.stringify({ configured: false }), { status: 200 });
   }, { url: "https://project.supabase.co", secretKey: "server-secret" });
-  await store.status("firebase-uid");
+  await store.status("supabase-uid");
   assert.match(requests[0].url, /studexa_teacher_gemini_status$/);
   assert.equal(requests[0].init.headers.apikey, "server-secret");
   assert.equal(requests[0].init.headers.Authorization, undefined);
-  assert.deepEqual(JSON.parse(requests[0].init.body), { p_teacher_uid: "firebase-uid" });
+  assert.deepEqual(JSON.parse(requests[0].init.body), { p_teacher_uid: "supabase-uid" });
 });
 
 test("Gemini key validation accepts success and rejects malformed or denied keys", async () => {

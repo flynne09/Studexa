@@ -14,7 +14,7 @@ import '../student/student_home_screen.dart';
 /// - Lavender-to-blue gradient background
 /// - Centered logo, app title, and interactive role toggle
 /// - Full name, email, password, and confirm password fields
-/// - "Register" with loading state and real Firebase Authentication
+/// - "Register" with loading state and Supabase Authentication
 /// - Real-time client-side validation
 /// - Link/toggle back to the login screen
 class RegisterScreen extends StatefulWidget {
@@ -113,16 +113,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (profile.isTeacher) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => TeacherHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       } else {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => StudentHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       }
+    } on EmailConfirmationRequiredException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      AppFeedback.success(
+        context,
+        e.toString(),
+        title: 'Confirm your email',
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => LoginScreen(role: _selectedRole)),
+      );
     } catch (e) {
       if (!mounted) return;
       final msg = AuthService.getErrorMessage(e);
@@ -156,17 +172,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (profile.isTeacher) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => TeacherHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       } else {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => StudentHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       }
     } catch (e) {
+      debugPrint('Google sign-in error in RegisterScreen: $e');
       if (!mounted) return;
       final msg = AuthService.getErrorMessage(e);
       setState(() {

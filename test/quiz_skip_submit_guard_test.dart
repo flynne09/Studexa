@@ -1,29 +1,11 @@
+import 'test_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/quiz_model.dart';
 import 'package:studexa/screens/student/answer_quiz_screen.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
   group('Quiz Skip and Submission Guard Tests', () {
     final testQuiz = QuizModel(
@@ -262,7 +244,7 @@ void main() {
         findsOneWidget,
       );
 
-      // ── Answer Q2 Out-of-Order ─────────────────────────────
+      // â”€â”€ Answer Q2 Out-of-Order â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Tap on Q2 badge in the strip to jump directly to Q2
       await tester.tap(badge2Finder);
       await tester.pumpAndSettle();
@@ -293,7 +275,7 @@ void main() {
         findsOneWidget,
       );
 
-      // ── Answer Q3 Out-of-Order ─────────────────────────────
+      // â”€â”€ Answer Q3 Out-of-Order â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Tap on Q3 badge in the strip to jump directly to Q3
       await tester.tap(badge3Finder);
       await tester.pumpAndSettle();
@@ -324,7 +306,7 @@ void main() {
         findsOneWidget,
       );
 
-      // ── Answer Q1 Out-of-Order ─────────────────────────────
+      // â”€â”€ Answer Q1 Out-of-Order â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Tap on Q1 badge in the strip
       await tester.tap(badge1Finder);
       await tester.pumpAndSettle();
@@ -355,7 +337,7 @@ void main() {
         findsOneWidget,
       );
 
-      // ── Grid View Modal Test ───────────────────────────────
+      // â”€â”€ Grid View Modal Test â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       await tester.tap(find.text('Grid View'));
       await tester.pumpAndSettle();
 

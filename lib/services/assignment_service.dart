@@ -1,15 +1,15 @@
-import 'dart:async';
 import 'dart:io';
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../models/quiz_assignment_model.dart';
 import '../models/quiz_attempt_model.dart';
-import 'firestore_provider.dart';
 
-/// Exception thrown when attempting to submit a quiz that has closed or passed its deadline.
 class QuizUnavailableException implements Exception {
-  final String message;
   const QuizUnavailableException(this.message);
+  final String message;
 
   @override
   String toString() => message;
@@ -24,23 +24,18 @@ bool get _isTestEnvironment {
   }
 }
 
-/// Service managing quiz assignments, deadlines, availability status, and student attempts.
 class AssignmentService {
-  AssignmentService({FirebaseFirestore? firestore, bool? useFirestore})
-      : _firestore = firestore ?? getAppFirestore(),
-        useFirestore = useFirestore ?? !_isTestEnvironment;
+  AssignmentService({SupabaseClient? supabase, bool? useRemoteBackend})
+      : _injectedSupabase = supabase,
+        useRemoteBackend = useRemoteBackend ?? !_isTestEnvironment;
 
-  final FirebaseFirestore _firestore;
-  final bool useFirestore;
+  final SupabaseClient? _injectedSupabase;
+  final bool useRemoteBackend;
   final Map<String, Map<String, dynamic>> _inMemoryDraftAnswers = {};
 
-  CollectionReference<Map<String, dynamic>> get _assignmentsCollection =>
-      _firestore.collection('quizAssignments');
+  SupabaseClient get _client =>
+      _injectedSupabase ?? Supabase.instance.client;
 
-  CollectionReference<Map<String, dynamic>> get _attemptsCollection =>
-      _firestore.collection('attempts');
-
-  /// Creates a class assignment for a practice quiz.
   Future<QuizAssignmentModel> createAssignment({
     required String quizId,
     required String classId,
@@ -48,86 +43,70 @@ class AssignmentService {
     required String quizTitle,
     DateTime? deadline,
   }) async {
-    final docRef = _assignmentsCollection.doc();
-    final assignment = QuizAssignmentModel(
-      id: docRef.id,
-      quizId: quizId,
-      classId: classId,
-      teacherId: teacherId,
-      quizTitle: quizTitle,
-      deadline: deadline,
-      isClosed: false,
-      createdAt: DateTime.now(),
-    );
-
-    await docRef.set({
-      ...assignment.toMap(),
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    return assignment;
+    final row = await _client
+        .from('quiz_assignments')
+        .insert({
+          'quiz_id': quizId,
+          'class_id': classId,
+          'teacher_id': teacherId,
+          'quiz_title': quizTitle,
+          'deadline': deadline?.toUtc().toIso8601String(),
+        })
+        .select()
+        .single();
+    return QuizAssignmentModel.fromMap(row, id: row['id'].toString());
   }
 
-  /// Closes an assignment, preventing any new submissions.
   Future<void> closeAssignment(String assignmentId) async {
-    await _assignmentsCollection.doc(assignmentId).update({
-      'isClosed': true,
-      'closedAt': FieldValue.serverTimestamp(),
-    });
+    await _client.from('quiz_assignments').update({
+      'is_closed': true,
+      'closed_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', assignmentId);
   }
 
-  /// Reopens a previously closed assignment.
   Future<void> reopenAssignment(String assignmentId) async {
-    await _assignmentsCollection.doc(assignmentId).update({
-      'isClosed': false,
-      'closedAt': FieldValue.delete(),
-    });
+    await _client.from('quiz_assignments').update({
+      'is_closed': false,
+      'closed_at': null,
+    }).eq('id', assignmentId);
   }
 
-  /// Updates or extends the deadline of an assignment.
-  Future<void> updateDeadline(String assignmentId, DateTime? newDeadline) async {
-    await _assignmentsCollection.doc(assignmentId).update({
-      'deadline': newDeadline != null ? Timestamp.fromDate(newDeadline) : FieldValue.delete(),
-    });
+  Future<void> updateDeadline(String assignmentId, DateTime? deadline) async {
+    await _client.from('quiz_assignments').update({
+      'deadline': deadline?.toUtc().toIso8601String(),
+    }).eq('id', assignmentId);
   }
 
-  /// Streams assignments for a given class in real time.
-  Stream<List<QuizAssignmentModel>> streamClassAssignments(String classId) {
-    return _assignmentsCollection
-        .where('classId', isEqualTo: classId)
-        .snapshots()
-        .map((snapshot) {
-      final list = snapshot.docs
-          .map((doc) => QuizAssignmentModel.fromFirestore(doc))
-          .toList();
-      list.sort((a, b) {
-        if (a.createdAt == null && b.createdAt == null) return 0;
-        if (a.createdAt == null) return 1;
-        if (b.createdAt == null) return -1;
-        return b.createdAt!.compareTo(a.createdAt!);
-      });
-      return list;
-    });
+  Stream<List<QuizAssignmentModel>> streamClassAssignments(String classId) =>
+      _client
+          .from('quiz_assignments')
+          .stream(primaryKey: ['id'])
+          .eq('class_id', classId)
+          .order('created_at', ascending: false)
+          .map((rows) => rows
+              .map((row) => QuizAssignmentModel.fromMap(
+                    row,
+                    id: row['id'].toString(),
+                  ))
+              .toList());
+
+  Future<QuizAssignmentModel?> getAssignmentForQuiz(
+    String classId,
+    String quizId,
+  ) async {
+    final row = await _client
+        .from('quiz_assignments')
+        .select()
+        .eq('class_id', classId)
+        .eq('quiz_id', quizId)
+        .maybeSingle();
+    return row == null
+        ? null
+        : QuizAssignmentModel.fromMap(row, id: row['id'].toString());
   }
 
-  /// Retrieves the active assignment for a quiz within a class, if any.
-  Future<QuizAssignmentModel?> getAssignmentForQuiz(String classId, String quizId) async {
-    final snapshot = await _assignmentsCollection
-        .where('classId', isEqualTo: classId)
-        .where('quizId', isEqualTo: quizId)
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isEmpty) return null;
-    return QuizAssignmentModel.fromFirestore(snapshot.docs.first);
-  }
-
-  /// Submits a student's graded quiz attempt after verifying availability.
-  Future<QuizAttemptModel> submitAttempt(QuizAttemptModel attempt) =>
-      _submitAttempt(attempt).timeout(const Duration(seconds: 20));
-
-  Future<QuizAttemptModel> _submitAttempt(QuizAttemptModel attempt) async {
-    if (!useFirestore) {
+  Future<QuizAttemptModel> submitAttempt(QuizAttemptModel attempt) async {
+    if (!useRemoteBackend) {
       return QuizAttemptModel(
         id: 'mock_attempt_${DateTime.now().millisecondsSinceEpoch}',
         quizId: attempt.quizId,
@@ -143,201 +122,153 @@ class AssignmentService {
         breakdown: attempt.breakdown,
       );
     }
-
-    // 1. Availability validation: check if an assignment exists
-    String? assignmentId = attempt.assignmentId;
-    final assignmentSnapshot = await _assignmentsCollection
-        .where('classId', isEqualTo: attempt.classId)
-        .where('quizId', isEqualTo: attempt.quizId)
-        .limit(1)
-        .get();
-
-    if (assignmentSnapshot.docs.isNotEmpty) {
-      final assignment =
-          QuizAssignmentModel.fromFirestore(assignmentSnapshot.docs.first);
-      assignmentId = assignment.id;
-      if (assignment.isClosed) {
+    try {
+      final response = await _client.functions.invoke(
+        'submit-quiz-attempt',
+        body: {
+          'quizId': attempt.quizId,
+          'classId': attempt.classId,
+          'answers': attempt.answers,
+          'clientAttemptId': attempt.id.isEmpty
+              ? _uuidV4()
+              : _uuidFromText(attempt.id),
+        },
+      );
+      if (response.status != 200 || response.data is! Map) {
         throw const QuizUnavailableException(
-          'This quiz has been closed by the instructor. New submissions are no longer accepted.',
+          'Studexa could not save this attempt. Your answers are still available.',
         );
       }
-      if (assignment.isExpired) {
-        throw const QuizUnavailableException(
-          'The submission deadline for this quiz has passed.',
-        );
-      }
+      final body = Map<String, dynamic>.from(response.data as Map);
+      final row = Map<String, dynamic>.from(body['attempt'] as Map);
+      return QuizAttemptModel.fromMap(row, id: row['id'].toString());
+    } on FunctionException catch (error) {
+      final details = error.details;
+      final message = details is Map ? details['error']?.toString() : null;
+      throw QuizUnavailableException(
+        message ?? 'This quiz attempt is not available right now.',
+      );
     }
-
-    // 2. Validate maximum attempt limit (max 2 attempts per practice quiz)
-    if (attempt.quizId.isNotEmpty && attempt.studentId.isNotEmpty) {
-      Query<Map<String, dynamic>> query = _attemptsCollection
-          .where('quizId', isEqualTo: attempt.quizId)
-          .where('studentId', isEqualTo: attempt.studentId);
-      if (attempt.classId.isNotEmpty) {
-        query = query.where('classId', isEqualTo: attempt.classId);
-      }
-      final existingAttemptsSnapshot = await query.get();
-      if (existingAttemptsSnapshot.docs.length >= 2) {
-        throw const QuizUnavailableException(
-          'You have reached the maximum 2 attempts for this practice quiz.',
-        );
-      }
-    }
-
-    // Stable IDs prevent duplicate writes after a timeout or rapid retry.
-    final docRef = _attemptsCollection.doc(attempt.id.isEmpty ? null : attempt.id);
-    final savedAttempt = QuizAttemptModel(
-      id: docRef.id,
-      quizId: attempt.quizId,
-      assignmentId: assignmentId,
-      classId: attempt.classId,
-      studentId: attempt.studentId,
-      studentName: attempt.studentName,
-      answers: attempt.answers,
-      score: attempt.score,
-      totalPoints: attempt.totalPoints,
-      percentage: attempt.percentage,
-      submittedAt: DateTime.now(),
-      breakdown: attempt.breakdown,
-    );
-
-    await docRef.set({
-      ...savedAttempt.toMap(),
-      'submittedAt': FieldValue.serverTimestamp(),
-    });
-
-    return savedAttempt;
   }
 
-  /// Streams all attempts for a quiz within a specific class.
   Stream<List<QuizAttemptModel>> streamClassQuizAttempts(
     String classId,
     String quizId,
-  ) {
-    return _attemptsCollection
-        .where('classId', isEqualTo: classId)
-        .where('quizId', isEqualTo: quizId)
-        .snapshots()
-        .map((snapshot) {
-      final list = snapshot.docs
-          .map((doc) => QuizAttemptModel.fromFirestore(doc))
-          .toList();
-      list.sort((a, b) {
-        if (a.submittedAt == null && b.submittedAt == null) return 0;
-        if (a.submittedAt == null) return 1;
-        if (b.submittedAt == null) return -1;
-        return b.submittedAt!.compareTo(a.submittedAt!);
-      });
-      return list;
-    });
-  }
+  ) =>
+      _client
+          .from('quiz_attempts')
+          .stream(primaryKey: ['id'])
+          .eq('class_id', classId)
+          .eq('quiz_id', quizId)
+          .order('submitted_at', ascending: false)
+          .map(_attemptsFromRows);
 
-  /// Streams a student's past attempts for a given class.
   Stream<List<QuizAttemptModel>> streamStudentClassAttempts(
     String classId,
     String studentId,
-  ) {
-    return _attemptsCollection
-        .where('classId', isEqualTo: classId)
-        .where('studentId', isEqualTo: studentId)
-        .snapshots()
-        .map((snapshot) {
-      final attempts = snapshot.docs
-          .map((doc) => QuizAttemptModel.fromFirestore(doc))
-          .toList();
-      attempts.sort((a, b) => (b.submittedAt ?? DateTime(1970)).compareTo(a.submittedAt ?? DateTime(1970)));
-      return attempts;
-    });
-  }
+  ) =>
+      _client
+          .from('quiz_attempts')
+          .stream(primaryKey: ['id'])
+          .eq('class_id', classId)
+          .eq('student_id', studentId)
+          .order('submitted_at', ascending: false)
+          .map(_attemptsFromRows);
 
   String _draftKey(String studentId, String quizId, int attemptNumber) =>
       '${studentId}_${quizId}_$attemptNumber';
 
-  /// Saves in-progress (unsubmitted) quiz answers for an active attempt.
   Future<void> saveDraftAnswers({
     required String studentId,
     required String quizId,
     required int attemptNumber,
     required Map<String, dynamic> answers,
   }) async {
-    final key = _draftKey(studentId, quizId, attemptNumber);
-    _inMemoryDraftAnswers[key] = Map<String, dynamic>.from(answers);
-
-    if (!useFirestore || studentId.isEmpty || quizId.isEmpty) return;
-
-    try {
-      final docRef = _firestore
-          .collection('users')
-          .doc(studentId)
-          .collection('attempts')
-          .doc('draft_${quizId}_attempt_$attemptNumber');
-
-      await docRef.set({
-        'quizId': quizId,
-        'studentId': studentId,
-        'attemptNumber': attemptNumber,
-        'answers': answers,
-        'isDraft': true,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)).timeout(const Duration(seconds: 2));
-    } catch (_) {}
+    if (!useRemoteBackend) {
+      _inMemoryDraftAnswers[_draftKey(studentId, quizId, attemptNumber)] =
+          Map<String, dynamic>.from(answers);
+      return;
+    }
+    await _client.from('quiz_drafts').upsert({
+      'student_id': studentId,
+      'quiz_id': quizId,
+      'attempt_number': attemptNumber,
+      'answers': answers,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
   }
 
-  /// Retrieves previously saved in-progress answers for an active attempt, or null if none.
   Future<Map<String, dynamic>?> getDraftAnswers({
     required String studentId,
     required String quizId,
     required int attemptNumber,
   }) async {
-    final key = _draftKey(studentId, quizId, attemptNumber);
-    final memorySaved = _inMemoryDraftAnswers[key];
-
-    if (!useFirestore || studentId.isEmpty || quizId.isEmpty) {
-      return memorySaved != null ? Map<String, dynamic>.from(memorySaved) : null;
+    if (!useRemoteBackend) {
+      final value =
+          _inMemoryDraftAnswers[_draftKey(studentId, quizId, attemptNumber)];
+      return value == null ? null : Map<String, dynamic>.from(value);
     }
-
-    try {
-      final docSnapshot = await _firestore
-          .collection('users')
-          .doc(studentId)
-          .collection('attempts')
-          .doc('draft_${quizId}_attempt_$attemptNumber')
-          .get()
-          .timeout(const Duration(seconds: 2));
-
-      if (docSnapshot.exists && docSnapshot.data() != null) {
-        final data = docSnapshot.data()!;
-        final answers = data['answers'];
-        if (answers is Map) {
-          final mapped = Map<String, dynamic>.from(answers);
-          _inMemoryDraftAnswers[key] = mapped;
-          return mapped;
-        }
-      }
-    } catch (_) {}
-
-    return memorySaved != null ? Map<String, dynamic>.from(memorySaved) : null;
+    final row = await _client
+        .from('quiz_drafts')
+        .select('answers')
+        .eq('student_id', studentId)
+        .eq('quiz_id', quizId)
+        .eq('attempt_number', attemptNumber)
+        .maybeSingle();
+    if (row == null || row['answers'] is! Map) return null;
+    return Map<String, dynamic>.from(row['answers'] as Map);
   }
 
-  /// Clears in-progress draft answers once an attempt has been officially submitted.
   Future<void> clearDraftAnswers({
     required String studentId,
     required String quizId,
     required int attemptNumber,
   }) async {
-    final key = _draftKey(studentId, quizId, attemptNumber);
-    _inMemoryDraftAnswers.remove(key);
+    if (!useRemoteBackend) {
+      _inMemoryDraftAnswers.remove(_draftKey(studentId, quizId, attemptNumber));
+      return;
+    }
+    await _client
+        .from('quiz_drafts')
+        .delete()
+        .eq('student_id', studentId)
+        .eq('quiz_id', quizId)
+        .eq('attempt_number', attemptNumber);
+  }
 
-    if (!useFirestore || studentId.isEmpty || quizId.isEmpty) return;
+  static List<QuizAttemptModel> _attemptsFromRows(
+    List<Map<String, dynamic>> rows,
+  ) =>
+      rows
+          .map((row) => QuizAttemptModel.fromMap(
+                row,
+                id: row['id'].toString(),
+              ))
+          .toList();
 
-    try {
-      await _firestore
-          .collection('users')
-          .doc(studentId)
-          .collection('attempts')
-          .doc('draft_${quizId}_attempt_$attemptNumber')
-          .delete()
-          .timeout(const Duration(seconds: 2));
-    } catch (_) {}
+  static String _uuidV4() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
+  static String _uuidFromText(String value) {
+    int hash(int seed) {
+      var result = seed;
+      for (final unit in value.codeUnits) {
+        result = ((result ^ unit) * 16777619) & 0xffffffff;
+      }
+      return result;
+    }
+
+    final hex = [0x811c9dc5, 0x9e3779b9, 0x85ebca6b, 0xc2b2ae35]
+        .map((seed) => hash(seed).toRadixString(16).padLeft(8, '0'))
+        .join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '4${hex.substring(13, 16)}-a${hex.substring(17, 20)}-${hex.substring(20)}';
   }
 }

@@ -14,7 +14,7 @@ import '../student/student_home_screen.dart';
 /// - Lavender-to-blue gradient background
 /// - Centered logo, app title, and role indicator
 /// - Email & password input fields with real-time validation
-/// - "Log In" with loading state and real Firebase Authentication
+/// - "Log In" with loading state and Supabase Authentication
 /// - Role mismatch detection and informative error feedback
 /// - Link/toggle to the matching register screen
 class LoginScreen extends StatefulWidget {
@@ -78,13 +78,17 @@ class _LoginScreenState extends State<LoginScreen> {
       if (profile.isTeacher) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => TeacherHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       } else {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => StudentHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       }
@@ -121,17 +125,22 @@ class _LoginScreenState extends State<LoginScreen> {
       if (profile.isTeacher) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => TeacherHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       } else {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
+          MaterialPageRoute(
+            builder: (_) => StudentHomeScreen(initialProfile: profile),
+          ),
           (route) => false,
         );
       }
     } catch (e) {
+      debugPrint('Google sign-in error: $e');
       if (!mounted) return;
       final msg = AuthService.getErrorMessage(e);
       setState(() {

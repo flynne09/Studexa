@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/integration_config.dart';
 import '../config/supabase_config.dart';
@@ -19,8 +19,7 @@ class QuizGenerationException implements Exception {
   String toString() => message;
 }
 
-/// Calls Supabase Edge Functions using a Firebase ID token. The server validates
-/// ownership and saves each bounded Gemini batch to a private Firestore draft.
+/// Calls the Supabase Edge Function with the current Supabase access token.
 class QuizGenerationClient {
   QuizGenerationClient({
     this.client,
@@ -29,7 +28,7 @@ class QuizGenerationClient {
     this.timeout = const Duration(seconds: 150),
   }) : _tokenProvider =
            tokenProvider ??
-           (() async => FirebaseAuth.instance.currentUser?.getIdToken());
+           (() async => Supabase.instance.client.auth.currentSession?.accessToken);
 
   final http.Client? client;
   final Future<String?> Function() _tokenProvider;
@@ -150,7 +149,7 @@ class QuizGenerationClient {
       throw const QuizGenerationException(
         'Quiz generation took too long. Check your connection and try again with fewer questions.',
       );
-    } on FirebaseAuthException {
+    } on AuthException {
       throw const QuizGenerationException(
         'Could not verify your session. Check your connection and sign in again.',
       );

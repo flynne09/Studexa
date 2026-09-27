@@ -1,28 +1,14 @@
+import 'test_backend.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/material_model.dart';
 import 'package:studexa/services/material_service.dart';
-
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
   group('MaterialModel Tests', () {
     test('serializes and deserializes properly', () {
       final now = DateTime.now();
@@ -172,6 +158,51 @@ void main() {
       );
       expect(mbModel.formattedFileSize, '15.0 MB');
     });
+
+    test(
+      'supports isPosted and postedAt serialization, deserialization, and canBePosted',
+      () {
+        final now = DateTime.now();
+        final draft = MaterialModel(
+          id: 'mat_draft',
+          teacherId: 't1',
+          classId: 'c1',
+          fileName: 'guide.pdf',
+          fileType: 'pdf',
+          fileRef: 'ref',
+          status: 'ready',
+          storageUploadStatus: 'uploading',
+          createdAt: now,
+        );
+        expect(draft.isPosted, isFalse);
+        expect(draft.isUploadInProgress, isTrue);
+        expect(draft.canBePosted, isFalse);
+
+        final uploadCompleteDraft = draft.copyWith(
+          storageUploadStatus: 'completed',
+        );
+        expect(uploadCompleteDraft.canBePosted, isTrue);
+
+        final posted = uploadCompleteDraft.copyWith(
+          isPosted: true,
+          postedAt: now,
+        );
+        expect(posted.isPosted, isTrue);
+        expect(posted.postedAt, now);
+
+        final dbMap = posted.toDatabaseMap();
+        expect(dbMap['is_posted'], isTrue);
+        expect(dbMap['posted_at'], isNotNull);
+
+        final restored = MaterialModel.fromMap(dbMap, 'mat_draft');
+        expect(restored.isPosted, isTrue);
+        expect(restored.postedAt, isNotNull);
+
+        final unposted = posted.copyWith(isPosted: false);
+        expect(unposted.isPosted, isFalse);
+        expect(unposted.postedAt, isNull);
+      },
+    );
   });
 
   group('MaterialService File Validation Tests', () {
@@ -509,5 +540,60 @@ void main() {
       expect(result.file, isNull);
       expect(result.message, contains('upload it again'));
     });
+
+    test('postMaterial and unpostMaterial verify the updated row', () async {
+      final client = SupabaseClient(
+        'https://example.supabase.co',
+        'test-key',
+        httpClient: MockClient((request) async {
+          expect(request.method, 'PATCH');
+          expect(request.url.path, '/rest/v1/materials');
+          expect(request.url.queryParameters['id'], 'eq.mat_test_123');
+          final body = jsonDecode(request.body) as Map<String, dynamic>;
+          final isPosted = body['is_posted'] as bool;
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'mat_test_123',
+                'is_posted': isPosted,
+                'posted_at': body['posted_at'],
+              },
+            ]),
+            200,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+      final service = MaterialService(supabase: client);
+      await expectLater(service.postMaterial('mat_test_123'), completes);
+      await expectLater(service.unpostMaterial('mat_test_123'), completes);
+      client.dispose();
+    });
+
+    test(
+      'postMaterial rejects a zero-row update instead of showing false success',
+      () async {
+        final client = SupabaseClient(
+          'https://example.supabase.co',
+          'test-key',
+          httpClient: MockClient(
+            (request) async => http.Response(
+              '[]',
+              200,
+              request: request,
+              headers: {'content-type': 'application/json'},
+            ),
+          ),
+        );
+        final service = MaterialService(supabase: client);
+
+        await expectLater(
+          service.postMaterial('missing_material'),
+          throwsA(isA<StateError>()),
+        );
+        client.dispose();
+      },
+    );
   });
 }

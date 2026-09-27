@@ -295,7 +295,159 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+              if (!material.isPosted) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: material.canBePosted
+                          ? Colors.green[700]
+                          : Colors.grey[400],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: material.canBePosted
+                        ? () async {
+                            Navigator.pop(ctx);
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (dCtx) => AlertDialog(
+                                title: const Text('Post Material to Class?'),
+                                content: Text(
+                                  'Are you sure you want to share "${material.fileName}" with students in this class? '
+                                  'Enrolled students will be able to view and download this file.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(dCtx, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green[700],
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () => Navigator.pop(dCtx, true),
+                                    child: const Text('Post to Class'),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              try {
+                                await _materialService.postMaterial(material.id);
+                                if (!mounted) return;
+                                AppFeedback.success(
+                                  context,
+                                  '"${material.fileName}" is now published to the class.',
+                                  title: 'Material posted',
+                                );
+                              } catch (e) {
+                                if (!mounted) return;
+                                debugPrint('Failed to post material: $e');
+                                AppFeedback.error(
+                                  context,
+                                  'Could not post material. Check your connection and try again.',
+                                  title: 'Unable to post material',
+                                );
+                              }
+                            }
+                          }
+                        : null,
+                    icon: material.isUploadInProgress
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.send_rounded, size: 18),
+                    label: Text(
+                      material.isUploadInProgress
+                          ? 'Uploading File (Posting Locked)...'
+                          : 'Post Material to Class',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange[800],
+                      side: BorderSide(
+                        color: Colors.orange.withValues(alpha: 0.6),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (dCtx) => AlertDialog(
+                          title: const Text('Hide Material from Class?'),
+                          content: Text(
+                            'Are you sure you want to unpost "${material.fileName}"? '
+                            'Students will no longer be able to see or download this file.',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dCtx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange[800],
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () => Navigator.pop(dCtx, true),
+                              child: const Text('Unpost Material'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm == true) {
+                        try {
+                          await _materialService.unpostMaterial(material.id);
+                          if (!mounted) return;
+                          AppFeedback.info(
+                            context,
+                            '"${material.fileName}" is now hidden from students.',
+                            title: 'Material unposted',
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          debugPrint('Failed to unpost material: $e');
+                          AppFeedback.error(
+                            context,
+                            'Could not unpost material. Check your connection and try again.',
+                            title: 'Unable to unpost material',
+                          );
+                        }
+                      }
+                    },
+                    icon: const Icon(Icons.visibility_off_outlined, size: 18),
+                    label: const Text(
+                      'Unpost Material (Hide from Students)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
             ],
             Row(
               children: [
@@ -407,27 +559,57 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     );
   }
 
+  String _formatDate(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) {
+      if (diff.inHours == 0) {
+        if (diff.inMinutes <= 1) return 'Just now';
+        return '${diff.inMinutes}m ago';
+      }
+      return '${diff.inHours}h ago';
+    } else if (diff.inDays < 7) {
+      return '${diff.inDays}d ago';
+    } else {
+      return '${dt.month}/${dt.day}/${dt.year}';
+    }
+  }
+
+  String _formatMaterialSubtitleDate(MaterialModel mat) {
+    if (mat.isPosted && mat.postedAt != null) {
+      return 'Posted ${_formatDate(mat.postedAt!)}';
+    }
+    return 'Uploaded ${_formatDate(mat.createdAt)}';
+  }
+
   Widget _buildStatusChip(MaterialModel material) {
-    if (material.isReady) {
+    if (material.isUploadInProgress) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.green.withValues(alpha: 0.1),
+          color: Colors.blue.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+          border: Border.all(color: Colors.blue.withValues(alpha: 0.4)),
         ),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.check_circle, size: 14, color: Colors.green),
-            SizedBox(width: 4),
+            SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.blue,
+              ),
+            ),
+            SizedBox(width: 6),
             Flexible(
               child: Text(
-                'Extracted & Ready',
+                'Uploading File...',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Colors.green,
+                  color: Colors.blue,
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -436,6 +618,70 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
           ],
         ),
       );
+    }
+
+    if (material.isReady) {
+      if (material.isPosted) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.green.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle, size: 14, color: Colors.green),
+              SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  'Posted to Class',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.green,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.amber.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.visibility_off_outlined,
+                size: 14,
+                color: Colors.amber[900],
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  'Draft (Not Posted)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.amber[900],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        );
+      }
     }
 
     if (material.isProcessing) {
@@ -853,18 +1099,28 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 4),
-                        Row(
+                        Wrap(
+                          spacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Text(
-                              mat.formattedFileSize,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: _textSecondary,
+                            if (mat.formattedFileSize.isNotEmpty) ...[
+                              Text(
+                                mat.formattedFileSize,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: _textSecondary,
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
+                              const Text(
+                                '•',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: _textSecondary,
+                                ),
+                              ),
+                            ],
                             Text(
-                              '• ',
+                              _formatMaterialSubtitleDate(mat),
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: _textSecondary,

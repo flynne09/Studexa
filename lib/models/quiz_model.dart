@@ -1,5 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
 /// Supported question types in Phase 1.
 enum QuizQuestionType {
   multipleChoice,
@@ -236,11 +234,6 @@ class QuizModel {
     }
   }
 
-  factory QuizModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
-    return QuizModel.fromMap(data, id: doc.id);
-  }
-
   factory QuizModel.fromMap(Map<String, dynamic> map, {String id = ''}) {
     final rawQuestions = map['questions'];
     List<QuizQuestion> parsedQuestions = [];
@@ -257,7 +250,7 @@ class QuizModel {
       }
     }
 
-    final rawPoints = map['totalPoints'];
+    final rawPoints = map['total_points'] ?? map['totalPoints'];
     double parsedTotalPoints = 0.0;
     if (rawPoints is num) {
       parsedTotalPoints = rawPoints.toDouble();
@@ -269,40 +262,66 @@ class QuizModel {
     }
 
     DateTime? parseTimestamp(dynamic val) {
-      if (val is Timestamp) return val.toDate();
       if (val is String) return DateTime.tryParse(val);
       return null;
     }
 
     return QuizModel(
       id: id.isNotEmpty ? id : ((map['id'] as String?) ?? ''),
-      classId: (map['classId'] as String?) ?? '',
-      teacherId: (map['teacherId'] as String?) ?? '',
-      materialId: (map['materialId'] as String?) ?? '',
-      type: (map['type'] as String?) ?? 'actual',
+      classId: (map['class_id'] ?? map['classId'])?.toString() ?? '',
+      teacherId: (map['teacher_id'] ?? map['teacherId'])?.toString() ?? '',
+      materialId: (map['material_id'] ?? map['materialId'])?.toString() ?? '',
+      type: (map['quiz_type'] ?? map['type'])?.toString() ?? 'actual',
       title: (map['title'] as String?) ?? 'Untitled Quiz',
       status: (map['status'] as String?) ?? 'draft',
-      generationMethod: (map['generationMethod'] as String?) ?? 'fallback',
-      sourceQuizId: map['sourceQuizId'] as String?,
+      generationMethod:
+          (map['generation_method'] ?? map['generationMethod'])?.toString() ??
+              'fallback',
+      sourceQuizId:
+          (map['source_quiz_id'] ?? map['sourceQuizId'])?.toString(),
       questions: parsedQuestions,
       totalPoints: parsedTotalPoints,
-      requestedQuestionCount: (map['requestedQuestionCount'] as num?)?.toInt(),
+      requestedQuestionCount:
+          (map['requested_question_count'] ?? map['requestedQuestionCount'])
+                  is num
+              ? ((map['requested_question_count'] ??
+                      map['requestedQuestionCount']) as num)
+                  .toInt()
+              : null,
       selectedQuestionTypes:
-          (map['selectedQuestionTypes'] as List?)
+          ((map['selected_question_types'] ?? map['selectedQuestionTypes'])
+                  as List?)
               ?.map((value) => value.toString())
               .toList() ??
           const [],
-      extraGenerationAttempted: map['extraGenerationAttempted'] == true,
+      extraGenerationAttempted:
+          (map['extra_generation_attempted'] ??
+              map['extraGenerationAttempted']) == true,
       generationCredentialSource:
-          (map['generationCredentialSource'] as String?) ?? 'personal',
-      backupUsed: map['backupUsed'] == true,
-      backupUsageReason: map['backupUsageReason'] as String?,
-      backupGraceRemaining: (map['backupGraceRemaining'] as num?)?.toInt(),
+          (map['generation_credential_source'] ??
+                      map['generationCredentialSource'])
+                  ?.toString() ??
+              'personal',
+      backupUsed: (map['backup_used'] ?? map['backupUsed']) == true,
+      backupUsageReason:
+          (map['backup_usage_reason'] ?? map['backupUsageReason'])?.toString(),
+      backupGraceRemaining:
+          (map['backup_grace_remaining'] ?? map['backupGraceRemaining']) is num
+              ? ((map['backup_grace_remaining'] ??
+                      map['backupGraceRemaining']) as num)
+                  .toInt()
+              : null,
       backupFallbackRemainingToday:
-          (map['backupFallbackRemainingToday'] as num?)?.toInt(),
-      createdAt: parseTimestamp(map['createdAt']),
-      updatedAt: parseTimestamp(map['updatedAt']),
-      publishedAt: parseTimestamp(map['publishedAt']),
+          (map['backup_fallback_remaining_today'] ??
+                      map['backupFallbackRemainingToday'])
+                  is num
+              ? ((map['backup_fallback_remaining_today'] ??
+                      map['backupFallbackRemainingToday']) as num)
+                  .toInt()
+              : null,
+      createdAt: parseTimestamp(map['created_at'] ?? map['createdAt']),
+      updatedAt: parseTimestamp(map['updated_at'] ?? map['updatedAt']),
+      publishedAt: parseTimestamp(map['published_at'] ?? map['publishedAt']),
     );
   }
 
@@ -330,9 +349,45 @@ class QuizModel {
         'backupGraceRemaining': backupGraceRemaining,
       if (backupFallbackRemainingToday != null)
         'backupFallbackRemainingToday': backupFallbackRemainingToday,
-      if (createdAt != null) 'createdAt': Timestamp.fromDate(createdAt!),
-      if (updatedAt != null) 'updatedAt': Timestamp.fromDate(updatedAt!),
-      if (publishedAt != null) 'publishedAt': Timestamp.fromDate(publishedAt!),
+      if (createdAt != null)
+        'createdAt': createdAt!.toUtc().toIso8601String(),
+      if (updatedAt != null)
+        'updatedAt': updatedAt!.toUtc().toIso8601String(),
+      if (publishedAt != null)
+        'publishedAt': publishedAt!.toUtc().toIso8601String(),
+    };
+  }
+
+  Map<String, dynamic> toDatabaseMap() {
+    return {
+      'class_id': classId,
+      'teacher_id': teacherId,
+      'material_id': materialId,
+      'quiz_type': type,
+      'title': title,
+      'status': status,
+      'generation_method': generationMethod,
+      'source_quiz_id': sourceQuizId,
+      'questions': questions.map((q) => q.toMap()).toList(),
+      'total_points': totalPoints,
+      if (requestedQuestionCount != null)
+        'requested_question_count': requestedQuestionCount,
+      if (selectedQuestionTypes.isNotEmpty)
+        'selected_question_types': selectedQuestionTypes,
+      'extra_generation_attempted': extraGenerationAttempted,
+      'generation_credential_source': generationCredentialSource,
+      'backup_used': backupUsed,
+      'backup_usage_reason': backupUsageReason,
+      if (backupGraceRemaining != null)
+        'backup_grace_remaining': backupGraceRemaining,
+      if (backupFallbackRemainingToday != null)
+        'backup_fallback_remaining_today': backupFallbackRemainingToday,
+      if (createdAt != null)
+        'created_at': createdAt!.toUtc().toIso8601String(),
+      if (updatedAt != null)
+        'updated_at': updatedAt!.toUtc().toIso8601String(),
+      if (publishedAt != null)
+        'published_at': publishedAt!.toUtc().toIso8601String(),
     };
   }
 

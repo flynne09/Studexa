@@ -17,12 +17,12 @@ function deps(role = "teacher") {
   return {
     calls,
     verifyToken: async () => "teacher-uid",
-    firestore: { get: async () => ({ data: { role } }) },
+    database: { get: async () => ({ data: { role } }) },
     credentials: {
       status: async () => status,
       save: async (_uid, key) => {
         calls.saved.push(key);
-        return { ...status, configured: true, status: "valid", maskedKey: `••••${key.slice(-4)}` };
+        return { ...status, configured: true, status: "valid", maskedKey: `****${key.slice(-4)}` };
       },
       remove: async () => { calls.removed++; return status; },
     },
@@ -41,7 +41,7 @@ test("teacher can read masked status, validate/save, and remove without key disc
   const saved = await handleTeacherGeminiKeyRequest(request("PUT", { apiKey: "valid-personal-key-1234" }), fixture);
   const savedBody = await saved.json();
   assert.equal(saved.status, 200);
-  assert.equal(savedBody.status.maskedKey, "••••1234");
+  assert.equal(savedBody.status.maskedKey, "****1234");
   assert.equal(JSON.stringify(savedBody).includes("valid-personal-key"), false);
   assert.deepEqual(fixture.calls.saved, ["valid-personal-key-1234"]);
 

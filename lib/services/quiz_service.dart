@@ -1,24 +1,21 @@
 import 'dart:math';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'quiz_generation_client.dart';
 import '../models/quiz_model.dart';
 import '../utils/scoring_utils.dart';
-import 'firestore_provider.dart';
 
-/// Service managing quiz creation, generation, Firestore persistence, and streaming.
+/// Service managing quiz creation, generation, Supabase persistence, and streaming.
 class QuizService {
   QuizService({
-    FirebaseFirestore? firestore,
+    SupabaseClient? supabase,
     QuizGenerationClient? generationClient,
-  }) : _firestore = firestore ?? getAppFirestore(),
+  }) : _injectedSupabase = supabase,
        _generationClient = generationClient ?? QuizGenerationClient();
 
-  final FirebaseFirestore _firestore;
+  final SupabaseClient? _injectedSupabase;
+  SupabaseClient get _client => _injectedSupabase ?? Supabase.instance.client;
 
   final QuizGenerationClient _generationClient;
-
-  CollectionReference<Map<String, dynamic>> get _quizzesCollection =>
-      _firestore.collection('quizzes');
 
   /// Streams all quizzes for a specific class, optionally filtered by type ("actual" or "practice").
   Stream<List<QuizModel>> streamClassQuizzes(
@@ -26,63 +23,52 @@ class QuizService {
     String? type,
     bool publishedOnly = false,
   }) {
-    Query<Map<String, dynamic>> query = _quizzesCollection.where(
-      'classId',
-      isEqualTo: classId,
-    );
-
+    var stream = _client
+        .from('quizzes')
+        .stream(primaryKey: ['id'])
+        .eq('class_id', classId);
     if (type != null && type.isNotEmpty) {
-      query = query.where('type', isEqualTo: type.toLowerCase());
+      stream = stream.eq('quiz_type', type.toLowerCase());
     }
-
-    if (publishedOnly) query = query.where('status', isEqualTo: 'published');
-    return query.snapshots().map((snapshot) {
-      final list = snapshot.docs
-          .map((doc) => QuizModel.fromFirestore(doc))
-          .toList();
-      // Sort in-memory by createdAt descending
-      list.sort((a, b) {
-        if (a.createdAt == null && b.createdAt == null) return 0;
-        if (a.createdAt == null) return 1;
-        if (b.createdAt == null) return -1;
-        return b.createdAt!.compareTo(a.createdAt!);
-      });
-      return list;
-    });
+    if (publishedOnly) stream = stream.eq('status', 'published');
+    return stream.order('created_at', ascending: false).map(
+          (rows) => rows
+              .map((row) => QuizModel.fromMap(row, id: row['id'].toString()))
+              .toList(),
+        );
   }
 
   /// Streams all quizzes created by a specific teacher.
   Stream<List<QuizModel>> streamTeacherQuizzes(String teacherId) {
-    return _quizzesCollection
-        .where('teacherId', isEqualTo: teacherId)
-        .snapshots()
-        .map((snapshot) {
-          final list = snapshot.docs
-              .map((doc) => QuizModel.fromFirestore(doc))
-              .toList();
-          list.sort((a, b) {
-            if (a.createdAt == null && b.createdAt == null) return 0;
-            if (a.createdAt == null) return 1;
-            if (b.createdAt == null) return -1;
-            return b.createdAt!.compareTo(a.createdAt!);
-          });
-          return list;
-        });
+    return _client
+        .from('quizzes')
+        .stream(primaryKey: ['id'])
+        .eq('teacher_id', teacherId)
+        .order('created_at', ascending: false)
+        .map((rows) => rows
+            .map((row) => QuizModel.fromMap(row, id: row['id'].toString()))
+            .toList());
   }
 
   /// Streams a single quiz by ID in real time.
   Stream<QuizModel?> streamQuiz(String quizId) {
-    return _quizzesCollection.doc(quizId).snapshots().map((doc) {
-      if (!doc.exists) return null;
-      return QuizModel.fromFirestore(doc);
-    });
+    return _client
+        .from('quizzes')
+        .stream(primaryKey: ['id'])
+        .eq('id', quizId)
+        .map((rows) => rows.isEmpty
+            ? null
+            : QuizModel.fromMap(rows.first, id: rows.first['id'].toString()));
   }
 
   /// Fetches a single quiz by ID.
   Future<QuizModel?> getQuiz(String quizId) async {
-    final doc = await _quizzesCollection.doc(quizId).get();
-    if (!doc.exists) return null;
-    return QuizModel.fromFirestore(doc);
+    final row = await _client
+        .from('quizzes')
+        .select()
+        .eq('id', quizId)
+        .maybeSingle();
+    return row == null ? null : QuizModel.fromMap(row, id: row['id'].toString());
   }
 
   /// Generates and saves a quiz through the authenticated Edge Function.
@@ -454,16 +440,16 @@ class QuizService {
 
   /// Updates an existing quiz with teacher edits.
   Future<void> updateQuiz(QuizModel quiz) async {
-    await _quizzesCollection.doc(quiz.id).update({
+    await _client.from('quizzes').update({
       'title': quiz.title,
       'questions': quiz.questions.map((q) => q.toMap()).toList(),
-      'totalPoints': quiz.questions.fold<double>(
+      'total_points': quiz.questions.fold<double>(
         0.0,
         (acc, q) => acc + q.points,
       ),
       'status': quiz.status,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', quiz.id);
   }
 
   Future<QuizModel> appendManualQuestion(
@@ -472,43 +458,21 @@ class QuizService {
   ) async {
     final validation = validateQuizQuestions([question]);
     if (validation != null) throw StateError(validation);
-    final ref = _quizzesCollection.doc(quizId);
-    await _firestore.runTransaction((transaction) async {
-      final snapshot = await transaction.get(ref);
-      if (!snapshot.exists) throw StateError('This quiz no longer exists.');
-      final quiz = QuizModel.fromFirestore(snapshot);
-      if (!quiz.isDraft) {
-        throw StateError('Questions can only be added to a draft quiz.');
-      }
-      final normalized = question.question.trim().toLowerCase();
-      if (quiz.questions.any(
-        (existing) => existing.question.trim().toLowerCase() == normalized,
-      )) {
-        throw StateError('That question is already in this quiz.');
-      }
-      var nextNumber = quiz.questions.length + 1;
-      while (quiz.questions.any((existing) => existing.id == 'q_$nextNumber')) {
-        nextNumber++;
-      }
-      final nextQuestion = question.copyWith(
-        id: 'q_$nextNumber',
-        origin: 'manual',
-      );
-      final questions = [...quiz.questions, nextQuestion];
-      transaction.update(ref, {
-        'questions': questions.map((item) => item.toMap()).toList(),
-        'totalPoints': questions.fold<double>(
-          0,
-          (total, item) => total + item.points,
-        ),
-        'updatedAt': FieldValue.serverTimestamp(),
+    try {
+      final data = await _client.rpc('append_manual_quiz_question', params: {
+        'p_quiz_id': quizId,
+        'p_question': question.copyWith(origin: 'manual').toMap(),
       });
-    });
-    final updated = await getQuiz(quizId);
-    if (updated == null) {
-      throw StateError('The saved quiz could not be loaded.');
+      final row = data is Map
+          ? Map<String, dynamic>.from(data)
+          : data is List && data.isNotEmpty
+              ? Map<String, dynamic>.from(data.first as Map)
+              : null;
+      if (row == null) throw StateError('The saved quiz could not be loaded.');
+      return QuizModel.fromMap(row, id: row['id'].toString());
+    } on PostgrestException catch (error) {
+      throw StateError(error.message);
     }
-    return updated;
   }
 
   /// Validates a list of questions to ensure each question is complete and pedagogical.
@@ -585,11 +549,11 @@ class QuizService {
         throw StateError(validationError);
       }
     }
-    await _quizzesCollection.doc(quizId).update({
+    await _client.from('quizzes').update({
       'status': 'published',
-      'publishedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+      'published_at': DateTime.now().toUtc().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', quizId);
   }
 
   /// Finalizes an Actual Quiz as a reference exam.
@@ -600,15 +564,15 @@ class QuizService {
         throw StateError(validationError);
       }
     }
-    await _quizzesCollection.doc(quizId).update({
+    await _client.from('quizzes').update({
       'status': 'finalized',
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', quizId);
   }
 
   /// Deletes a quiz.
   Future<void> deleteQuiz(String quizId) async {
-    await _quizzesCollection.doc(quizId).delete();
+    await _client.from('quizzes').delete().eq('id', quizId);
   }
 
   /// Deterministic local question generator that extracts high-accuracy questions

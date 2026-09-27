@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/quiz_attempt_model.dart';
 import '../../models/quiz_model.dart';
 import '../../services/assignment_service.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_feedback.dart';
 import '../../widgets/studexa_background.dart';
@@ -94,7 +94,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
 
   String get _studentId {
     try {
-      return FirebaseAuth.instance.currentUser?.uid ?? 'guest_student';
+      return AuthService().currentUser?.uid ?? 'guest_student';
     } catch (_) {
       return 'guest_student';
     }
@@ -594,15 +594,15 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       });
     }
 
-    final percentage = totalPossible > 0
+    var percentage = totalPossible > 0
         ? (totalEarned / totalPossible * 100)
         : 0.0;
 
     // A displayed result must correspond to an acknowledged saved attempt.
-    final user = FirebaseAuth.instance.currentUser;
+    final user = AuthService().currentUser;
     if (widget.quiz != null &&
         user == null &&
-        _assignmentService.useFirestore) {
+        _assignmentService.useRemoteBackend) {
       setState(() => _isSubmitting = false);
       AppFeedback.error(
         context,
@@ -645,7 +645,10 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
       );
 
       try {
-        await _assignmentService.submitAttempt(attempt);
+        final savedAttempt = await _assignmentService.submitAttempt(attempt);
+        totalEarned = savedAttempt.score;
+        totalPossible = savedAttempt.totalPoints;
+        percentage = savedAttempt.percentage;
       } catch (error) {
         if (!mounted) return;
         setState(() => _isSubmitting = false);

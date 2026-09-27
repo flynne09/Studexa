@@ -1,6 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
-/// Data model representing a class in Studexa stored in Firestore `classes/{classId}`.
 class ClassModel {
   const ClassModel({
     required this.id,
@@ -30,60 +27,59 @@ class ClassModel {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
-  Map<String, dynamic> toMap() {
-    return {
-      'name': name,
-      'joinCode': joinCode.toUpperCase(),
-      'teacherId': teacherId,
-      'teacherName': teacherName,
-      'section': section,
-      'subject': subject,
-      'status': status,
-      'rosterCount': rosterCount,
-      'recentQuiz': recentQuiz,
-      'createdAt': createdAt != null
-          ? Timestamp.fromDate(createdAt!)
-          : FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-  }
+  Map<String, dynamic> toMap() => {
+        'name': name,
+        'joinCode': joinCode.toUpperCase(),
+        'teacherId': teacherId,
+        'teacherName': teacherName,
+        'section': section,
+        'subject': subject,
+        'status': status,
+        'rosterCount': rosterCount,
+        'recentQuiz': recentQuiz,
+        if (createdAt != null)
+          'createdAt': createdAt!.toUtc().toIso8601String(),
+      };
 
-  factory ClassModel.fromMap(Map<String, dynamic> map, String id) {
-    DateTime? created;
-    final rawCreated = map['createdAt'];
-    if (rawCreated is Timestamp) {
-      created = rawCreated.toDate();
-    } else if (rawCreated is String) {
-      created = DateTime.tryParse(rawCreated);
-    }
+  Map<String, dynamic> toDatabaseMap() => {
+        'name': name,
+        'join_code': joinCode.toUpperCase(),
+        'teacher_id': teacherId,
+        'teacher_name': teacherName,
+        'section': section,
+        'subject': subject,
+        'status': status,
+        'roster_count': rosterCount,
+        'recent_quiz': recentQuiz,
+        if (createdAt != null)
+          'created_at': createdAt!.toUtc().toIso8601String(),
+      };
 
-    DateTime? updated;
-    final rawUpdated = map['updatedAt'];
-    if (rawUpdated is Timestamp) {
-      updated = rawUpdated.toDate();
-    } else if (rawUpdated is String) {
-      updated = DateTime.tryParse(rawUpdated);
+  factory ClassModel.fromMap(Map<String, dynamic> map, [String? id]) {
+    DateTime? date(dynamic value) =>
+        value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    T? first<T>(String snake, String camel) {
+      final value = map[snake] ?? map[camel];
+      return value is T ? value : null;
     }
 
     return ClassModel(
-      id: id,
-      name: map['name'] as String? ?? '',
-      joinCode: (map['joinCode'] as String? ?? '').toUpperCase(),
-      teacherId: map['teacherId'] as String? ?? '',
-      teacherName: map['teacherName'] as String? ?? '',
-      section: map['section'] as String? ?? '',
-      subject: map['subject'] as String? ?? '',
-      status: map['status'] as String? ?? 'active',
-      rosterCount: (map['rosterCount'] as num?)?.toInt() ?? 0,
-      recentQuiz: map['recentQuiz'] as String? ?? 'No quizzes yet',
-      createdAt: created,
-      updatedAt: updated,
+      id: id ?? map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      joinCode: (first<String>('join_code', 'joinCode') ?? '').toUpperCase(),
+      teacherId: first<String>('teacher_id', 'teacherId') ?? '',
+      teacherName: first<String>('teacher_name', 'teacherName') ?? '',
+      section: map['section']?.toString() ?? '',
+      subject: map['subject']?.toString() ?? '',
+      status: map['status']?.toString() ?? 'active',
+      rosterCount: (map['roster_count'] ?? map['rosterCount']) is num
+          ? ((map['roster_count'] ?? map['rosterCount']) as num).toInt()
+          : 0,
+      recentQuiz:
+          first<String>('recent_quiz', 'recentQuiz') ?? 'No quizzes yet',
+      createdAt: date(map['created_at'] ?? map['createdAt']),
+      updatedAt: date(map['updated_at'] ?? map['updatedAt']),
     );
-  }
-
-  factory ClassModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
-    return ClassModel.fromMap(data, doc.id);
   }
 
   ClassModel copyWith({
@@ -98,25 +94,23 @@ class ClassModel {
     String? recentQuiz,
     DateTime? createdAt,
     DateTime? updatedAt,
-  }) {
-    return ClassModel(
-      id: id,
-      name: name ?? this.name,
-      joinCode: joinCode ?? this.joinCode,
-      teacherId: teacherId ?? this.teacherId,
-      teacherName: teacherName ?? this.teacherName,
-      section: section ?? this.section,
-      subject: subject ?? this.subject,
-      status: status ?? this.status,
-      rosterCount: rosterCount ?? this.rosterCount,
-      recentQuiz: recentQuiz ?? this.recentQuiz,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-    );
-  }
+  }) =>
+      ClassModel(
+        id: id,
+        name: name ?? this.name,
+        joinCode: joinCode ?? this.joinCode,
+        teacherId: teacherId ?? this.teacherId,
+        teacherName: teacherName ?? this.teacherName,
+        section: section ?? this.section,
+        subject: subject ?? this.subject,
+        status: status ?? this.status,
+        rosterCount: rosterCount ?? this.rosterCount,
+        recentQuiz: recentQuiz ?? this.recentQuiz,
+        createdAt: createdAt ?? this.createdAt,
+        updatedAt: updatedAt ?? this.updatedAt,
+      );
 }
 
-/// Data model representing a member (student or teacher) in `classes/{classId}/members/{uid}`.
 class ClassMember {
   const ClassMember({
     required this.userId,
@@ -132,38 +126,35 @@ class ClassMember {
   final String email;
   final DateTime? joinedAt;
 
-  Map<String, dynamic> toMap() {
-    return {
-      'userId': userId,
-      'role': role.toLowerCase(),
-      'displayNameSnapshot': displayName,
-      'emailSnapshot': email,
-      'joinedAt': joinedAt != null
-          ? Timestamp.fromDate(joinedAt!)
-          : FieldValue.serverTimestamp(),
-    };
-  }
+  Map<String, dynamic> toMap() => {
+        'userId': userId,
+        'role': role.toLowerCase(),
+        'displayNameSnapshot': displayName,
+        'emailSnapshot': email,
+        if (joinedAt != null)
+          'joinedAt': joinedAt!.toUtc().toIso8601String(),
+      };
 
-  factory ClassMember.fromMap(Map<String, dynamic> map, String id) {
-    DateTime? joined;
-    final rawJoined = map['joinedAt'];
-    if (rawJoined is Timestamp) {
-      joined = rawJoined.toDate();
-    } else if (rawJoined is String) {
-      joined = DateTime.tryParse(rawJoined);
-    }
+  Map<String, dynamic> toDatabaseMap() => {
+        'user_id': userId,
+        'role': role.toLowerCase(),
+        'display_name_snapshot': displayName,
+        'email_snapshot': email,
+        if (joinedAt != null)
+          'joined_at': joinedAt!.toUtc().toIso8601String(),
+      };
 
+  factory ClassMember.fromMap(Map<String, dynamic> map, [String? id]) {
+    final joined = map['joined_at'] ?? map['joinedAt'];
     return ClassMember(
-      userId: map['userId'] as String? ?? id,
-      role: (map['role'] as String? ?? 'student').toLowerCase(),
-      displayName: map['displayNameSnapshot'] as String? ?? '',
-      email: map['emailSnapshot'] as String? ?? '',
-      joinedAt: joined,
+      userId: (map['user_id'] ?? map['userId'] ?? id ?? '').toString(),
+      role: (map['role'] ?? 'student').toString().toLowerCase(),
+      displayName:
+          (map['display_name_snapshot'] ?? map['displayNameSnapshot'] ?? '')
+              .toString(),
+      email: (map['email_snapshot'] ?? map['emailSnapshot'] ?? '').toString(),
+      joinedAt:
+          joined is String ? DateTime.tryParse(joined)?.toLocal() : null,
     );
-  }
-
-  factory ClassMember.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
-    final data = doc.data() ?? {};
-    return ClassMember.fromMap(data, doc.id);
   }
 }

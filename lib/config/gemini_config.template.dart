@@ -1,3 +1,3 @@
 // Legacy configuration instructions: do not put an AI key in Dart.
-// See docs/INTEGRATION_REPORT.md for Firebase Secret Manager setup.
+// Gemini credentials are stored only in Supabase Edge Function secrets/Vault.
 // Public Flutter configuration is in integration_config.dart.

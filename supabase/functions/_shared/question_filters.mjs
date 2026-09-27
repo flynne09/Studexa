@@ -1,4 +1,4 @@
-// Keep these exclusions aligned with the legacy Firebase generator.
+// Keep these exclusions aligned with the legacy generator.
 export function isTableHeaderQuestion(q) {
   if (!q) return false;
   const prompt = (q.question || "").toLowerCase().trim();

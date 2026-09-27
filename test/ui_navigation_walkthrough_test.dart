@@ -1,7 +1,6 @@
+import 'test_backend.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-// ignore: depend_on_referenced_packages
-import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:studexa/models/class_model.dart';
 import 'package:studexa/models/quiz_model.dart';
 import 'package:studexa/screens/auth/role_selection_screen.dart';
@@ -15,25 +14,8 @@ import 'package:studexa/screens/student/student_class_details_screen.dart';
 import 'package:studexa/screens/student/join_class_screen.dart';
 import 'package:studexa/screens/student/answer_quiz_screen.dart';
 
-void setupMockFirebase() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  MethodChannelFirebase.appInstances['[DEFAULT]'] = MethodChannelFirebaseApp(
-    '[DEFAULT]',
-    const FirebaseOptions(
-      apiKey: 'mock-key',
-      appId: 'mock-id',
-      messagingSenderId: 'mock-sender',
-      projectId: 'studexa-test',
-      storageBucket: 'studexa-test.appspot.com',
-    ),
-  );
-  MethodChannelFirebase.isCoreInitialized = true;
-}
-
 void main() {
-  setUpAll(() {
-    setupMockFirebase();
-  });
+  setUpAll(setupMockSupabase);
 
   // Reusable test models
   final testClass = ClassModel(
@@ -106,7 +88,7 @@ void main() {
     createdAt: DateTime.now(),
   );
 
-  group('UI Navigation Walkthrough — Screen Layout & Navigation Tests', () {
+  group('UI Navigation Walkthrough â€” Screen Layout & Navigation Tests', () {
     testWidgets('1. RoleSelectionScreen renders logo, branding, and role options', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(
@@ -420,4 +402,3 @@ void main() {
     });
   });
 }
-

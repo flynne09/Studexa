@@ -1,8 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-
-/// Represents a study material tracked in Firestore. New original files are
-/// stored in Supabase Storage while legacy records can still retain Firebase
-/// download URLs.
+/// Represents a study material tracked in Supabase Postgres and Storage.
 class MaterialModel {
   final String id;
   final String teacherId;
@@ -11,8 +7,7 @@ class MaterialModel {
   final String fileType; // 'pdf' | 'pptx' | 'docx'
   final String
   fileRef; // Storage path e.g. uploads/{teacherId}/{materialId}/{fileName}
-  final String
-  storageProvider; // 'supabase' for new files; 'firebase' for legacy records
+  final String storageProvider;
   final String? storageBucket;
   final String? storageUploadStatus; // 'uploading' | 'completed' | 'failed'
   final String? downloadUrl; // Legacy direct download URL
@@ -29,6 +24,8 @@ class MaterialModel {
   final DateTime createdAt;
   final DateTime? extractedAt;
   final int? fileSizeBytes;
+  final bool isPosted;
+  final DateTime? postedAt;
 
   const MaterialModel({
     required this.id,
@@ -37,7 +34,7 @@ class MaterialModel {
     required this.fileName,
     required this.fileType,
     required this.fileRef,
-    this.storageProvider = 'firebase',
+    this.storageProvider = 'supabase',
     this.storageBucket,
     this.storageUploadStatus,
     this.downloadUrl,
@@ -51,11 +48,17 @@ class MaterialModel {
     required this.createdAt,
     this.extractedAt,
     this.fileSizeBytes,
+    this.isPosted = false,
+    this.postedAt,
   });
 
   bool get isReady => status == 'ready';
   bool get isProcessing => status == 'processing' || status == 'pending';
   bool get hasFailed => status == 'failed';
+  bool get isUploadInProgress => storageUploadStatus == 'uploading';
+  bool get isUploadCompleted =>
+      storageUploadStatus == 'completed' || storageUploadStatus == null;
+  bool get canBePosted => isReady && isUploadCompleted;
 
   /// In-app preview availability
   bool get hasConvertedPdf =>
@@ -99,7 +102,7 @@ class MaterialModel {
     return '${(fileSizeBytes! / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  /// Standard MIME type for Firebase Storage upload metadata
+  /// Standard MIME type for private object upload metadata.
   String get contentType => contentTypeForExtension(fileType);
 
   /// Map extension to MIME type for Storage upload metadata
@@ -138,6 +141,8 @@ class MaterialModel {
     DateTime? createdAt,
     DateTime? extractedAt,
     int? fileSizeBytes,
+    bool? isPosted,
+    DateTime? postedAt,
   }) {
     return MaterialModel(
       id: id ?? this.id,
@@ -160,10 +165,14 @@ class MaterialModel {
       createdAt: createdAt ?? this.createdAt,
       extractedAt: extractedAt ?? this.extractedAt,
       fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      isPosted: isPosted ?? this.isPosted,
+      postedAt: (isPosted ?? this.isPosted)
+          ? (postedAt ?? this.postedAt)
+          : null,
     );
   }
 
-  /// Serialize to Firestore map format
+  /// Serialize to the app's domain map format.
   Map<String, dynamic> toMap() {
     return {
       'teacherId': teacherId,
@@ -179,49 +188,107 @@ class MaterialModel {
       if (convertedPdfRef != null) 'convertedPdfRef': convertedPdfRef,
       if (convertedPdfUrl != null) 'convertedPdfUrl': convertedPdfUrl,
       if (conversionStatus != null) 'conversionStatus': conversionStatus,
-      if (convertedAt != null) 'convertedAt': Timestamp.fromDate(convertedAt!),
+      if (convertedAt != null)
+        'convertedAt': convertedAt!.toUtc().toIso8601String(),
       'status': status,
       'errorReason': errorReason,
       'extractedText': extractedText,
-      'createdAt': Timestamp.fromDate(createdAt),
-      if (extractedAt != null) 'extractedAt': Timestamp.fromDate(extractedAt!),
+      'createdAt': createdAt.toUtc().toIso8601String(),
+      if (extractedAt != null)
+        'extractedAt': extractedAt!.toUtc().toIso8601String(),
       if (fileSizeBytes != null) 'fileSizeBytes': fileSizeBytes,
+      'isPosted': isPosted,
+      if (postedAt != null) 'postedAt': postedAt!.toUtc().toIso8601String(),
     };
   }
 
-  /// Construct from Firestore map
+  Map<String, dynamic> toDatabaseMap() {
+    return {
+      'teacher_id': teacherId,
+      'class_id': classId,
+      'file_name': fileName,
+      'file_type': fileType.toLowerCase(),
+      'file_ref': fileRef,
+      'storage_provider': storageProvider,
+      if (storageBucket != null) 'storage_bucket': storageBucket,
+      if (storageUploadStatus != null)
+        'storage_upload_status': storageUploadStatus,
+      if (downloadUrl != null) 'download_url': downloadUrl,
+      if (convertedPdfRef != null) 'converted_pdf_ref': convertedPdfRef,
+      if (convertedPdfUrl != null) 'converted_pdf_url': convertedPdfUrl,
+      if (conversionStatus != null) 'conversion_status': conversionStatus,
+      if (convertedAt != null)
+        'converted_at': convertedAt!.toUtc().toIso8601String(),
+      'status': status,
+      'error_reason': errorReason,
+      'extracted_text': extractedText,
+      'created_at': createdAt.toUtc().toIso8601String(),
+      if (extractedAt != null)
+        'extracted_at': extractedAt!.toUtc().toIso8601String(),
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      'is_posted': isPosted,
+      if (postedAt != null) 'posted_at': postedAt!.toUtc().toIso8601String(),
+    };
+  }
+
+  /// Construct from either database or domain map keys.
   factory MaterialModel.fromMap(Map<String, dynamic> map, String docId) {
     DateTime parseTimestamp(dynamic val) {
-      if (val is Timestamp) return val.toDate();
       if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
       return DateTime.now();
     }
 
+    DateTime? parseOptionalTimestamp(dynamic val) {
+      if (val == null) return null;
+      if (val is String) return DateTime.tryParse(val);
+      return null;
+    }
+
+    final rawIsPosted = map['is_posted'] ?? map['isPosted'];
+    final isPostedBool =
+        rawIsPosted == true || rawIsPosted == 'true' || rawIsPosted == 1;
+
     return MaterialModel(
       id: docId,
-      teacherId: (map['teacherId'] as String?) ?? '',
-      classId: (map['classId'] as String?) ?? '',
-      fileName: (map['fileName'] as String?) ?? 'Unnamed Material',
-      fileType: ((map['fileType'] as String?) ?? 'pdf').toLowerCase(),
-      fileRef: (map['fileRef'] as String?) ?? '',
-      storageProvider: (map['storageProvider'] as String?) ?? 'firebase',
-      storageBucket: map['storageBucket'] as String?,
-      storageUploadStatus: map['storageUploadStatus'] as String?,
-      downloadUrl: map['downloadUrl'] as String?,
-      convertedPdfRef: map['convertedPdfRef'] as String?,
-      convertedPdfUrl: map['convertedPdfUrl'] as String?,
-      conversionStatus: map['conversionStatus'] as String?,
-      convertedAt: map['convertedAt'] != null
-          ? parseTimestamp(map['convertedAt'])
+      teacherId: (map['teacher_id'] ?? map['teacherId'])?.toString() ?? '',
+      classId: (map['class_id'] ?? map['classId'])?.toString() ?? '',
+      fileName:
+          (map['file_name'] ?? map['fileName'])?.toString() ??
+          'Unnamed Material',
+      fileType: ((map['file_type'] ?? map['fileType'])?.toString() ?? 'pdf')
+          .toLowerCase(),
+      fileRef: (map['file_ref'] ?? map['fileRef'])?.toString() ?? '',
+      storageProvider:
+          (map['storage_provider'] ?? map['storageProvider'])?.toString() ??
+          'supabase',
+      storageBucket: (map['storage_bucket'] ?? map['storageBucket'])
+          ?.toString(),
+      storageUploadStatus:
+          (map['storage_upload_status'] ?? map['storageUploadStatus'])
+              ?.toString(),
+      downloadUrl: (map['download_url'] ?? map['downloadUrl'])?.toString(),
+      convertedPdfRef: (map['converted_pdf_ref'] ?? map['convertedPdfRef'])
+          ?.toString(),
+      convertedPdfUrl: (map['converted_pdf_url'] ?? map['convertedPdfUrl'])
+          ?.toString(),
+      conversionStatus: (map['conversion_status'] ?? map['conversionStatus'])
+          ?.toString(),
+      convertedAt: (map['converted_at'] ?? map['convertedAt']) != null
+          ? parseTimestamp(map['converted_at'] ?? map['convertedAt'])
           : null,
       status: (map['status'] as String?) ?? 'pending',
-      errorReason: map['errorReason'] as String?,
-      extractedText: (map['extractedText'] as String?) ?? '',
-      createdAt: parseTimestamp(map['createdAt']),
-      extractedAt: map['extractedAt'] != null
-          ? parseTimestamp(map['extractedAt'])
+      errorReason: (map['error_reason'] ?? map['errorReason'])?.toString(),
+      extractedText:
+          (map['extracted_text'] ?? map['extractedText'])?.toString() ?? '',
+      createdAt: parseTimestamp(map['created_at'] ?? map['createdAt']),
+      extractedAt: (map['extracted_at'] ?? map['extractedAt']) != null
+          ? parseTimestamp(map['extracted_at'] ?? map['extractedAt'])
           : null,
-      fileSizeBytes: map['fileSizeBytes'] as int?,
+      fileSizeBytes: (map['file_size_bytes'] ?? map['fileSizeBytes']) is num
+          ? ((map['file_size_bytes'] ?? map['fileSizeBytes']) as num).toInt()
+          : null,
+      isPosted: isPostedBool,
+      postedAt: parseOptionalTimestamp(map['posted_at'] ?? map['postedAt']),
     );
   }
 }

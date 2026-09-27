@@ -245,149 +245,12 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   }
 
   void _showCreateClassDialog() {
-    final nameController = TextEditingController();
-    bool isCreating = false;
-    String? errorMessage;
-
-    showDialog(
+    showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          backgroundColor: _surfaceWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text(
-            'Create New Class',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: _textPrimary,
-            ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Enter a class name. A unique join code will be generated automatically.',
-                style: TextStyle(fontSize: 13, color: _textSecondary),
-              ),
-              const SizedBox(height: 16),
-              if (errorMessage != null) ...[
-                Text(
-                  errorMessage!,
-                  style: const TextStyle(fontSize: 12, color: Colors.redAccent),
-                ),
-                const SizedBox(height: 8),
-              ],
-              TextField(
-                controller: nameController,
-                autofocus: true,
-                enabled: !isCreating,
-                decoration: InputDecoration(
-                  hintText: 'e.g. Physics 102 - Mechanics',
-                  filled: true,
-                  fillColor: Colors.white,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 12,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _outlineVariant),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: _outlineVariant),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(
-                      color: _primaryNavy,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: isCreating ? null : () => Navigator.pop(ctx),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: _textSecondary),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryNavy,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onPressed: isCreating
-                  ? null
-                  : () async {
-                      final name = nameController.text.trim();
-                      if (name.isEmpty) {
-                        setDialogState(() {
-                          errorMessage = 'Please enter a class name.';
-                        });
-                        return;
-                      }
-
-                      setDialogState(() {
-                        isCreating = true;
-                        errorMessage = null;
-                      });
-
-                      try {
-                        final teacherId =
-                            _teacherProfile?.uid ??
-                            AuthService().currentUser?.uid ??
-                            'teacher_demo';
-                        final teacherName =
-                            _teacherProfile?.displayName ??
-                            AuthService().currentUser?.displayName ??
-                            'Teacher';
-
-                        final createdClass = await ClassService().createClass(
-                          name: name,
-                          teacherId: teacherId,
-                          teacherName: teacherName,
-                        );
-
-                        if (!mounted) return;
-                        if (ctx.mounted) {
-                          Navigator.pop(ctx);
-                        }
-                        _showClassCreatedSuccessDialog(createdClass);
-                      } catch (e) {
-                        debugPrint('Failed to create class: $e');
-                        setDialogState(() {
-                          isCreating = false;
-                          errorMessage =
-                              'We could not create the class. Check your connection and try again.';
-                        });
-                      }
-                    },
-              child: isCreating
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : const Text('Create'),
-            ),
-          ],
-        ),
+      builder: (ctx) => _CreateClassDialog(
+        teacherProfile: _teacherProfile,
+        onClassCreated: _showClassCreatedSuccessDialog,
       ),
     );
   }
@@ -1167,6 +1030,226 @@ class _ClassItemCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CreateClassDialog extends StatefulWidget {
+  final UserProfile? teacherProfile;
+  final ValueChanged<ClassModel> onClassCreated;
+
+  const _CreateClassDialog({
+    required this.teacherProfile,
+    required this.onClassCreated,
+  });
+
+  @override
+  State<_CreateClassDialog> createState() => _CreateClassDialogState();
+}
+
+class _CreateClassDialogState extends State<_CreateClassDialog> {
+  static const _primaryNavy = AppTheme.primaryNavy;
+  static const _surfaceWhite = AppTheme.surfaceWhite;
+  static const _outlineVariant = AppTheme.outlineVariant;
+  static const _textPrimary = AppTheme.textPrimary;
+  static const _textSecondary = AppTheme.textSecondary;
+
+  late final TextEditingController _nameController;
+  late final TextEditingController _sectionController;
+  bool _isCreating = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+    _sectionController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _sectionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleCreate() async {
+    final name = _nameController.text.trim();
+    final section = _sectionController.text.trim();
+    if (name.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter a class name.';
+      });
+      return;
+    }
+    if (section.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter a class section.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isCreating = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final teacherId =
+          widget.teacherProfile?.uid ??
+          AuthService().currentUser?.uid ??
+          'teacher_demo';
+      final teacherName =
+          widget.teacherProfile?.displayName ??
+          AuthService().currentUser?.displayName ??
+          'Teacher';
+
+      final createdClass = await ClassService().createClass(
+        name: name,
+        section: section,
+        teacherId: teacherId,
+        teacherName: teacherName,
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      widget.onClassCreated(createdClass);
+    } catch (e) {
+      debugPrint('Failed to create class: $e');
+      if (mounted) {
+        setState(() {
+          _isCreating = false;
+          _errorMessage =
+              'We could not create the class. Check your connection and try again.';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: _surfaceWhite,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      title: const Text(
+        'Create New Class',
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: _textPrimary,
+        ),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Enter the class name and section. The class name will also be used as the subject, and a unique join code will be generated automatically.',
+            style: TextStyle(fontSize: 13, color: _textSecondary),
+          ),
+          const SizedBox(height: 16),
+          if (_errorMessage != null) ...[
+            Text(
+              _errorMessage!,
+              style: const TextStyle(fontSize: 12, color: Colors.redAccent),
+            ),
+            const SizedBox(height: 8),
+          ],
+          TextField(
+            controller: _nameController,
+            autofocus: true,
+            enabled: !_isCreating,
+            decoration: InputDecoration(
+              labelText: 'Class name',
+              hintText: 'e.g. Mobile Computing',
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: _primaryNavy,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _sectionController,
+            enabled: !_isCreating,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: 'Class section',
+              hintText: 'e.g. BSCS-3A',
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _outlineVariant),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(
+                  color: _primaryNavy,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isCreating ? null : () => Navigator.of(context).pop(),
+          child: const Text(
+            'Cancel',
+            style: TextStyle(color: _textSecondary),
+          ),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primaryNavy,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          onPressed: _isCreating ? null : _handleCreate,
+          child: _isCreating
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : const Text('Create'),
+        ),
+      ],
     );
   }
 }

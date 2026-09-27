@@ -1,7 +1,10 @@
 project_id = "zuidphgogdwyrtndbgkx"
 
 [functions.generate-quiz]
-verify_jwt = false
+verify_jwt = true
 
 [functions.teacher-gemini-key]
-verify_jwt = false
+verify_jwt = true
+
+[functions.submit-quiz-attempt]
+verify_jwt = true
