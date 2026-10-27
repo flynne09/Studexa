@@ -4,8 +4,8 @@
 - Overall status: `SUPABASE_MIGRATION_COMPLETE`
 - Current phase: `Supabase-only beta runtime live and Android release verified`
 - Last completed task: Published the complete Supabase migration, clean-beta cutover tooling, verification coverage, and material-post reliability update to `origin/main`.
-- Current task: Repository publication is complete; the project is ready for beta use.
-- NEXT TASK: Begin normal beta registration and testing. If Firebase billing is ever enabled, delete the three inaccessible legacy Function deployments.
+- Current task: APK security audit findings and future hardening plan are documented; controlled phone-to-phone classroom demonstration remains approved.
+- NEXT TASK: Begin normal beta registration and testing; implement `docs/SECURITY_HARDENING_PLAN.md` before production deployment. If Firebase billing is ever enabled, delete the three inaccessible legacy Function deployments.
 - Blockers: Google Cloud rejects deletion of the three legacy Firebase Functions with HTTP 403 because the Firebase project has no billing account. Windows desktop still requires Developer Mode and iOS requires macOS/Xcode; neither limits the required Android release.
 - Last verified: 2026-09-27: commit `4c05144` (`Migrate Studexa runtime to Supabase`) pushed successfully from local `main` to `origin/main`. The staged publication contained no private Supabase config, generated APK, secret-like added line, oversized source artifact, or whitespace error.
 
@@ -2436,3 +2436,8 @@ Begin normal beta registration/testing. If Firebase billing is enabled later, de
 - Staged 107 source/documentation files and scanned added lines for Google API keys, Supabase server keys, JWTs, private-key blocks, OAuth refresh tokens, and client secrets. No secret-like added line was found, and `git diff --cached --check` passed after removing one trailing blank line from a migration.
 - Confirmed local `main` and `origin/main` were aligned before publication. Created commit `4c05144` (`Migrate Studexa runtime to Supabase`) and successfully pushed `3909ab1..4c05144` to `origin/main` at `https://github.com/flynne09/Studexa.git`.
 - Files changed after the main publication commit: this log only. The documentation follow-up is committed and pushed separately so the successful publication can be recorded factually.
+
+### 2026-10-08 - APK security audit plan documented
+- Confirmed that the current `Studexa.apk` remains suitable for a controlled phone-to-phone classroom demonstration without applying production hardening first. The APK is not yet approved for public production deployment because the audit found a debug signing identity, ordinary SharedPreferences session-storage evidence, implicit backup behavior, and missing in-app privacy/account-deletion evidence.
+- Created `docs/SECURITY_HARDENING_PLAN.md` with the complete future implementation plan: release signing, Dart obfuscation, Keystore-backed Supabase sessions, Android backup rules, privacy and account deletion, callback hardening, integrity controls, logging, dependency review, backend verification, production acceptance criteria, and release evidence commands.
+- Documentation-only checkpoint. No Dart code, native runtime behavior, package, schema, RLS policy, Edge Function, backend data, or APK artifact was changed. `git status` confirmed only the new plan and this log entry are modified.
