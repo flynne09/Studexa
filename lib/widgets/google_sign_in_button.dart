@@ -3,6 +3,7 @@ import 'google_logo.dart';
 
 /// Styled "Continue with Google" button matching the Studexa design language.
 class GoogleSignInButton extends StatelessWidget {
+  /// Creates a [GoogleSignInButton] with tap handler, loading state, and custom label.
   const GoogleSignInButton({
     super.key,
     required this.onPressed,
@@ -10,14 +11,20 @@ class GoogleSignInButton extends StatelessWidget {
     this.text = 'Continue with Google',
   });
 
+  /// Callback invoked when the button is tapped while not loading.
   final VoidCallback? onPressed;
+
+  /// Whether an OAuth sign-in flow is currently in progress.
   final bool isLoading;
+
+  /// Button label displayed next to the [GoogleLogo].
   final String text;
 
   static const _surfaceWhite = Color(0xFFFBF9F8);
   static const _outlineVariant = Color(0xFFC6C5D4);
   static const _textPrimary = Color(0xFF1B1C1C);
 
+  /// Builds the full-width outlined Google Sign-In button or a progress spinner when [isLoading] is true.
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -72,13 +79,16 @@ class GoogleSignInButton extends StatelessWidget {
 
 /// A subtle horizontal "OR" divider matching the Studexa form layout.
 class AuthDivider extends StatelessWidget {
+  /// Creates an [AuthDivider] with an optional center [label] (defaults to `'OR'`).
   const AuthDivider({super.key, this.label = 'OR'});
 
+  /// Text displayed between the left and right horizontal divider lines.
   final String label;
 
   static const _dividerColor = Color(0xFFC6C5D4);
   static const _labelColor = Color(0xFF767683);
 
+  /// Builds the centered label flanked by two expanded [Divider] lines.
   @override
   Widget build(BuildContext context) {
     return Row(

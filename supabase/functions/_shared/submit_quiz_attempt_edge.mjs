@@ -1,25 +1,38 @@
 import { PostgresStoreError, postgresClient } from "./postgres_rest.mjs";
 import { SupabaseIdentityError, verifySupabaseToken } from "./supabase_identity.mjs";
 
+// Standard CORS headers for student quiz attempt submission requests.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+/**
+ * Helper to return a JSON HTTP `Response` with `status` and CORS headers.
+ */
 const json = (status, body) => new Response(JSON.stringify(body), {
   status,
   headers: { ...CORS, "Content-Type": "application/json" },
 });
 
+/**
+ * Strips leading list prefixes (e.g., "A.", "1)", bullet symbols) and surrounding quotes from an expected answer.
+ */
 const cleanExpected = (value) => String(value ?? "").trim()
   .replace(/^([A-Za-z]{1,2}|\d{1,3})[.)\-:]\s+/, "")
   .replace(/^[-*•‣◦⁃∙]\s*/, "")
   .replace(/^["']|["']$/g, "").trim();
 
+/**
+ * Normalizes an answer string for case-insensitive and punctuation-insensitive comparison.
+ */
 const normalize = (value) => cleanExpected(value).toLowerCase()
   .replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
 
+/**
+ * Computes the Levenshtein edit distance between strings `left` and `right` for typo-tolerant grading.
+ */
 function distance(left, right) {
   if (left === right) return 0;
   if (!left.length) return right.length;
@@ -36,6 +49,10 @@ function distance(left, right) {
   return previous[right.length];
 }
 
+/**
+ * Checks whether a student's free-text response (`student`) matches `expected`, allowing small
+ * Levenshtein edit distances on longer words.
+ */
 function freeTextMatch(student, expected) {
   const actual = normalize(student);
   const target = normalize(expected);
@@ -45,6 +62,10 @@ function freeTextMatch(student, expected) {
   return distance(actual, target) <= allowed;
 }
 
+/**
+ * Scores an order-independent enumeration response by matching deduplicated `studentItems`
+ * against `expectedItems` and awarding proportional `points`.
+ */
 function scoreEnumeration(studentItems, expectedItems, points) {
   const remaining = [];
   for (const item of expectedItems) {
@@ -67,6 +88,10 @@ function scoreEnumeration(studentItems, expectedItems, points) {
   return expectedCount ? found / expectedCount * points : 0;
 }
 
+/**
+ * Grades all `questions` against a student's `answers` map and returns the total score,
+ * maximum points, percentage, and per-question breakdown.
+ */
 export function scoreQuiz(questions, answers) {
   let score = 0;
   let totalPoints = 0;
@@ -101,6 +126,9 @@ export function scoreQuiz(questions, answers) {
   return { score, totalPoints, percentage, breakdown };
 }
 
+/**
+ * Retrieves the Supabase service-role secret key from environment variables.
+ */
 function secretKey() {
   const keys = globalThis.Deno?.env.get("SUPABASE_SECRET_KEYS");
   if (keys) {
@@ -109,6 +137,9 @@ function secretKey() {
   return globalThis.Deno?.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 }
 
+/**
+ * Persists a scored student quiz attempt by calling the `studexa_save_scored_attempt` PostgreSQL RPC.
+ */
 async function saveAttempt(params, fetchImpl = fetch) {
   const url = globalThis.Deno?.env.get("SUPABASE_URL") || "";
   const key = secretKey();
@@ -129,6 +160,10 @@ async function saveAttempt(params, fetchImpl = fetch) {
   return Array.isArray(body) ? body[0] : body;
 }
 
+/**
+ * Main HTTP handler for the `submit-quiz-attempt` Edge Function.
+ * Authenticates the student, loads the target quiz, scores the submitted answers, and saves the attempt.
+ */
 export async function handleSubmitQuizAttempt(request, deps = {}) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (request.method !== "POST") return json(405, { error: "Use POST." });

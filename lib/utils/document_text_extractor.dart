@@ -313,6 +313,7 @@ class DocumentTextExtractor {
 
   /// Extracts text from decompressed PDF stream commands: (text) Tj, [(t) ... (ext)] TJ
   static void _extractTextFromPdfStreamContent(String content, StringBuffer buffer) {
+    // Parse TJ array operators that contain segmented strings and kerning adjustments.
     final arrayMatches = RegExp(r'\[(.*?)\]\s*TJ', dotAll: true).allMatches(content);
     for (final arrMatch in arrayMatches) {
       final inner = arrMatch.group(1) ?? '';
@@ -324,6 +325,7 @@ class DocumentTextExtractor {
       buffer.writeln();
     }
 
+    // Parse simple Tj string literal operators.
     final simpleMatches = RegExp(r'\(([^()]{2,})\)\s*Tj').allMatches(content);
     for (final m in simpleMatches) {
       final t = _unescapePdfString(m.group(1) ?? '');
@@ -333,6 +335,7 @@ class DocumentTextExtractor {
     }
   }
 
+  /// Unescapes standard PDF string escape sequences such as `\(`, `\)`, `\\`, and `\n`.
   static String _unescapePdfString(String input) {
     return input
         .replaceAll(r'\(', '(')

@@ -8,6 +8,7 @@ import 'login_screen.dart';
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
 
+  /// Builds the role selection screen with branding header and interactive cards for Teacher and Student.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -158,6 +159,7 @@ class _RoleCard extends StatelessWidget {
   final String subtitle;
   final VoidCallback onTap;
 
+  /// Builds the role selection screen with branding header and interactive cards for Teacher and Student.
   @override
   Widget build(BuildContext context) {
     return Container(

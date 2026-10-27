@@ -493,6 +493,7 @@ class PdfExportService {
     );
   }
 
+  /// Builds a styled header cell for the Teacher Answer Key table.
   pw.Widget _buildTableHeaderCell(
     String text,
     pw.Font boldFont, {
@@ -508,8 +509,11 @@ class PdfExportService {
     );
   }
 
+  /// Builds a single row in the Teacher Answer Key table displaying the question number,
+  /// question type, prompt, formatted expected answer(s), and point value.
   pw.TableRow _buildTableRow(QuizQuestion q, int index, pw.Font boldFont) {
     String answerDisplay;
+    // Format enumeration answers as a numbered list when available.
     if (q.type == QuizQuestionType.enumeration) {
       if (q.enumerationAnswers.isNotEmpty) {
         answerDisplay = q.enumerationAnswers

@@ -2,6 +2,9 @@
 
 // Port of functions/quiz_generator.js for the Supabase Deno runtime.
 // Keep grounding, prompt and repetition safeguards in sync with the legacy API.
+/**
+ * Domain error class thrown when quiz request validation, AI generation, or grounding checks fail.
+ */
 class QuizGenerationError extends Error {
   constructor(code, message) {
     super(message);
@@ -9,6 +12,7 @@ class QuizGenerationError extends Error {
   }
 }
 
+// Allowed question types and ordered fallback list of Gemini models to try.
 const TYPES = ["multiple_choice", "true_false", "fill_blank", "identification", "enumeration"];
 const DEFAULT_MODELS = [
   globalThis.Deno?.env.get("GEMINI_MODEL") || "gemini-3.5-flash-lite",
@@ -19,6 +23,9 @@ const DEFAULT_MODELS = [
   "gemini-3.6-flash",
   "gemini-flash-latest",
 ];
+/**
+ * Normalizes a string to lowercase, standardizes smart quotes/dashes, and collapses whitespace.
+ */
 const normalize = (value) =>
   (typeof value === "string" ? value : "")
     .toLowerCase()
@@ -28,11 +35,20 @@ const normalize = (value) =>
     .replace(/\s+/g, " ")
     .trim();
 
+/**
+ * Extracts all alphanumeric words (Unicode-aware) from a normalized string.
+ */
 const words = (value) => normalize(value).match(/[\p{L}\p{N}]+/gu) || [];
 const QUESTION_WORDS = new Set("a an the is are was were what which who where when why how does do did of to in on for from by with and or this that these those name identify term called following correct true false statement question".split(" "));
+/**
+ * Returns the set of meaningful content words (excluding short words and common question stop-words).
+ */
 function contentWords(value) {
   return new Set(words(value).filter((word) => word.length > 2 && !QUESTION_WORDS.has(word)));
 }
+/**
+ * Computes Jaccard similarity between the content words of strings `a` and `b`.
+ */
 function similarity(a, b) {
   const left = contentWords(a);
   const right = contentWords(b);
@@ -40,12 +56,19 @@ function similarity(a, b) {
   const shared = [...left].filter((word) => right.has(word)).length;
   return shared / (left.size + right.size - shared);
 }
+/**
+ * Extracts the canonical answer text from a question object `q` for duplicate-fact comparison.
+ */
 function answerText(q) {
   if (q.type === "true_false") return "";
   if (q.type === "multiple_choice") return String(q.correctAnswer || "").replace(/^[A-D][.)]\s*/i, "");
   if (q.type === "enumeration") return (q.enumerationAnswers || []).map(normalize).sort().join(" ");
   return q.correctAnswer || "";
 }
+/**
+ * Checks whether `candidate` tests the same underlying fact as `existing` by comparing
+ * normalized question stems, answers, and source excerpt overlap.
+ */
 function isRepeatedFact(candidate, existing) {
   const stemA = normalize(candidate.question).replace(/[^\p{L}\p{N} ]/gu, "");
   const stemB = normalize(existing.question).replace(/[^\p{L}\p{N} ]/gu, "");
@@ -63,6 +86,10 @@ const MCQ_STOP_WORDS = new Set((
   "has have had do does did using use used through"
 ).split(" "));
 
+/**
+ * Verifies that `excerpt` is at least 15 characters and appears verbatim (or ignoring punctuation)
+ * within the `source` study material text.
+ */
 function isExcerptGrounded(excerpt, source) {
   if (typeof excerpt !== "string" || typeof source !== "string") return false;
   const normExcerpt = normalize(excerpt);
@@ -76,6 +103,10 @@ function isExcerptGrounded(excerpt, source) {
   return false;
 }
 
+/**
+ * Checks that a multiple-choice `answer` is lexically grounded in either the full `sourceWords`
+ * or the question's supporting `excerpt`.
+ */
 function isSupportedChoice(answer, sourceWords, excerpt) {
   const answerWords = words(answer);
   const phrase = answerWords.join(" ");
@@ -94,6 +125,10 @@ function isSupportedChoice(answer, sourceWords, excerpt) {
   return keyTerms.length > 0 && supported >= Math.max(Math.min(2, keyTerms.length), Math.ceil(keyTerms.length / 2));
 }
 
+/**
+ * Validates that `extractedText` has sufficient readable content and that `questionCount`
+ * and `questionTypes` are within supported bounds.
+ */
 function validateRequest({ extractedText, questionTypes, questionCount }) {
   if (typeof extractedText !== "string" || extractedText.trim().length < 25 ||
       extractedText.trim().split(/\s+/).length < 5) {
@@ -112,6 +147,9 @@ function validateRequest({ extractedText, questionTypes, questionCount }) {
   }
 }
 
+/**
+ * Builds the Gemini structured-output JSON schema enforcing question fields and allowed `questionTypes`.
+ */
 function responseSchema(questionTypes, questionCount) {
   return {
     type: "OBJECT", required: ["questions"], properties: {
@@ -132,6 +170,10 @@ function responseSchema(questionTypes, questionCount) {
   };
 }
 
+/**
+ * Validates raw AI-generated questions against structural rules, source-excerpt grounding,
+ * answer support in the material text, and optional custom `rejectQuestion` filters.
+ */
 function validateQuestions(raw, request, rejectQuestion = () => false) {
   const invalid = () => { throw new QuizGenerationError("data-loss", "The AI returned incomplete or unsupported questions. Try again, or select fewer questions."); };
   if (!Array.isArray(raw) || raw.length !== request.questionCount) invalid();
@@ -182,6 +224,10 @@ function validateQuestions(raw, request, rejectQuestion = () => false) {
 
 const BATCH_SIZE = 10;
 
+/**
+ * Calls the Gemini `generateContent` API for a single batch of questions, automatically rotating
+ * across `candidateModels` on quota exhaustion (429), transient unavailability (503), or data loss.
+ */
 async function generateSingleBatch(request, {
   apiKey, candidateModels, fetchImpl, timeoutMs, avoidQuestions,
 }) {
@@ -279,6 +325,10 @@ ${!isActual && sourceQuizContext ? "This is PRACTICE: cover the reference Actual
   throw lastError || new QuizGenerationError("unavailable", "Could not reach any AI model. Please try again shortly.");
 }
 
+/**
+ * Normalizes true/false and multiple-choice option formatting on a raw AI question object
+ * before strict validation runs.
+ */
 function sanitizeQuestion(q) {
   if (!q || typeof q !== "object") return null;
   // Sanitize true_false
@@ -315,6 +365,10 @@ function sanitizeQuestion(q) {
   return q;
 }
 
+/**
+ * Generates and validates up to `request.questionCount` distinct, grounded quiz questions
+ * across one or more batches, ensuring all selected `questionTypes` are represented.
+ */
 async function generateQuizQuestions(request, {
   apiKey,
   model,

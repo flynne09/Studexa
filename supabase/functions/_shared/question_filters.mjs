@@ -1,4 +1,8 @@
 // Keep these exclusions aligned with the legacy generator.
+/**
+ * Detects whether a generated question asks about superficial table formatting
+ * (such as column letters, row numbers, or generic header names) rather than substantive content.
+ */
 export function isTableHeaderQuestion(q) {
   if (!q) return false;
   const prompt = (q.question || "").toLowerCase().trim();
@@ -9,6 +13,10 @@ export function isTableHeaderQuestion(q) {
   return /^(?:column\s+[a-z0-9]+|header\s+[a-z0-9]+|row\s+[a-z0-9]+|col\s+[a-z0-9]+|attribute|attributes|value|values|field|fields|no\.?|num\.?|number|description|remarks|category|type)$/i.test(answer);
 }
 
+/**
+ * Detects whether a generated question tests non-academic boilerplate or document metadata
+ * (such as copyright notices, author/instructor names, emails, syllabus logistics, or slide/page numbers).
+ */
 export function isFillerOrBoilerplateQuestion(q) {
   if (!q) return false;
   const prompt = (q.question || "").toLowerCase().trim();

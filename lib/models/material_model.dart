@@ -1,32 +1,76 @@
 /// Represents a study material tracked in Supabase Postgres and Storage.
 class MaterialModel {
+  /// Unique UUID of the material record.
   final String id;
+
+  /// User ID of the teacher who uploaded this study material.
   final String teacherId;
+
+  /// ID of the class this material belongs to.
   final String classId;
+
+  /// Original file name of the uploaded document (e.g., "lecture_01.pdf").
   final String fileName;
+
+  /// Normalized file extension ('pdf', 'pptx', or 'docx').
   final String fileType; // 'pdf' | 'pptx' | 'docx'
+
+  /// Object storage key where the raw file bytes reside in Supabase Storage.
   final String
   fileRef; // Storage path e.g. uploads/{teacherId}/{materialId}/{fileName}
+
+  /// Storage backend identifier (defaults to 'supabase').
   final String storageProvider;
+
+  /// Bucket name in Supabase Storage where the file is stored.
   final String? storageBucket;
+
+  /// Current progress state of the binary file upload to storage.
   final String? storageUploadStatus; // 'uploading' | 'completed' | 'failed'
+
+  /// Optional legacy direct download URL if available.
   final String? downloadUrl; // Legacy direct download URL
+
+  /// Optional storage path for a converted PDF preview of the document.
   final String?
   convertedPdfRef; // Storage path of converted preview PDF (uploads/{teacherId}/{materialId}/preview.pdf)
+
+  /// Optional download URL for the converted PDF preview.
   final String? convertedPdfUrl; // Download URL of converted preview PDF
+
+  /// Status of converting non-PDF documents to PDF for preview.
   final String?
   conversionStatus; // 'pending' | 'completed' | 'failed' | 'unsupported'
+
+  /// Timestamp when PDF conversion completed.
   final DateTime? convertedAt;
+
+  /// Text extraction status ('pending', 'processing', 'ready', or 'failed').
   final String status; // 'pending' | 'processing' | 'ready' | 'failed'
+
+  /// Machine-readable error code explaining why text extraction failed.
   final String?
   errorReason; // 'no_extractable_text' | 'unsupported_format' | 'parse_error' | etc.
+
+  /// Plain text extracted from the document, used as source content for AI quiz generation.
   final String extractedText;
+
+  /// Timestamp when the material record was created.
   final DateTime createdAt;
+
+  /// Timestamp when on-device text extraction finished.
   final DateTime? extractedAt;
+
+  /// Size of the uploaded file in bytes.
   final int? fileSizeBytes;
+
+  /// Whether the teacher has explicitly confirmed and posted this material so students can view it.
   final bool isPosted;
+
+  /// Timestamp when the material was published/posted to the class.
   final DateTime? postedAt;
 
+  /// Creates a [MaterialModel] instance representing an uploaded study document.
   const MaterialModel({
     required this.id,
     required this.teacherId,
@@ -52,12 +96,23 @@ class MaterialModel {
     this.postedAt,
   });
 
+  /// Returns `true` when text extraction succeeded and the material is ready for quiz generation.
   bool get isReady => status == 'ready';
+
+  /// Returns `true` while text extraction is still pending or in progress.
   bool get isProcessing => status == 'processing' || status == 'pending';
+
+  /// Returns `true` if text extraction or processing failed.
   bool get hasFailed => status == 'failed';
+
+  /// Returns `true` while the binary file is actively uploading to Supabase Storage.
   bool get isUploadInProgress => storageUploadStatus == 'uploading';
+
+  /// Returns `true` once the binary file upload to Supabase Storage has finished.
   bool get isUploadCompleted =>
       storageUploadStatus == 'completed' || storageUploadStatus == null;
+
+  /// Returns `true` when the material is both extracted (`isReady`) and completely uploaded (`isUploadCompleted`), allowing the teacher to post it to students.
   bool get canBePosted => isReady && isUploadCompleted;
 
   /// In-app preview availability
@@ -65,7 +120,11 @@ class MaterialModel {
       conversionStatus == 'completed' &&
       ((convertedPdfUrl != null && convertedPdfUrl!.isNotEmpty) ||
           (convertedPdfRef != null && convertedPdfRef!.isNotEmpty));
+
+  /// Returns `true` if a PDF preview conversion is currently queued.
   bool get isConverting => conversionStatus == 'pending';
+
+  /// Returns `true` if PDF preview conversion failed.
   bool get conversionFailed => conversionStatus == 'failed';
 
   /// Human-readable explanation of error reasons matching Cloud Function codes
@@ -202,6 +261,7 @@ class MaterialModel {
     };
   }
 
+  /// Serializes this [MaterialModel] into snake_case keys matching the Supabase `public.materials` table.
   Map<String, dynamic> toDatabaseMap() {
     return {
       'teacher_id': teacherId,
@@ -233,17 +293,20 @@ class MaterialModel {
 
   /// Construct from either database or domain map keys.
   factory MaterialModel.fromMap(Map<String, dynamic> map, String docId) {
+    // Parses a required timestamp string, defaulting to DateTime.now() if missing or invalid.
     DateTime parseTimestamp(dynamic val) {
       if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
       return DateTime.now();
     }
 
+    // Parses a nullable timestamp string into a DateTime or null.
     DateTime? parseOptionalTimestamp(dynamic val) {
       if (val == null) return null;
       if (val is String) return DateTime.tryParse(val);
       return null;
     }
 
+    // Normalize boolean flags from Postgres booleans, strings, or integers.
     final rawIsPosted = map['is_posted'] ?? map['isPosted'];
     final isPostedBool =
         rawIsPosted == true || rawIsPosted == 'true' || rawIsPosted == 1;

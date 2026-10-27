@@ -41,6 +41,8 @@ class TeacherClassDetailsScreen extends StatefulWidget {
       _TeacherClassDetailsScreenState();
 }
 
+/// State for [TeacherClassDetailsScreen] managing the 3-tab controller (Materials, Quizzes, Students),
+/// real-time data streams for the class, material inspection/posting actions, and navigation.
 class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     with SingleTickerProviderStateMixin {
   static const _primaryNavy = AppTheme.primaryNavy;
@@ -67,6 +69,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     _initStreams(widget.classModel.id);
   }
 
+  /// Subscribes to live streams for the class metadata, study materials, quizzes, and student roster.
   void _initStreams(String classId) {
     _classStream =
         widget.initialClassStream ?? _classService.streamClass(classId);
@@ -83,6 +86,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
   @override
   void didUpdateWidget(covariant TeacherClassDetailsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Rebind streams if the widget is updated with a different class ID.
     if (oldWidget.classModel.id != widget.classModel.id) {
       _initStreams(widget.classModel.id);
     }
@@ -94,6 +98,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     super.dispose();
   }
 
+  /// Copies the class join code to the system clipboard and displays a confirmation toast.
   void _copyJoinCode(String code) {
     Clipboard.setData(ClipboardData(text: code));
     AppFeedback.success(
@@ -104,6 +109,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     );
   }
 
+  /// Navigates to [UploadGenerateQuizScreen] locked to [liveClass].
   void _openUploadScreen(ClassModel liveClass) {
     Navigator.push(
       context,
@@ -117,6 +123,8 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     );
   }
 
+  /// Displays a bottom sheet with extraction details, text preview, viewing, quiz generation,
+  /// posting/unposting, and deletion actions for a selected [material].
   void _showMaterialDetails(MaterialModel material) {
     showModalBottomSheet(
       context: context,
@@ -533,6 +541,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     );
   }
 
+  /// Builds a color-coded badge indicating the file extension (e.g., PDF, PPTX, DOCX).
   Widget _buildFileTypeBadge(String ext) {
     Color bg = Colors.blue;
     String label = ext.toUpperCase();
@@ -559,6 +568,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     );
   }
 
+  /// Formats a [DateTime] into a human-friendly relative timestamp (e.g., '5m ago', '2d ago') or date string.
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
@@ -575,6 +585,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     }
   }
 
+  /// Returns a subtitle string showing either when [mat] was posted to the class or when it was uploaded.
   String _formatMaterialSubtitleDate(MaterialModel mat) {
     if (mat.isPosted && mat.postedAt != null) {
       return 'Posted ${_formatDate(mat.postedAt!)}';
@@ -582,6 +593,8 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     return 'Uploaded ${_formatDate(mat.createdAt)}';
   }
 
+  /// Builds a status chip reflecting whether the material is uploading, processing text,
+  /// ready (draft or posted), or failed extraction.
   Widget _buildStatusChip(MaterialModel material) {
     if (material.isUploadInProgress) {
       return Container(
@@ -1353,6 +1366,7 @@ class _TeacherClassDetailsScreenState extends State<TeacherClassDetailsScreen>
     );
   }
 
+  /// Builds a small badge chip for a quiz list item (indicating type, status, or generation source).
   Widget _buildQuizBadge({required String label, required Color color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),

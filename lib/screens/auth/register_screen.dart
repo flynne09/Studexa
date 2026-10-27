@@ -26,6 +26,8 @@ class RegisterScreen extends StatefulWidget {
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
+/// State for [RegisterScreen] managing registration form inputs, role selection toggle,
+/// client-side validation, and account creation via email/password or Google OAuth.
 class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -54,6 +56,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  /// Validates all registration fields (name, email format, password length and match),
+  /// creates the account via [AuthService.registerWithEmail], and navigates to the home screen
+  /// (or prompts for email verification if required by Supabase).
   Future<void> _handleRegister() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
@@ -150,6 +155,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  /// Initiates Google OAuth registration/sign-in using the currently selected role (`_selectedRole`).
   Future<void> _handleGoogleSignIn() async {
     setState(() {
       _isLoading = true;
@@ -198,6 +204,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  /// Displays a standardized error feedback message when account creation fails.
   void _showErrorSnackBar(String message) {
     AppFeedback.error(context, message, title: 'Unable to create account');
   }

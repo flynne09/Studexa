@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 /// Designed to be self-contained, high-resolution at any scale, and require no
 /// external assets or network requests.
 class GoogleLogo extends StatelessWidget {
+  /// Creates a [GoogleLogo] with the given square [size] in logical pixels.
   const GoogleLogo({super.key, this.size = 20});
 
+  /// Width and height of the rendered Google logo.
   final double size;
 
+  /// Builds a [CustomPaint] canvas that draws the four-color Google 'G' vector icon.
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
@@ -18,6 +21,7 @@ class GoogleLogo extends StatelessWidget {
   }
 }
 
+/// Custom vector painter that draws each colored arc of the Google 'G' emblem.
 class _GoogleLogoPainter extends CustomPainter {
   const _GoogleLogoPainter();
 
@@ -27,6 +31,7 @@ class _GoogleLogoPainter extends CustomPainter {
   static const _yellow = Color(0xFFFBBC05);
   static const _red = Color(0xFFEA4335);
 
+  /// Scales the 48x48 reference coordinate system to the target [size] and draws all four color paths.
   @override
   void paint(Canvas canvas, Size size) {
     // Original SVG coordinate space is 48x48

@@ -24,6 +24,8 @@ class TeacherResultsScreen extends StatefulWidget {
   State<TeacherResultsScreen> createState() => _TeacherResultsScreenState();
 }
 
+/// State for [TeacherResultsScreen] managing filter selection ('All', 'Submitted', 'Pending')
+/// and displaying real-time student membership and quiz status cards.
 class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
@@ -35,6 +37,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
   final ClassService _classService = ClassService();
   String _selectedFilter = 'All';
 
+  /// Shows a modal bottom sheet with basic enrollment details and quiz attempt sync info for [student].
   void _showStudentDetail(ClassMember student) {
     showModalBottomSheet(
       context: context,
@@ -378,6 +381,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
     );
   }
 
+  /// Builds a centered empty-state view when no class is selected or no students are enrolled.
   Widget _buildEmptyResultsView(String title, String subtitle) {
     return Center(
       child: Padding(
@@ -420,6 +424,7 @@ class _TeacherResultsScreenState extends State<TeacherResultsScreen> {
   }
 }
 
+/// Summary card widget displaying a key class metric (such as enrolled student count or submission count).
 class _MetricCard extends StatelessWidget {
   const _MetricCard({
     required this.label,
@@ -485,6 +490,7 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
+/// Selectable pill chip used to filter student results by status ('All', 'Submitted', 'Pending').
 class _FilterChip extends StatelessWidget {
   const _FilterChip({
     required this.label,

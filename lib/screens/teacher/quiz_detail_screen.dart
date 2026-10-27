@@ -29,6 +29,8 @@ class QuizDetailScreen extends StatefulWidget {
   State<QuizDetailScreen> createState() => _QuizDetailScreenState();
 }
 
+/// State for [QuizDetailScreen] that manages quiz metadata, question editing,
+/// shortfall supplementation, publishing/finalizing, deletion, and PDF exam export.
 class _QuizDetailScreenState extends State<QuizDetailScreen> {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
@@ -50,17 +52,20 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
   void initState() {
     super.initState();
     _currentQuiz = widget.quiz;
+    // Use provided class details if available; otherwise fetch them asynchronously.
     if (widget.initialClass != null) {
       _className = widget.initialClass?.name;
       _teacherName = widget.initialClass?.teacherName;
     } else {
       _loadClassDetails();
     }
+    // If generation produced fewer questions than requested, prompt the teacher after first frame.
     if (widget.showShortfallPrompt && _currentQuiz.hasGenerationShortfall) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _showShortfallDialog();
       });
     }
+    // Notify the teacher if the Studexa fallback key was used during generation.
     if (_currentQuiz.backupUsed) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) showGeminiBackupFeedback(context, _currentQuiz);
@@ -68,6 +73,8 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Displays a modal dialog when the generated draft has fewer distinct questions than requested,
+  /// offering options to keep the current draft, add a manual question, or attempt one extra AI pass.
   Future<void> _showShortfallDialog() async {
     if (!_currentQuiz.hasGenerationShortfall || !mounted) return;
     final choice = await showDialog<String>(
@@ -106,6 +113,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Requests one additional AI generation pass to fill remaining missing questions in a draft quiz.
   Future<void> _generateMore() async {
     if (_isSaving ||
         !_currentQuiz.hasGenerationShortfall ||
@@ -144,6 +152,8 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Opens [ManualQuestionDialog] to let the teacher author a custom question,
+  /// checks for high similarity against existing questions, and appends it to the draft.
   Future<void> _addManualQuestion() async {
     if (_isSaving || !_currentQuiz.isDraft) return;
     final question = await showDialog<QuizQuestion>(
@@ -151,6 +161,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
       builder: (_) => const ManualQuestionDialog(),
     );
     if (question == null || !mounted) return;
+    // Check if the new question is too similar to an existing question in the draft.
     final similar = _currentQuiz.questions.any((existing) {
       final overlap = QuizService.tokenJaccardSimilarity(
         question.question,
@@ -212,6 +223,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Loads class name and teacher name for PDF header metadata when not passed via [widget.initialClass].
   Future<void> _loadClassDetails() async {
     if (widget.initialClass != null) return;
     if (_currentQuiz.classId.isNotEmpty) {
@@ -225,6 +237,8 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Confirms with the teacher, validates all questions, and publishes a practice quiz
+  /// so enrolled students can see and attempt it.
   Future<void> _publishQuiz() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -296,6 +310,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Validates and marks an Actual Quiz (exam) as finalized so it serves as the official reference exam.
   Future<void> _finalizeQuiz() async {
     final finalizeValidationError = QuizService.validateQuizQuestions(
       _currentQuiz.questions,
@@ -334,6 +349,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Opens a dialog allowing the teacher to rename the quiz title and persists the change.
   Future<void> _editTitle() async {
     final titleController = TextEditingController(text: _currentQuiz.title);
     final newTitle = await showDialog<String>(
@@ -381,6 +397,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     await _quizService.updateQuiz(updated);
   }
 
+  /// Opens a dialog to edit the prompt and correct answer of the question at [index].
   Future<void> _editQuestion(int index) async {
     final q = _currentQuiz.questions[index];
     final questionTextController = TextEditingController(text: q.question);
@@ -453,6 +470,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     await _quizService.updateQuiz(updatedQuiz);
   }
 
+  /// Prompts the teacher for confirmation and permanently deletes the quiz from the database.
   Future<void> _deleteQuiz() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -514,6 +532,8 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     }
   }
 
+  /// Shows print options (such as whether to append the teacher answer key) and invokes
+  /// [PdfExportService] to generate and print/share a formatted academic exam PDF.
   Future<void> _exportOrPrintExam() async {
     bool includeKey = true;
 
@@ -916,6 +936,7 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     );
   }
 
+  /// Builds the small pill-shaped status/metadata badge used in the quiz header banner.
   Widget _buildBadge({required String label, required Color color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -935,6 +956,8 @@ class _QuizDetailScreenState extends State<QuizDetailScreen> {
     );
   }
 
+  /// Builds an individual question card displaying its index, question type, point value,
+  /// prompt text, answer choices/expected key, and optional explanation context.
   Widget _buildQuestionCard(QuizQuestion q, int index) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),

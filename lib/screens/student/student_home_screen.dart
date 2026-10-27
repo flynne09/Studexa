@@ -26,6 +26,8 @@ class StudentHomeScreen extends StatefulWidget {
   State<StudentHomeScreen> createState() => _StudentHomeScreenState();
 }
 
+/// State for [StudentHomeScreen] managing the student's profile, sign-out flow,
+/// and real-time stream of enrolled classes.
 class _StudentHomeScreenState extends State<StudentHomeScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
@@ -45,6 +47,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     }
   }
 
+  /// Loads the currently signed-in student's profile from [AuthService] if not passed via [StudentHomeScreen.initialProfile].
   Future<void> _loadStudentProfile() async {
     final profile = await AuthService().getCurrentUserProfile();
     if (mounted && profile != null) {
@@ -54,6 +57,7 @@ class _StudentHomeScreenState extends State<StudentHomeScreen> {
     }
   }
 
+  /// Prompts the student to confirm sign-out, signs out via [AuthService], and returns to [RoleSelectionScreen].
   Future<void> _handleLogout() async {
     final confirm = await showStudexaLogoutDialog(context);
 

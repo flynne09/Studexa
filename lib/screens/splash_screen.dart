@@ -17,6 +17,8 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
+/// State for [SplashScreen] that orchestrates the entrance animations
+/// and checks the user's authentication session to route to the appropriate home screen.
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
@@ -75,6 +77,8 @@ class _SplashScreenState extends State<SplashScreen>
 
   bool _isNavigating = false;
 
+  /// Checks if a user session and profile already exist: routes Teachers to [TeacherHomeScreen],
+  /// Students to [StudentHomeScreen], or unauthenticated users to [RoleSelectionScreen].
   Future<void> _navigateToApp() async {
     if (!mounted || _isNavigating) return;
     _isNavigating = true;

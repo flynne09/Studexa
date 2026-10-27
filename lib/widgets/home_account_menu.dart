@@ -4,6 +4,7 @@ import '../theme/app_theme.dart';
 
 /// Shared profile menu used by the teacher and student dashboards.
 class HomeAccountMenu extends StatelessWidget {
+  /// Creates a [HomeAccountMenu] avatar popup with account details, optional Gemini settings, and logout action.
   const HomeAccountMenu({
     super.key,
     required this.displayName,
@@ -15,14 +16,28 @@ class HomeAccountMenu extends StatelessWidget {
     this.onGeminiSettings,
   });
 
+  /// User's full display name shown in the popup header.
   final String displayName;
+
+  /// User's email address shown below their display name.
   final String email;
+
+  /// Role badge label (e.g., `'Teacher'` or `'Student'`).
   final String roleLabel;
+
+  /// Widget key assigned to the logout menu item for testing and accessibility.
   final Key logoutItemKey;
+
+  /// Callback triggered when the user selects "Log Out".
   final VoidCallback onLogout;
+
+  /// Optional widget key for the Gemini API Settings menu item (Teacher only).
   final Key? geminiSettingsItemKey;
+
+  /// Optional callback to open Gemini API Settings (when non-null, the menu item is rendered).
   final VoidCallback? onGeminiSettings;
 
+  /// Computes the uppercase initial letter displayed inside the circular avatar button.
   String get _initial {
     final trimmedName = displayName.trim();
     return trimmedName.isEmpty
@@ -30,6 +45,7 @@ class HomeAccountMenu extends StatelessWidget {
         : trimmedName[0].toUpperCase();
   }
 
+  /// Builds the circular avatar trigger and the popup menu containing profile details, settings, and logout.
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
@@ -209,6 +225,8 @@ class HomeAccountMenu extends StatelessWidget {
   }
 }
 
+/// Displays a confirmation dialog asking the user to confirm logging out of Studexa.
+/// Returns `true` if the user confirms logout, or `false` if canceled/dismissed.
 Future<bool> showStudexaLogoutDialog(BuildContext context) async {
   final confirmed = await showDialog<bool>(
     context: context,
@@ -248,6 +266,7 @@ Future<bool> showStudexaLogoutDialog(BuildContext context) async {
   return confirmed ?? false;
 }
 
+/// Circular red logout icon badge rendered in the title of [showStudexaLogoutDialog].
 class _LogoutDialogIcon extends StatelessWidget {
   const _LogoutDialogIcon();
 

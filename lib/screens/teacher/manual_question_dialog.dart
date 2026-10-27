@@ -11,12 +11,18 @@ class ManualQuestionDialog extends StatefulWidget {
   State<ManualQuestionDialog> createState() => _ManualQuestionDialogState();
 }
 
+/// State for [ManualQuestionDialog] managing input controllers, question type selection,
+/// validation rules per question type, and constructing the resulting [QuizQuestion].
 class _ManualQuestionDialogState extends State<ManualQuestionDialog> {
+  // Currently selected question format (defaults to multiple choice).
   QuizQuestionType _type = QuizQuestionType.multipleChoice;
+  // Text controllers for question prompt, single answer, and optional explanation.
   final _prompt = TextEditingController();
   final _answer = TextEditingController();
   final _explanation = TextEditingController();
+  // Four controllers for Multiple Choice options A-D.
   final _options = List.generate(4, (_) => TextEditingController());
+  // Up to five controllers for Enumeration expected items.
   final _items = List.generate(5, (_) => TextEditingController());
   int _correctOption = 0;
   bool _trueAnswer = true;
@@ -24,6 +30,7 @@ class _ManualQuestionDialogState extends State<ManualQuestionDialog> {
 
   @override
   void dispose() {
+    // Dispose all text editing controllers when the dialog closes.
     _prompt.dispose();
     _answer.dispose();
     _explanation.dispose();
@@ -33,6 +40,8 @@ class _ManualQuestionDialogState extends State<ManualQuestionDialog> {
     super.dispose();
   }
 
+  /// Validates the form inputs according to the selected [_type] and closes
+  /// the dialog returning a newly created manual [QuizQuestion] if valid.
   void _save() {
     final prompt = _prompt.text.trim();
     if (prompt.isEmpty) {
@@ -46,6 +55,7 @@ class _ManualQuestionDialogState extends State<ManualQuestionDialog> {
     double points = 1;
     String? error;
 
+    // Validate and format answer data based on the specific question type rules.
     switch (_type) {
       case QuizQuestionType.multipleChoice:
         final values = _options.map((controller) => controller.text.trim()).toList();
@@ -84,6 +94,7 @@ class _ManualQuestionDialogState extends State<ManualQuestionDialog> {
       setState(() => _error = error);
       return;
     }
+    // Return the validated manual question back to the caller screen.
     Navigator.pop(context, QuizQuestion(
       id: '',
       type: _type,
@@ -97,6 +108,7 @@ class _ManualQuestionDialogState extends State<ManualQuestionDialog> {
     ));
   }
 
+  /// Builds the dialog UI with dynamic input fields tailored to the chosen question type.
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

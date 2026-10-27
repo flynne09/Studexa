@@ -1,18 +1,42 @@
 /// Represents a student's graded attempt for a practice quiz stored under `attempts/{attemptId}`.
 class QuizAttemptModel {
+  /// Unique UUID of the quiz attempt.
   final String id;
+
+  /// ID of the quiz that was taken.
   final String quizId;
+
+  /// Optional ID of the class assignment associated with this attempt.
   final String? assignmentId;
+
+  /// ID of the class in which the attempt was submitted.
   final String classId;
+
+  /// User ID of the student who submitted the attempt.
   final String studentId;
+
+  /// Display name of the student at submission time.
   final String studentName;
+
+  /// Map of question IDs to the student's submitted answers.
   final Map<String, dynamic> answers;
+
+  /// Total points earned by the student on this attempt.
   final double score;
+
+  /// Maximum possible points for the quiz at the time of submission.
   final double totalPoints;
+
+  /// Percentage score (`0.0` to `100.0`) achieved on the attempt.
   final double percentage;
+
+  /// Timestamp when the attempt was graded and submitted.
   final DateTime? submittedAt;
+
+  /// Detailed per-question grading breakdown (correctness, earned points, feedback).
   final List<Map<String, dynamic>> breakdown;
 
+  /// Creates a [QuizAttemptModel] instance.
   const QuizAttemptModel({
     required this.id,
     required this.quizId,
@@ -28,32 +52,43 @@ class QuizAttemptModel {
     this.breakdown = const [],
   });
 
+  /// Formats the percentage as a whole number with a `%` suffix (e.g., "85%").
   String get formattedPercentage => '${percentage.toStringAsFixed(0)}%';
+
+  /// Formats the earned score relative to total points (e.g., "8.5 / 10").
   String get formattedScore =>
       '${score.toStringAsFixed(1)} / ${totalPoints.toStringAsFixed(0)}';
+
+  /// Returns `true` if the student achieved the passing threshold of 70% or higher.
   bool get isPassed => percentage >= 70.0;
 
+  /// Constructs a [QuizAttemptModel] from a database (snake_case) or domain (camelCase) map.
   factory QuizAttemptModel.fromMap(
     Map<String, dynamic> map, {
     String id = '',
   }) {
+    // Helper to parse optional ISO-8601 timestamp strings.
     DateTime? parseTimestamp(dynamic val) {
       if (val is String) return DateTime.tryParse(val);
       return null;
     }
 
+    // Extract numeric score safely.
     final rawScore = map['score'];
     double parsedScore = 0.0;
     if (rawScore is num) parsedScore = rawScore.toDouble();
 
+    // Extract total possible points safely.
     final rawTotal = map['total_points'] ?? map['totalPoints'];
     double parsedTotal = 0.0;
     if (rawTotal is num) parsedTotal = rawTotal.toDouble();
 
+    // Compute or extract percentage score.
     final rawPercentage = map['percentage'];
     double parsedPercentage = parsedTotal > 0 ? (parsedScore / parsedTotal * 100) : 0.0;
     if (rawPercentage is num) parsedPercentage = rawPercentage.toDouble();
 
+    // Parse per-question grading breakdown items.
     final rawBreakdown = map['breakdown'];
     List<Map<String, dynamic>> parsedBreakdown = [];
     if (rawBreakdown is List) {
@@ -66,6 +101,7 @@ class QuizAttemptModel {
       }
     }
 
+    // Parse submitted student answers map.
     final rawAnswers = map['answers'];
     Map<String, dynamic> parsedAnswers = {};
     if (rawAnswers is Map<String, dynamic>) {
@@ -90,6 +126,7 @@ class QuizAttemptModel {
     );
   }
 
+  /// Serializes this [QuizAttemptModel] to a camelCase map for domain use.
   Map<String, dynamic> toMap() {
     return {
       'quizId': quizId,
@@ -107,6 +144,7 @@ class QuizAttemptModel {
     };
   }
 
+  /// Serializes this [QuizAttemptModel] to a snake_case map for the `public.quiz_attempts` table.
   Map<String, dynamic> toDatabaseMap() {
     return {
       'quiz_id': quizId,

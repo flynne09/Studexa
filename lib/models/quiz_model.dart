@@ -6,6 +6,7 @@ enum QuizQuestionType {
   identification,
   enumeration;
 
+  /// Returns the canonical snake_case string identifier stored in Postgres and Edge Functions.
   String get value {
     switch (this) {
       case QuizQuestionType.multipleChoice:
@@ -21,6 +22,7 @@ enum QuizQuestionType {
     }
   }
 
+  /// Returns the user-facing label for displaying the question type in the UI.
   String get displayName {
     switch (this) {
       case QuizQuestionType.multipleChoice:
@@ -36,6 +38,7 @@ enum QuizQuestionType {
     }
   }
 
+  /// Parses a string representation into a [QuizQuestionType], defaulting to [QuizQuestionType.multipleChoice].
   static QuizQuestionType fromString(String? typeStr) {
     if (typeStr == null || typeStr.isEmpty) {
       return QuizQuestionType.multipleChoice;
@@ -63,16 +66,34 @@ enum QuizQuestionType {
 
 /// Represents a single question within a quiz.
 class QuizQuestion {
+  /// Unique identifier of the question within the quiz (e.g., "q_1").
   final String id;
+
+  /// Question format (Multiple Choice, True/False, Fill-in-the-Blank, Identification, or Enumeration).
   final QuizQuestionType type;
+
+  /// Prompt or stem text presented to the student.
   final String question;
+
+  /// Choice options for Multiple Choice or True/False questions.
   final List<String> options;
+
+  /// Canonical correct answer for single-answer question types.
   final String correctAnswer;
+
+  /// List of expected valid answers for Enumeration questions.
   final List<String> enumerationAnswers;
+
+  /// Explanation or rationale shown during review after grading.
   final String explanation;
+
+  /// Point value awarded for answering the question completely and accurately.
   final double points;
+
+  /// Source of the question ('gemini', 'fallback', or 'manual').
   final String origin;
 
+  /// Creates a [QuizQuestion] instance.
   const QuizQuestion({
     required this.id,
     required this.type,
@@ -85,6 +106,7 @@ class QuizQuestion {
     this.origin = 'gemini',
   });
 
+  /// Constructs a [QuizQuestion] from a decoded JSON/database map.
   factory QuizQuestion.fromMap(Map<String, dynamic> map, {int index = 0}) {
     final rawOptions = map['options'];
     List<String> parsedOptions = [];
@@ -117,6 +139,7 @@ class QuizQuestion {
     );
   }
 
+  /// Serializes this [QuizQuestion] to a JSON-compatible map for storage in `quizzes.questions`.
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -131,6 +154,7 @@ class QuizQuestion {
     };
   }
 
+  /// Creates a copy of this [QuizQuestion] with specified fields replaced.
   QuizQuestion copyWith({
     String? id,
     QuizQuestionType? type,
@@ -158,29 +182,73 @@ class QuizQuestion {
 
 /// Represents a generated or authored quiz document stored under `quizzes/{quizId}`.
 class QuizModel {
+  /// Unique UUID of the quiz record.
   final String id;
+
+  /// ID of the class this quiz belongs to.
   final String classId;
+
+  /// User ID of the teacher who owns this quiz.
   final String teacherId;
+
+  /// ID of the study material from which this quiz was generated.
   final String materialId;
+
+  /// Quiz category: `'actual'` (teacher-only exam master) or `'practice'` (student-facing review quiz).
   final String type; // "actual" | "practice"
+
+  /// Display title of the quiz.
   final String title;
+
+  /// Current workflow status (`'draft'`, `'finalized'`, `'published'`, or `'closed'`).
   final String status; // "draft" | "finalized" | "published" | "closed"
+
+  /// Method used to produce the quiz (`'gemini'`, `'fallback'`, or `'manual'`).
   final String generationMethod; // "gemini" | "fallback" | "manual"
+
+  /// If this is a practice quiz derived from an actual quiz, stores the source actual quiz's ID.
   final String? sourceQuizId;
+
+  /// Ordered list of questions included in the quiz.
   final List<QuizQuestion> questions;
+
+  /// Sum of points across all questions in the quiz.
   final double totalPoints;
+
+  /// Number of questions originally requested by the teacher during AI generation.
   final int? requestedQuestionCount;
+
+  /// Question type identifiers selected by the teacher for generation.
   final List<String> selectedQuestionTypes;
+
+  /// Whether a top-up generation pass was already attempted for a shortfall.
   final bool extraGenerationAttempted;
+
+  /// Indicates whether generation used the teacher's `'personal'` key or the `'backup'` server key.
   final String generationCredentialSource;
+
+  /// Whether the server backup Gemini credential was used to generate this quiz.
   final bool backupUsed;
+
+  /// Reason code explaining why the backup credential was used (if applicable).
   final String? backupUsageReason;
+
+  /// Remaining grace-period backup generations available to the teacher.
   final int? backupGraceRemaining;
+
+  /// Remaining daily fallback backup generations available to the teacher today.
   final int? backupFallbackRemainingToday;
+
+  /// Timestamp when the quiz was first created.
   final DateTime? createdAt;
+
+  /// Timestamp when the quiz was last modified.
   final DateTime? updatedAt;
+
+  /// Timestamp when the quiz was published or finalized.
   final DateTime? publishedAt;
 
+  /// Creates a [QuizModel] instance.
   const QuizModel({
     required this.id,
     required this.classId,
@@ -206,21 +274,43 @@ class QuizModel {
     this.publishedAt,
   });
 
+  /// Returns `true` if this is a teacher-only Actual Quiz.
   bool get isActual => type.toLowerCase() == 'actual';
+
+  /// Returns `true` if this is a student-facing Practice Quiz.
   bool get isPractice => type.toLowerCase() == 'practice';
+
+  /// Returns `true` if the quiz is still in editable draft state.
   bool get isDraft => status.toLowerCase() == 'draft';
+
+  /// Returns `true` if an Actual Quiz has been finalized for PDF export.
   bool get isFinalized => status.toLowerCase() == 'finalized';
+
+  /// Returns `true` if a Practice Quiz has been published for students to take.
   bool get isPublished => status.toLowerCase() == 'published';
+
+  /// Returns `true` if the quiz has been closed to further student attempts.
   bool get isClosed => status.toLowerCase() == 'closed';
+
+  /// Total number of questions currently in the quiz.
   int get questionCount => questions.length;
+
+  /// Returns `true` if AI generation returned fewer questions than requested while still in draft.
   bool get hasGenerationShortfall =>
       isDraft &&
       requestedQuestionCount != null &&
       questionCount < requestedQuestionCount!;
+
+  /// Returns `true` if generated via the Gemini AI model.
   bool get isGeminiGenerated => generationMethod.toLowerCase() == 'gemini';
+
+  /// Returns `true` if generated via the deterministic fallback generator.
   bool get isFallbackGenerated => generationMethod.toLowerCase() == 'fallback';
+
+  /// Returns `true` if authored manually.
   bool get isManual => generationMethod.toLowerCase() == 'manual';
 
+  /// Human-readable status string for UI badges.
   String get formattedStatus {
     switch (status.toLowerCase()) {
       case 'published':
@@ -234,7 +324,9 @@ class QuizModel {
     }
   }
 
+  /// Constructs a [QuizModel] from a database (snake_case) or domain (camelCase) map.
   factory QuizModel.fromMap(Map<String, dynamic> map, {String id = ''}) {
+    // Parse embedded JSON array of questions.
     final rawQuestions = map['questions'];
     List<QuizQuestion> parsedQuestions = [];
     if (rawQuestions is List) {
@@ -250,6 +342,7 @@ class QuizModel {
       }
     }
 
+    // Calculate total points from the stored field or by summing question points.
     final rawPoints = map['total_points'] ?? map['totalPoints'];
     double parsedTotalPoints = 0.0;
     if (rawPoints is num) {
@@ -261,6 +354,7 @@ class QuizModel {
       );
     }
 
+    // Helper to parse optional ISO-8601 timestamp strings.
     DateTime? parseTimestamp(dynamic val) {
       if (val is String) return DateTime.tryParse(val);
       return null;
@@ -325,6 +419,7 @@ class QuizModel {
     );
   }
 
+  /// Serializes this [QuizModel] to a camelCase map for in-app usage.
   Map<String, dynamic> toMap() {
     return {
       'classId': classId,
@@ -358,6 +453,7 @@ class QuizModel {
     };
   }
 
+  /// Serializes this [QuizModel] to a snake_case map for the `public.quizzes` table.
   Map<String, dynamic> toDatabaseMap() {
     return {
       'class_id': classId,
@@ -391,6 +487,7 @@ class QuizModel {
     };
   }
 
+  /// Creates a copy of this [QuizModel] with selected fields updated.
   QuizModel copyWith({
     String? id,
     String? classId,

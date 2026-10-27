@@ -29,6 +29,8 @@ class TeacherHomeScreen extends StatefulWidget {
   State<TeacherHomeScreen> createState() => _TeacherHomeScreenState();
 }
 
+/// State for [TeacherHomeScreen] that loads the signed-in teacher's profile and live class list,
+/// and provides actions for creating classes, selecting a class for material upload, and account settings.
 class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
@@ -57,6 +59,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     }
   }
 
+  /// Fetches the current user's profile and binds the teacher classes stream to their UID.
   Future<void> _loadTeacherProfile() async {
     final profile = await AuthService().getCurrentUserProfile();
     if (mounted && profile != null) {
@@ -67,6 +70,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     }
   }
 
+  /// Confirms logout with the teacher, signs out of auth, and returns to [RoleSelectionScreen].
   Future<void> _handleLogout() async {
     final confirm = await showStudexaLogoutDialog(context);
 
@@ -80,12 +84,15 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     }
   }
 
+  /// Navigates to [GeminiApiSettingsScreen] so the teacher can configure their personal Gemini API key.
   void _openGeminiSettings() {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const GeminiApiSettingsScreen()));
   }
 
+  /// Opens a bottom sheet for selecting which class to upload study material into,
+  /// or prompts the teacher to create a class first if none exist.
   Future<void> _showClassSelectionSheet() async {
     final uid = _teacherProfile?.uid;
     if (uid == null) return;
@@ -244,6 +251,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
+  /// Opens [_CreateClassDialog] so the teacher can create a new class with a generated join code.
   void _showCreateClassDialog() {
     showDialog<void>(
       context: context,
@@ -255,6 +263,7 @@ class _TeacherHomeScreenState extends State<TeacherHomeScreen> {
     );
   }
 
+  /// Displays a confirmation dialog highlighting the newly generated join code for [createdClass].
   void _showClassCreatedSuccessDialog(ClassModel createdClass) {
     showDialog(
       context: context,
@@ -1034,6 +1043,7 @@ class _ClassItemCard extends StatelessWidget {
   }
 }
 
+/// Modal dialog widget that collects a class name and section and creates a new class via [ClassService].
 class _CreateClassDialog extends StatefulWidget {
   final UserProfile? teacherProfile;
   final ValueChanged<ClassModel> onClassCreated;
@@ -1047,6 +1057,7 @@ class _CreateClassDialog extends StatefulWidget {
   State<_CreateClassDialog> createState() => _CreateClassDialogState();
 }
 
+/// State for [_CreateClassDialog] handling input validation and asynchronous class creation.
 class _CreateClassDialogState extends State<_CreateClassDialog> {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _surfaceWhite = AppTheme.surfaceWhite;
@@ -1073,6 +1084,7 @@ class _CreateClassDialogState extends State<_CreateClassDialog> {
     super.dispose();
   }
 
+  /// Validates the class name and section inputs and calls [ClassService.createClass].
   Future<void> _handleCreate() async {
     final name = _nameController.text.trim();
     final section = _sectionController.text.trim();

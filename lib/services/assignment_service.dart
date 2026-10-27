@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/quiz_assignment_model.dart';
 import '../models/quiz_attempt_model.dart';
 
+/// Exception thrown when a quiz attempt cannot be submitted or retrieved
+/// (for example, if the assignment is closed, expired, or the backend fails).
 class QuizUnavailableException implements Exception {
   const QuizUnavailableException(this.message);
   final String message;
@@ -15,6 +17,8 @@ class QuizUnavailableException implements Exception {
   String toString() => message;
 }
 
+/// Checks whether the code is currently running inside a Flutter unit/widget test
+/// so that network-dependent Supabase calls can fall back to in-memory mocks.
 bool get _isTestEnvironment {
   if (kIsWeb) return false;
   try {
@@ -24,18 +28,27 @@ bool get _isTestEnvironment {
   }
 }
 
+/// Service responsible for managing quiz assignments, student quiz attempts,
+/// and in-progress draft answers in Supabase (with an in-memory fallback for tests).
 class AssignmentService {
+  /// Creates an [AssignmentService] instance with an optional injected [SupabaseClient]
+  /// and a flag to toggle remote backend calls vs. local test mocks.
   AssignmentService({SupabaseClient? supabase, bool? useRemoteBackend})
       : _injectedSupabase = supabase,
         useRemoteBackend = useRemoteBackend ?? !_isTestEnvironment;
 
   final SupabaseClient? _injectedSupabase;
   final bool useRemoteBackend;
+
+  /// Stores draft answers in memory when running in test mode ([useRemoteBackend] is false).
   final Map<String, Map<String, dynamic>> _inMemoryDraftAnswers = {};
 
+  /// Returns the active [SupabaseClient] instance (injected or global singleton).
   SupabaseClient get _client =>
       _injectedSupabase ?? Supabase.instance.client;
 
+  /// Creates a new quiz assignment record in the `quiz_assignments` table
+  /// linking a quiz to a specific class and optional deadline.
   Future<QuizAssignmentModel> createAssignment({
     required String quizId,
     required String classId,
@@ -43,6 +56,7 @@ class AssignmentService {
     required String quizTitle,
     DateTime? deadline,
   }) async {
+    // Insert the assignment metadata into Supabase and return the created row.
     final row = await _client
         .from('quiz_assignments')
         .insert({
@@ -57,6 +71,7 @@ class AssignmentService {
     return QuizAssignmentModel.fromMap(row, id: row['id'].toString());
   }
 
+  /// Marks an existing quiz assignment as closed so students can no longer submit attempts.
   Future<void> closeAssignment(String assignmentId) async {
     await _client.from('quiz_assignments').update({
       'is_closed': true,
@@ -64,6 +79,7 @@ class AssignmentService {
     }).eq('id', assignmentId);
   }
 
+  /// Reopens a previously closed quiz assignment so students can submit attempts again.
   Future<void> reopenAssignment(String assignmentId) async {
     await _client.from('quiz_assignments').update({
       'is_closed': false,
@@ -71,12 +87,14 @@ class AssignmentService {
     }).eq('id', assignmentId);
   }
 
+  /// Updates or clears the submission deadline for a specific quiz assignment.
   Future<void> updateDeadline(String assignmentId, DateTime? deadline) async {
     await _client.from('quiz_assignments').update({
       'deadline': deadline?.toUtc().toIso8601String(),
     }).eq('id', assignmentId);
   }
 
+  /// Streams all quiz assignments for a given class in real time, ordered newest first.
   Stream<List<QuizAssignmentModel>> streamClassAssignments(String classId) =>
       _client
           .from('quiz_assignments')
@@ -90,6 +108,7 @@ class AssignmentService {
                   ))
               .toList());
 
+  /// Fetches the assignment record associated with a specific class and quiz, if one exists.
   Future<QuizAssignmentModel?> getAssignmentForQuiz(
     String classId,
     String quizId,
@@ -105,7 +124,11 @@ class AssignmentService {
         : QuizAssignmentModel.fromMap(row, id: row['id'].toString());
   }
 
+  /// Submits a student's completed quiz attempt.
+  /// In test mode, returns a local mock model; in production, invokes the
+  /// `submit-quiz-attempt` Supabase Edge Function for authoritative grading and persistence.
   Future<QuizAttemptModel> submitAttempt(QuizAttemptModel attempt) async {
+    // Return a mock attempt directly when remote backend is disabled (e.g., widget tests).
     if (!useRemoteBackend) {
       return QuizAttemptModel(
         id: 'mock_attempt_${DateTime.now().millisecondsSinceEpoch}',
@@ -123,6 +146,7 @@ class AssignmentService {
       );
     }
     try {
+      // Call the server-side Edge Function to validate, score, and record the attempt.
       final response = await _client.functions.invoke(
         'submit-quiz-attempt',
         body: {
@@ -151,6 +175,7 @@ class AssignmentService {
     }
   }
 
+  /// Streams all student quiz attempts for a specific quiz in a class in real time (used by teachers).
   Stream<List<QuizAttemptModel>> streamClassQuizAttempts(
     String classId,
     String quizId,
@@ -163,6 +188,7 @@ class AssignmentService {
           .order('submitted_at', ascending: false)
           .map(_attemptsFromRows);
 
+  /// Streams all quiz attempts submitted by a specific student within a class in real time.
   Stream<List<QuizAttemptModel>> streamStudentClassAttempts(
     String classId,
     String studentId,
@@ -175,9 +201,11 @@ class AssignmentService {
           .order('submitted_at', ascending: false)
           .map(_attemptsFromRows);
 
+  /// Builds a composite lookup key for storing/retrieving draft answers per student, quiz, and attempt number.
   String _draftKey(String studentId, String quizId, int attemptNumber) =>
       '${studentId}_${quizId}_$attemptNumber';
 
+  /// Saves a student's in-progress quiz answers as a draft so they can resume later without losing progress.
   Future<void> saveDraftAnswers({
     required String studentId,
     required String quizId,
@@ -189,6 +217,7 @@ class AssignmentService {
           Map<String, dynamic>.from(answers);
       return;
     }
+    // Upsert the draft row in the `quiz_drafts` table.
     await _client.from('quiz_drafts').upsert({
       'student_id': studentId,
       'quiz_id': quizId,
@@ -198,6 +227,7 @@ class AssignmentService {
     });
   }
 
+  /// Loads any previously saved draft answers for a given student, quiz, and attempt number.
   Future<Map<String, dynamic>?> getDraftAnswers({
     required String studentId,
     required String quizId,
@@ -219,6 +249,7 @@ class AssignmentService {
     return Map<String, dynamic>.from(row['answers'] as Map);
   }
 
+  /// Deletes saved draft answers once a student has finalized and submitted their quiz attempt.
   Future<void> clearDraftAnswers({
     required String studentId,
     required String quizId,
@@ -236,6 +267,7 @@ class AssignmentService {
         .eq('attempt_number', attemptNumber);
   }
 
+  /// Helper that converts raw database maps into a list of [QuizAttemptModel] instances.
   static List<QuizAttemptModel> _attemptsFromRows(
     List<Map<String, dynamic>> rows,
   ) =>
@@ -246,6 +278,7 @@ class AssignmentService {
               ))
           .toList();
 
+  /// Generates a cryptographically random RFC 4122 version 4 UUID string.
   static String _uuidV4() {
     final random = Random.secure();
     final bytes = List<int>.generate(16, (_) => random.nextInt(256));
@@ -256,6 +289,8 @@ class AssignmentService {
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
+  /// Deterministically derives a valid UUID-formatted identifier from an arbitrary string
+  /// using FNV-1a style hashing with multiple seeds, ensuring idempotent client attempt IDs.
   static String _uuidFromText(String value) {
     int hash(int seed) {
       var result = seed;

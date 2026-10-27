@@ -2,12 +2,16 @@ import { SupabaseIdentityError, verifySupabaseToken } from "./supabase_identity.
 import { PostgresStoreError, postgresClient } from "./postgres_rest.mjs";
 import { CredentialStoreError, teacherCredentialStore, validateGeminiApiKey } from "./teacher_credentials.mjs";
 
+// Standard CORS headers allowing browser/Flutter clients to call the teacher Gemini key endpoint.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type",
   "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
 };
 
+/**
+ * Helper to serialize `body` as a JSON HTTP `Response` with `status` and CORS headers.
+ */
 function json(status, body) {
   return new Response(JSON.stringify(body), {
     status,
@@ -15,6 +19,10 @@ function json(status, body) {
   });
 }
 
+/**
+ * Edge Function handler for teacher Gemini API key management (`GET` status, `PUT` verify & save, `DELETE` remove).
+ * Verifies the caller's Supabase token and confirms they have the `teacher` role before accessing credentials.
+ */
 export async function handleTeacherGeminiKeyRequest(request, deps = {}) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (!["GET", "PUT", "DELETE"].includes(request.method)) return json(405, { error: "Use GET, PUT, or DELETE." });

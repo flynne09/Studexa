@@ -6,6 +6,7 @@ import '../utils/scoring_utils.dart';
 
 /// Service managing quiz creation, generation, Supabase persistence, and streaming.
 class QuizService {
+  /// Creates a [QuizService] with optional injected [SupabaseClient] and [QuizGenerationClient].
   QuizService({
     SupabaseClient? supabase,
     QuizGenerationClient? generationClient,
@@ -13,6 +14,7 @@ class QuizService {
        _generationClient = generationClient ?? QuizGenerationClient();
 
   final SupabaseClient? _injectedSupabase;
+  /// Resolves the active [SupabaseClient] instance.
   SupabaseClient get _client => _injectedSupabase ?? Supabase.instance.client;
 
   final QuizGenerationClient _generationClient;
@@ -94,6 +96,8 @@ class QuizService {
     sourceQuizId: sourceQuizId,
   );
 
+  /// Requests additional AI-generated questions for a partial draft quiz that has not yet
+  /// reached its originally requested question count.
   Future<QuizModel> generateMore(QuizModel quiz) {
     final requested = quiz.requestedQuestionCount;
     if (!quiz.isDraft ||
@@ -282,6 +286,8 @@ class QuizService {
 
     final accepted = <QuizQuestion>[];
 
+    // Checks that a single question has a non-empty prompt/answer, avoids boilerplate/header trivia,
+    // and satisfies type-specific constraints (e.g., matching MCQ option, valid True/False, blank placeholder).
     bool isSingleQuestionValid(QuizQuestion q) {
       if (q.question.trim().isEmpty || q.correctAnswer.trim().isEmpty) {
         return false;
@@ -327,6 +333,7 @@ class QuizService {
       return true;
     }
 
+    // Checks whether a candidate question duplicates or closely overlaps any already-accepted question.
     bool isDuplicate(QuizQuestion candidate, List<QuizQuestion> currentList) {
       final candNormPrompt = candidate.question.trim().toLowerCase();
       final candNormAnswer = ScoringUtils.normalizeText(
@@ -452,6 +459,8 @@ class QuizService {
     }).eq('id', quiz.id);
   }
 
+  /// Validates and appends a teacher-authored manual question to an existing quiz via
+  /// the `append_manual_quiz_question` database RPC.
   Future<QuizModel> appendManualQuestion(
     String quizId,
     QuizQuestion question,
@@ -834,6 +843,7 @@ class QuizService {
       'defined',
     };
 
+    // Extracts relevant candidate terms or non-stopword academic keywords from a sentence.
     List<String> getKeywordsForSentence(String s) {
       final words = <String>[];
       for (final t in candidateTerms) {

@@ -31,6 +31,8 @@ class QuizMonitoringScreen extends StatefulWidget {
   State<QuizMonitoringScreen> createState() => _QuizMonitoringScreenState();
 }
 
+/// State for [QuizMonitoringScreen] that subscribes to real-time class member and quiz attempt
+/// streams, manages assignment availability and deadlines, and displays per-student breakdowns.
 class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   static const _primaryNavy = AppTheme.primaryNavy;
   static const _darkNavy = AppTheme.darkNavy;
@@ -50,6 +52,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   void initState() {
     super.initState();
     _initStreams();
+    // Use injected initial assignment if provided (e.g., in tests), otherwise load from database.
     if (widget.initialAssignment != null) {
       _assignment = widget.initialAssignment;
     } else {
@@ -57,6 +60,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
     }
   }
 
+  /// Initializes real-time streams for enrolled class members and student quiz attempts.
   void _initStreams() {
     _membersStream =
         widget.initialMembersStream ??
@@ -72,12 +76,14 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
   @override
   void didUpdateWidget(covariant QuizMonitoringScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Re-subscribe to streams if the monitored quiz or class changes.
     if (oldWidget.quiz.id != widget.quiz.id ||
         oldWidget.quiz.classId != widget.quiz.classId) {
       _initStreams();
     }
   }
 
+  /// Fetches the assignment record for this quiz and class to track open/closed state and deadline.
   Future<void> _loadAssignment() async {
     if (widget.initialAssignment != null) return;
     final assign = await _assignmentService.getAssignmentForQuiz(
@@ -90,6 +96,8 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
     });
   }
 
+  /// Toggles the quiz assignment between open and closed for student submissions,
+  /// creating the assignment record first if it does not yet exist.
   Future<void> _toggleAssignmentStatus() async {
     if (_assignment == null) {
       // Create assignment first
@@ -128,6 +136,7 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
     }
   }
 
+  /// Prompts the teacher with date and time pickers to set or update the submission deadline.
   Future<void> _setDeadline() async {
     final now = DateTime.now();
     final pickedDate = await showDatePicker(
@@ -184,6 +193,8 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
     );
   }
 
+  /// Opens a draggable bottom sheet showing question-by-question answers and points earned
+  /// for a specific student's [attempt].
   void _showStudentAttemptDetails(QuizAttemptModel attempt) {
     showModalBottomSheet(
       context: context,
@@ -753,6 +764,8 @@ class _QuizMonitoringScreenState extends State<QuizMonitoringScreen> {
     );
   }
 
+  /// Builds a summary metric card (Completion rate, Average score, or Top score)
+  /// displayed in the analytics row.
   Widget _buildMetricCard({
     required String label,
     required String value,

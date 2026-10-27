@@ -37,6 +37,9 @@ class UploadGenerateQuizScreen extends StatefulWidget {
       _UploadGenerateQuizScreenState();
 }
 
+/// State for [UploadGenerateQuizScreen] managing target class selection, study material
+/// file picking/uploading, live extraction status updates, posting/unposting to class,
+/// and configuring/triggering AI or fallback quiz synthesis.
 class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
   // ── Design tokens ───────────────────────────────────────────
   static const _primaryNavy = AppTheme.primaryNavy;
@@ -111,6 +114,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     _initClasses();
   }
 
+  /// Subscribes to the teacher's classes stream to populate the class selector dropdown.
   void _initClasses() {
     final currentUserId = AuthService().currentUser?.uid;
     if (currentUserId != null) {
@@ -146,6 +150,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     super.dispose();
   }
 
+  /// Converts a raw byte count into a human-readable file size string (B, KB, or MB).
   String _formatFileSize(int? bytes) {
     if (bytes == null || bytes <= 0) return '';
     if (bytes < 1024) return '$bytes B';
@@ -443,6 +448,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
         );
   }
 
+  /// Restarts text extraction on the currently uploaded material if a previous extraction failed.
   Future<void> _retryExtraction() async {
     if (_materialId == null) return;
     try {
@@ -464,6 +470,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     }
   }
 
+  /// Prompts the teacher for confirmation and publishes the uploaded study material to the selected class.
   Future<void> _postMaterialToClass() async {
     final mat = _material;
     if (mat == null || !mat.canBePosted) return;
@@ -524,6 +531,7 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     }
   }
 
+  /// Prompts the teacher for confirmation and hides (unposts) the study material from enrolled students.
   Future<void> _unpostMaterialFromClass() async {
     final mat = _material;
     if (mat == null) return;
@@ -577,6 +585,9 @@ class _UploadGenerateQuizScreenState extends State<UploadGenerateQuizScreen> {
     }
   }
 
+  /// Validates material readiness, class selection, and chosen question types,
+  /// then calls [QuizService.generateQuiz] to synthesize an Actual Quiz (exam) or Practice Quiz
+  /// and navigates to [QuizDetailScreen].
   Future<void> _generateQuiz({required bool isActual}) async {
     // Check if material is loaded and ready
     if (_material == null) {

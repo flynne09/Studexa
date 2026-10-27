@@ -1,3 +1,6 @@
+/**
+ * Error thrown when verifying a caller's Supabase JWT fails or authentication is misconfigured.
+ */
 export class SupabaseIdentityError extends Error {
   constructor(status, message) {
     super(message);
@@ -5,10 +8,16 @@ export class SupabaseIdentityError extends Error {
   }
 }
 
+/**
+ * Reads an environment variable by `name` from the Deno runtime, defaulting to an empty string.
+ */
 function environment(name) {
   return globalThis.Deno?.env.get(name) || "";
 }
 
+/**
+ * Validates a Supabase Bearer access `token` by querying `/auth/v1/user` and returns the authenticated user object.
+ */
 export async function verifySupabaseToken(token, fetchImpl = fetch, options = {}) {
   const url = options.url || environment("SUPABASE_URL");
   const apiKey = options.apiKey || environment("SUPABASE_ANON_KEY");

@@ -11,6 +11,7 @@ Future<bool> confirmGeminiGeneration(
   BuildContext context, {
   TeacherGeminiKeyService? service,
 }) async {
+  // Query the teacher's current Gemini API key and temporary allowance status.
   final keyService = service ?? TeacherGeminiKeyService();
   TeacherGeminiKeyStatus status;
   try {
@@ -26,9 +27,12 @@ Future<bool> confirmGeminiGeneration(
     return false;
   }
   if (!context.mounted) return false;
+  // Proceed immediately if the teacher already has a valid personal key configured.
   if (status.isReady) return true;
 
+  // Check if the teacher still has any of their 3 lifetime grace generations remaining.
   final hasTemporaryUse = !status.configured && status.graceRemaining > 0;
+  // Prompt the teacher to either use a temporary generation or open Gemini API Settings.
   final choice = await showDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -67,12 +71,14 @@ Future<bool> confirmGeminiGeneration(
   if (choice == 'temporary') return true;
   if (choice != 'settings') return false;
 
+  // Navigate to the Gemini API Settings screen so the teacher can save their key.
   await Navigator.of(context).push(
     MaterialPageRoute(
       builder: (_) => GeminiApiSettingsScreen(service: keyService),
     ),
   );
   if (!context.mounted) return false;
+  // Re-verify whether the key is now ready after returning from settings.
   try {
     return (await keyService.getStatus()).isReady;
   } on TeacherGeminiKeyException catch (error) {
@@ -87,8 +93,11 @@ Future<bool> confirmGeminiGeneration(
   }
 }
 
+/// Displays an informational banner when a quiz generation session used the
+/// Studexa server backup Gemini credential (either as a grace generation or quota fallback).
 void showGeminiBackupFeedback(BuildContext context, QuizModel quiz) {
   if (!quiz.backupUsed) return;
+  // Map the server-reported backup usage reason to a clear explanation.
   final reason = switch (quiz.backupUsageReason) {
     'grace' => 'You used a temporary Studexa generation.',
     'personal_quota' =>
@@ -97,6 +106,7 @@ void showGeminiBackupFeedback(BuildContext context, QuizModel quiz) {
       'Your personal Gemini service was temporarily unavailable, so Studexa used its backup.',
     _ => 'Studexa used its backup Gemini service for this generation.',
   };
+  // Append remaining grace or daily fallback count if provided.
   final remaining = quiz.backupUsageReason == 'grace'
       ? quiz.backupGraceRemaining
       : quiz.backupFallbackRemainingToday;

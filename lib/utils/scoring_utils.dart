@@ -109,6 +109,7 @@ class ScoringUtils {
       }
     }
 
+    // Match each deduplicated student item against remaining expected answers.
     for (final studentItem in deduplicatedStudent) {
       int matchIndex = -1;
       for (int i = 0; i < remainingExpected.length; i++) {
@@ -119,15 +120,19 @@ class ScoringUtils {
       }
 
       if (matchIndex != -1) {
+        // Consume the matched expected item so it cannot be matched twice.
         found.add(studentItem);
         remainingExpected.removeAt(matchIndex);
       } else {
+        // Track unmatched student items as extra responses (no negative penalty).
         extra.add(studentItem);
       }
     }
 
+    // Any remaining expected items were missed by the student.
     missing.addAll(remainingExpected);
 
+    // Compute proportional partial credit based on the ratio of found items to expected items.
     final expectedCount = remainingExpected.length + found.length;
     final earnedPoints = expectedCount == 0
         ? 0.0
@@ -146,6 +151,7 @@ class ScoringUtils {
 
 /// Result breakdown for an Enumeration question.
 class EnumerationResult {
+  /// Creates an [EnumerationResult] containing matched, missing, and extra items along with points.
   const EnumerationResult({
     required this.found,
     required this.missing,
@@ -155,10 +161,21 @@ class EnumerationResult {
     required this.isFullyCorrect,
   });
 
+  /// Student items that matched an expected enumeration answer.
   final List<String> found;
+
+  /// Expected enumeration answers that the student did not provide.
   final List<String> missing;
+
+  /// Unmatched items entered by the student.
   final List<String> extra;
+
+  /// Points earned by the student on this enumeration question.
   final double earnedPoints;
+
+  /// Total possible points for this enumeration question.
   final double totalPoints;
+
+  /// Whether all expected items were found with none missing.
   final bool isFullyCorrect;
 }

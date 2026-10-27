@@ -8,6 +8,7 @@ import '../../services/material_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/app_feedback.dart';
 
+/// Callback signature used to open a local file path with its MIME type in an external application.
 typedef MaterialExternalFileOpener =
     Future<ResultType> Function(String filePath, String mimeType);
 
@@ -131,6 +132,7 @@ class MaterialViewerScreen extends StatefulWidget {
     }
   }
 
+  /// Displays an appropriate error notification with an optional retry action when downloading a material fails.
   static void _showDownloadFailure({
     required BuildContext context,
     required MaterialModel material,
@@ -165,6 +167,8 @@ class MaterialViewerScreen extends StatefulWidget {
     );
   }
 
+  /// Shows an alert dialog when the device has no compatible Office viewer installed,
+  /// offering to open the in-app extracted text view instead.
   static Future<void> _showNoCompatibleAppDialog(
     BuildContext context,
     MaterialModel material,
@@ -253,6 +257,8 @@ class MaterialViewerScreen extends StatefulWidget {
   State<MaterialViewerScreen> createState() => _MaterialViewerScreenState();
 }
 
+/// State for [MaterialViewerScreen] managing PDF byte loading, background conversion listening,
+/// and toggling between the document preview and extracted text view.
 class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
   static const Color _primaryNavy = AppTheme.primaryNavy;
   static const Color _surfaceWhite = AppTheme.surfaceWhite;
@@ -292,6 +298,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     }
   }
 
+  /// Starts loading the PDF bytes (or listening for ongoing background PDF conversion) once.
   void _startPreview() {
     if (_previewStarted) return;
     _previewStarted = true;
@@ -311,6 +318,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     super.dispose();
   }
 
+  /// Subscribes to real-time material updates while an Office document is converting to a preview PDF.
   void _listenForConversion() {
     _materialSub?.cancel();
     _materialSub = _materialService.streamMaterial(_material.id).listen((
@@ -333,6 +341,8 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     });
   }
 
+  /// Fetches the raw PDF bytes (either native PDF or converted preview PDF) from storage,
+  /// falling back to the extracted text view if the PDF cannot be retrieved.
   Future<void> _loadPdf() async {
     setState(() {
       _isLoadingPdf = true;
@@ -461,6 +471,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     );
   }
 
+  /// Builds the main content area: extracted text view, conversion status card, loading spinner, or Syncfusion PDF viewer.
   Widget _buildBody() {
     if (_showExtractedText) {
       return _buildExtractedTextView();
@@ -524,6 +535,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     return _buildExtractedTextView();
   }
 
+  /// Builds the status card shown while an Office document is converting to PDF or if conversion failed.
   Widget _buildConvertingView() {
     final isFailed = _material.conversionFailed;
     return Container(
@@ -635,6 +647,7 @@ class _MaterialViewerScreenState extends State<MaterialViewerScreen> {
     );
   }
 
+  /// Builds the scrollable, selectable in-app text viewer showing the document's extracted text.
   Widget _buildExtractedTextView() {
     return Container(
       color: _surfaceWhite,

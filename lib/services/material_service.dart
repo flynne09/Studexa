@@ -18,6 +18,7 @@ class MaterialValidationException implements Exception {
   String toString() => message;
 }
 
+/// Represents the possible outcomes when preparing or downloading a study material file.
 enum MaterialDownloadStatus {
   ready,
   uploadInProgress,
@@ -27,6 +28,8 @@ enum MaterialDownloadStatus {
   failed,
 }
 
+/// Encapsulates the status, local [File] reference, and user-facing message
+/// resulting from a study material download/preparation request.
 class MaterialDownloadResult {
   final MaterialDownloadStatus status;
   final File? file;
@@ -38,6 +41,7 @@ class MaterialDownloadResult {
     this.file,
   });
 
+  /// Returns `true` if the material was downloaded to a valid local [file] and is ready to open.
   bool get isReady => status == MaterialDownloadStatus.ready && file != null;
 }
 
@@ -46,8 +50,11 @@ class MaterialDownloadResult {
 class MaterialService {
   final SupabaseClient? _injectedSupabase;
 
+  /// Creates a [MaterialService] with an optional injected [SupabaseClient] for testing.
   MaterialService({SupabaseClient? supabase}) : _injectedSupabase = supabase;
 
+  /// Returns the configured [SupabaseClient] or throws [MaterialValidationException]
+  /// if Supabase credentials have not been provided in the build configuration.
   SupabaseClient get _supabase {
     if (_injectedSupabase != null) return _injectedSupabase;
     if (!SupabaseConfig.isConfigured) {
@@ -686,6 +693,7 @@ class MaterialService {
     ]);
   }
 
+  /// Helper that removes a list of object paths from the specified Supabase Storage bucket.
   Future<void> _deleteSupabaseFiles(
     List<String> paths, {
     String? bucket,
@@ -701,11 +709,13 @@ class MaterialService {
     }
   }
 
+  /// Sanitizes a file name so it only contains safe alphanumeric, dot, underscore, and hyphen characters for storage paths.
   static String _safeStorageFileName(String fileName) {
     final safe = fileName.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
     return safe.isEmpty ? 'material' : safe;
   }
 
+  /// Generates a cryptographically random RFC 4122 version 4 UUID string for new material IDs.
   static String _uuidV4() {
     final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
@@ -717,6 +727,8 @@ class MaterialService {
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
+  /// Cleans up quizzes linked to a deleted material: deletes unpublished draft quizzes
+  /// and unlinks (`material_id = null`) published/finalized quizzes so student records remain intact.
   Future<void> _cleanupMaterialQuizzes(String materialId) async {
     if (materialId.isEmpty) return;
     try {
@@ -750,6 +762,7 @@ class MaterialService {
     }
   }
 
+  /// Deletes any locally cached temporary files created when opening this material in an external app.
   Future<void> _cleanupLocalTempFile({
     required String materialId,
     String? fileName,

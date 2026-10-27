@@ -26,6 +26,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
+/// State for [LoginScreen] managing form controllers, loading/error states,
+/// and email/password or Google authentication flows.
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -42,6 +44,8 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  /// Validates the email and password inputs, signs in via [AuthService.signInWithEmail],
+  /// verifies the user's role matches [LoginScreen.role], and navigates to the corresponding home screen.
   Future<void> _handleLogin() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -103,6 +107,8 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Initiates Google OAuth sign-in for the selected role and routes the authenticated user
+  /// to either [TeacherHomeScreen] or [StudentHomeScreen].
   Future<void> _handleGoogleSignIn() async {
     setState(() {
       _isLoading = true;
@@ -151,6 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Displays a standardized error feedback toast/snackbar when sign-in fails.
   void _showErrorSnackBar(String message) {
     AppFeedback.error(context, message, title: 'Unable to sign in');
   }

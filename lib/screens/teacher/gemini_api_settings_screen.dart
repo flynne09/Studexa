@@ -6,9 +6,12 @@ import '../../theme/app_theme.dart';
 import '../../widgets/app_feedback.dart';
 import '../../widgets/studexa_background.dart';
 
+/// Screen where teachers can manage, verify, or remove their personal Google Gemini API key
+/// used for AI-powered quiz generation, as well as view setup instructions and quota status.
 class GeminiApiSettingsScreen extends StatefulWidget {
   const GeminiApiSettingsScreen({super.key, this.service});
 
+  /// Optional injected service for testing or custom key management.
   final TeacherGeminiKeyService? service;
 
   @override
@@ -16,6 +19,8 @@ class GeminiApiSettingsScreen extends StatefulWidget {
       _GeminiApiSettingsScreenState();
 }
 
+/// State class for [GeminiApiSettingsScreen] that handles loading key status,
+/// copying the Google AI Studio link, saving/verifying a key, and removing an existing key.
 class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
   static const _apiKeysUrl = 'https://aistudio.google.com/api-keys';
   late final TeacherGeminiKeyService _service =
@@ -29,15 +34,18 @@ class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // Fetch the teacher's current Gemini API key status when the screen initializes.
     _load();
   }
 
   @override
   void dispose() {
+    // Clean up the text controller to avoid memory leaks.
     _controller.dispose();
     super.dispose();
   }
 
+  /// Fetches the current API key configuration and fallback quota status from the backend.
   Future<void> _load() async {
     try {
       final status = await _service.getStatus();
@@ -54,6 +62,7 @@ class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
     }
   }
 
+  /// Copies the official Google AI Studio API Keys URL to the system clipboard.
   Future<void> _copyLink() async {
     await Clipboard.setData(const ClipboardData(text: _apiKeysUrl));
     if (mounted) {
@@ -65,6 +74,8 @@ class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
     }
   }
 
+  /// Validates that an API key was entered, sends it to the backend for verification
+  /// with Google, and saves it for future quiz generation requests.
   Future<void> _save() async {
     final key = _controller.text.trim();
     if (key.isEmpty) {
@@ -92,6 +103,7 @@ class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
     }
   }
 
+  /// Prompts the teacher for confirmation and removes their saved personal Gemini API key.
   Future<void> _remove() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -129,6 +141,7 @@ class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
     }
   }
 
+  /// Builds the settings screen UI including the status banner, key input card, and setup guide.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -233,6 +246,8 @@ class _GeminiApiSettingsScreenState extends State<GeminiApiSettingsScreen> {
   }
 }
 
+/// Card widget that displays whether a personal Gemini API key is active,
+/// needs replacement, or is unconfigured, along with remaining fallback/grace sessions.
 class _StatusCard extends StatelessWidget {
   const _StatusCard({required this.status});
   final TeacherGeminiKeyStatus? status;
@@ -281,10 +296,13 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
+/// Instructional card that walks the teacher step-by-step through obtaining a Gemini API key
+/// from Google AI Studio and explains safety and billing considerations.
 class _GuideCard extends StatelessWidget {
   const _GuideCard({required this.onCopyLink});
   final VoidCallback onCopyLink;
 
+  /// Ordered step-by-step instructions for creating and configuring a Google AI Studio key.
   static const steps = [
     'Open the official Google AI Studio API Keys page.',
     'Sign in with your own Google account and accept the terms if requested.',

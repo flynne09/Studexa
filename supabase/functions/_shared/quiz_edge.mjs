@@ -4,6 +4,7 @@ import { PostgresStoreError, postgresClient } from "./postgres_rest.mjs";
 import { SupabaseIdentityError, verifySupabaseToken } from "./supabase_identity.mjs";
 import { CredentialStoreError, teacherCredentialStore } from "./teacher_credentials.mjs";
 
+// Supported quiz question type identifiers and maximum questions generated per single AI batch.
 const TYPES = ["multiple_choice", "true_false", "fill_blank", "identification", "enumeration"];
 const BATCH_SIZE = 10;
 const CORS = {
@@ -12,19 +13,30 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Validation helpers for entity IDs and idempotent client/batch request tokens.
 const validId = (value) => typeof value === "string" && value.trim().length > 0 &&
   value.length <= 1500 && !value.includes("/");
 const validRequestId = (value) => typeof value === "string" && /^[a-zA-Z0-9_-]{16,80}$/.test(value);
 const fail = (code, message) => { throw new QuizGenerationError(code, message); };
 
+/**
+ * Wraps `body` in a JSON HTTP `Response` with the specified `status` and CORS headers.
+ */
 function json(status, body) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+/**
+ * Formats a persisted quiz record into the standard response payload returned to the client.
+ */
 function publicQuiz(id, data) {
   return { success: true, quizId: id, quiz: { id, ...data } };
 }
 
+/**
+ * Verifies that an existing draft `quiz` still belongs to `teacherId` and matches the expected
+ * class, material, and draft state before appending additional generated batches.
+ */
 function ensureExistingQuiz(quiz, expected, teacherId) {
   if (!quiz || quiz.teacherId !== teacherId || quiz.classId !== expected.classId ||
       quiz.materialId !== expected.materialId || quiz.type !== expected.quizType ||
@@ -35,6 +47,10 @@ function ensureExistingQuiz(quiz, expected, teacherId) {
   }
 }
 
+/**
+ * Selects which question types to request in the next batch, prioritizing any selected types
+ * that have not yet appeared in `existing` questions, and then balancing underrepresented types.
+ */
 function chooseBatchTypes(types, existing, remaining) {
   const missing = types.filter((type) => !existing.some((question) => question.type === type));
   if (missing.length) return missing.slice(0, Math.min(BATCH_SIZE, remaining));
@@ -45,9 +61,14 @@ function chooseBatchTypes(types, existing, remaining) {
   ).slice(0, batchSize);
 }
 
+// Determines whether a personal-key generation failure qualifies for Studexa's shared backup key.
 const backupEligible = (error) => error instanceof QuizGenerationError &&
   ["resource-exhausted", "deadline-exceeded", "unavailable"].includes(error.code);
 
+/**
+ * Builds credential usage metadata (`source`, `backupReason`, remaining grace/fallback counts)
+ * to store on the quiz record and return to the client.
+ */
 function usageFromStatus(source, reason, status = {}) {
   return {
     source,
@@ -59,6 +80,10 @@ function usageFromStatus(source, reason, status = {}) {
   };
 }
 
+/**
+ * Executes a single generation batch for `uid` and `clientSessionId`, preferring the teacher's
+ * personal Gemini API key and automatically falling back to Studexa's shared backup key when eligible.
+ */
 async function generateForSession(request, uid, clientSessionId, options) {
   const run = (apiKey) => options.generate(request, {
     apiKey,
@@ -131,6 +156,10 @@ async function generateForSession(request, uid, clientSessionId, options) {
   }
 }
 
+/**
+ * Ensures any reserved backup session for an already-saved quiz is finalized and its latest
+ * remaining grace/fallback counters are reflected on the returned quiz object.
+ */
 async function reconcileSavedBackup(quiz, uid, clientSessionId, options) {
   if (!quiz?.backupUsed || !options.credentialStore) return quiz;
   const session = await options.credentialStore.getBackupSession(uid, clientSessionId);
@@ -145,6 +174,11 @@ async function reconcileSavedBackup(quiz, uid, clientSessionId, options) {
   };
 }
 
+/**
+ * Coordinates quiz generation across `initial`, `automatic`, `extra`, and `extra_continue` modes:
+ * validates ownership and material readiness, generates a batch of questions, deduplicates facts,
+ * and creates or updates the quiz draft in PostgreSQL with optimistic concurrency control.
+ */
 async function processGeneration(body, uid, store, options) {
   const { classId, materialId, quizType, sourceQuizId, clientSessionId, batchRequestId } = body;
   const mode = body.mode || "initial";
@@ -339,6 +373,11 @@ async function processGeneration(body, uid, store, options) {
   fail("failed-precondition", "This draft changed while generating. Reopen it before trying again.");
 }
 
+/**
+ * Main HTTP handler for the `generate-quiz` Edge Function.
+ * Authenticates the teacher, parses the request payload, invokes `processGeneration`,
+ * and maps domain/store errors to structured HTTP responses.
+ */
 export async function handleQuizRequest(request, deps = {}) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   if (request.method !== "POST") return json(405, { error: "Use POST." });

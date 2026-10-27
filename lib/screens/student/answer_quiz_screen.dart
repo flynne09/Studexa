@@ -40,6 +40,8 @@ class AnswerQuizScreen extends StatefulWidget {
   State<AnswerQuizScreen> createState() => _AnswerQuizScreenState();
 }
 
+/// State for [AnswerQuizScreen] handling question queue navigation, skip/requeue behavior,
+/// flagging for review, auto-saving draft answers, deterministic evaluation, and attempt submission.
 class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   late final AssignmentService _assignmentService;
   // ── Design tokens ───────────────────────────────────────────
@@ -62,6 +64,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
   late List<QuizQuestion> _questions;
   late List<QuizQuestion> _questionQueue;
 
+  /// Returns the currently active [QuizQuestion] in the navigation queue (or a safe empty placeholder).
   QuizQuestion get _currentQuestion => _questionQueue.isNotEmpty
       ? _questionQueue[_currentIndex]
       : (_questions.isNotEmpty
@@ -73,6 +76,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
                 points: 0,
               ));
 
+  /// Checks whether the student has provided a non-empty answer for question [q].
   bool _isQuestionAnswered(QuizQuestion q) {
     final ans = _userAnswers[q.id];
     if (ans == null) return false;
@@ -81,6 +85,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     return false;
   }
 
+  /// Returns `true` only when every question in the quiz has a non-empty answer.
   bool get _allQuestionsAnswered => _questions.every(_isQuestionAnswered);
   int get _answeredCount => _questions.where(_isQuestionAnswered).length;
   bool get _hasSkippedPending => _pendingSkippedQuestionIds.any(
@@ -89,9 +94,11 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     ),
   );
 
+  /// Resolves the unique identifier for the current quiz (falling back to the title for demo quizzes).
   String get _quizId =>
       (widget.quiz?.id.isNotEmpty == true) ? widget.quiz!.id : widget.quizTitle;
 
+  /// Resolves the currently signed-in student's user ID (or `'guest_student'` as a fallback).
   String get _studentId {
     try {
       return AuthService().currentUser?.uid ?? 'guest_student';
@@ -100,6 +107,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     }
   }
 
+  /// Returns the list of enumeration items currently entered by the student for [questionId].
   List<String> _getEnumerationAnswers(String questionId) {
     final raw = _userAnswers[questionId];
     if (raw is List) {
@@ -108,6 +116,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     return [];
   }
 
+  /// Asynchronously saves the student's current in-progress answers via [AssignmentService.saveDraftAnswers].
   void _persistDraftAnswers() {
     if (_submitted || _isSubmitting) return;
     _assignmentService
@@ -120,6 +129,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
         .catchError((_) {});
   }
 
+  /// Restores any previously saved draft answers for this student, quiz, and attempt number on screen initialization.
   Future<void> _loadDraftAnswersFromService() async {
     try {
       final drafts = await _assignmentService.getDraftAnswers(
@@ -246,6 +256,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     super.dispose();
   }
 
+  /// Populates the text input controllers with the student's saved response when switching to a question.
   void _loadCurrentAnswer() {
     final q = _currentQuestion;
     final currentAnswer = _userAnswers[q.id];
@@ -261,6 +272,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     _enumInputController.clear();
   }
 
+  /// Commits any pending text or enumeration input for the active question into `_userAnswers` and persists drafts.
   void _saveCurrentAnswer() {
     final q = _currentQuestion;
     if (q.type == QuizQuestionType.fillInTheBlank ||
@@ -303,6 +315,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     _persistDraftAnswers();
   }
 
+  /// Marks the current question as skipped, moves it to the end of `_questionQueue`, and advances to the next question.
   void _skipCurrentQuestion() {
     _saveCurrentAnswer();
     final currentQ = _currentQuestion;
@@ -333,6 +346,8 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Saves the current answer and advances to the next question, or routes back to the first unanswered
+  /// question (or opens the submit confirmation dialog if all questions are answered).
   void _goToNext() {
     _saveCurrentAnswer();
 
@@ -370,6 +385,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     });
   }
 
+  /// Saves the current answer and navigates back to the previous question in the queue.
   void _goToPrevious() {
     _saveCurrentAnswer();
     if (_currentIndex > 0) {
@@ -380,6 +396,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     }
   }
 
+  /// Jumps directly to [targetQ] in the question queue when tapped in the navigation strip or grid modal.
   void _jumpToQuestion(QuizQuestion targetQ) {
     _saveCurrentAnswer();
     final targetIndex = _questionQueue.indexWhere((q) => q.id == targetQ.id);
@@ -391,6 +408,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     }
   }
 
+  /// Toggles the "Flag for review" status on the currently displayed question.
   void _toggleFlag() {
     setState(() {
       final id = _currentQuestion.id;
@@ -402,6 +420,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     });
   }
 
+  /// Parses and appends one or more comma/newline-separated enumeration answers for the current question.
   void _addEnumerationItem() {
     final text = _enumInputController.text.trim();
     if (text.isEmpty) return;
@@ -437,6 +456,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     }
   }
 
+  /// Removes a single enumeration answer chip from the current question's answer list.
   void _removeEnumerationItem(String item) {
     final currentList = _getEnumerationAnswers(_currentQuestion.id);
     currentList.remove(item);
@@ -450,6 +470,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     _persistDraftAnswers();
   }
 
+  /// Verifies that all questions have been answered and displays a confirmation dialog before final grading.
   void _showSubmitConfirmation() {
     if (_isSubmitting || _submitted) return;
     _saveCurrentAnswer();
@@ -530,6 +551,8 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Evaluates all student responses deterministically using [ScoringUtils], submits the attempt via
+  /// [AssignmentService.submitAttempt], clears saved drafts, and displays the Quiz Results dialog.
   Future<void> _evaluateAndShowResults() async {
     if (_isSubmitting || _submitted) return;
     setState(() => _isSubmitting = true);
@@ -1385,6 +1408,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Builds selectable option cards for Multiple Choice and True/False questions.
   Widget _buildChoiceOptions(List<String> options) {
     final selectedOption = _userAnswers[_currentQuestion.id];
 
@@ -1455,6 +1479,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Builds the single-line text input field for Fill-in-the-Blank and Identification questions.
   Widget _buildTextInput(String hint) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1483,6 +1508,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Builds the multi-item input field and removable chip list for Enumeration questions.
   Widget _buildEnumerationInput() {
     final currentList = _getEnumerationAnswers(_currentQuestion.id);
 
@@ -1605,6 +1631,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Builds the top horizontal strip showing answered/unanswered counts, Grid View button, and numbered question badges.
   Widget _buildQuestionNavigationStrip() {
     return Container(
       width: double.infinity,
@@ -1716,6 +1743,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Builds an individual numbered badge indicating whether a question is current, answered, or flagged.
   Widget _buildQuestionBadge({
     required int number,
     required bool isCurrent,
@@ -1816,6 +1844,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Opens a modal bottom sheet displaying all question badges in a wrap grid with status legends.
   void _showQuestionGridModal() {
     showModalBottomSheet(
       context: context,
@@ -1919,6 +1948,7 @@ class _AnswerQuizScreenState extends State<AnswerQuizScreen> {
     );
   }
 
+  /// Builds a small color swatch and label for the Question Overview modal legend.
   Widget _buildLegendItem({
     required Color color,
     required Color borderColor,

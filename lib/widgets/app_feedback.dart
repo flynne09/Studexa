@@ -4,8 +4,10 @@ import '../theme/app_theme.dart';
 
 /// Consistent, accessible feedback messages for user-initiated actions.
 class AppFeedback {
+  /// Private constructor to prevent instantiation.
   AppFeedback._();
 
+  /// Displays a green floating [SnackBar] for successful operations.
   static void success(
     BuildContext context,
     String message, {
@@ -24,6 +26,7 @@ class AppFeedback {
     );
   }
 
+  /// Displays a red floating [SnackBar] for errors and validation failures, with an optional action button.
   static void error(
     BuildContext context,
     String message, {
@@ -46,6 +49,7 @@ class AppFeedback {
     );
   }
 
+  /// Displays an amber floating [SnackBar] for warnings and required user attention.
   static void warning(
     BuildContext context,
     String message, {
@@ -64,6 +68,7 @@ class AppFeedback {
     );
   }
 
+  /// Displays a blue informational [SnackBar] or top [MaterialBanner] when `compact` is `true`.
   static void info(
     BuildContext context,
     String message, {
@@ -84,6 +89,8 @@ class AppFeedback {
     );
   }
 
+  /// Internal helper that builds and dispatches either a [MaterialBanner] (compact mode)
+  /// or a styled floating [SnackBar] with live-region semantics for screen readers.
   static void _show(
     BuildContext context, {
     required String title,

@@ -1,16 +1,34 @@
 /// Represents an assigned Practice Quiz for a class with an optional deadline
 /// and open/closed availability toggle.
 class QuizAssignmentModel {
+  /// Unique UUID of the quiz assignment record.
   final String id;
+
+  /// ID of the published practice quiz being assigned.
   final String quizId;
+
+  /// ID of the class receiving this quiz assignment.
   final String classId;
+
+  /// User ID of the teacher who created the assignment.
   final String teacherId;
+
+  /// Display title of the assigned quiz.
   final String quizTitle;
+
+  /// Optional submission deadline after which the assignment expires.
   final DateTime? deadline;
+
+  /// Whether the teacher has manually closed submissions for this assignment.
   final bool isClosed;
+
+  /// Timestamp when the quiz was assigned to the class.
   final DateTime? createdAt;
+
+  /// Timestamp when the teacher manually closed the assignment.
   final DateTime? closedAt;
 
+  /// Creates a [QuizAssignmentModel] instance.
   const QuizAssignmentModel({
     required this.id,
     required this.quizId,
@@ -35,16 +53,19 @@ class QuizAssignmentModel {
   /// Active availability checking both manual closure and deadline expiration.
   bool get isAvailable => !isClosed && !isExpired;
 
+  /// Returns a human-readable status label ('Closed', 'Expired', or 'Open') for UI badges.
   String get formattedStatus {
     if (isClosed) return 'Closed';
     if (isExpired) return 'Expired';
     return 'Open';
   }
 
+  /// Constructs a [QuizAssignmentModel] from a database or domain map.
   factory QuizAssignmentModel.fromMap(
     Map<String, dynamic> map, {
     String id = '',
   }) {
+    // Helper to parse optional ISO-8601 date strings.
     DateTime? parseTimestamp(dynamic val) {
       if (val is String) return DateTime.tryParse(val);
       return null;
@@ -63,6 +84,7 @@ class QuizAssignmentModel {
     );
   }
 
+  /// Serializes this [QuizAssignmentModel] to a camelCase map for domain use.
   Map<String, dynamic> toMap() {
     return {
       'quizId': quizId,
@@ -77,6 +99,7 @@ class QuizAssignmentModel {
     };
   }
 
+  /// Serializes this [QuizAssignmentModel] to a snake_case map for the `public.quiz_assignments` table.
   Map<String, dynamic> toDatabaseMap() {
     return {
       'quiz_id': quizId,
@@ -90,6 +113,7 @@ class QuizAssignmentModel {
     };
   }
 
+  /// Creates a copy of this [QuizAssignmentModel] with selected fields overridden.
   QuizAssignmentModel copyWith({
     String? id,
     String? quizId,

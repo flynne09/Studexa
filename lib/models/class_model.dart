@@ -1,4 +1,7 @@
+/// Represents an academic class created by a teacher in Studexa.
+/// Stores class metadata, join code for student enrollment, roster count, and status.
 class ClassModel {
+  /// Creates a [ClassModel] instance with required identifiers and optional metadata.
   const ClassModel({
     required this.id,
     required this.name,
@@ -14,19 +17,43 @@ class ClassModel {
     this.updatedAt,
   });
 
+  /// Unique UUID identifier of the class in Supabase.
   final String id;
+
+  /// Display name of the class (e.g., "BSCS 3A - Software Engineering").
   final String name;
+
+  /// Unique alphanumeric code used by students to join this class.
   final String joinCode;
+
+  /// User ID of the teacher who owns and manages this class.
   final String teacherId;
+
+  /// Display name of the teacher who created the class.
   final String teacherName;
+
+  /// Class section identifier (optional).
   final String section;
+
+  /// Academic subject or course name (optional).
   final String subject;
+
+  /// Current lifecycle status of the class (e.g., 'active' or 'archived').
   final String status;
+
+  /// Total number of students currently enrolled in the class.
   final int rosterCount;
+
+  /// Title or summary of the most recently published quiz in this class.
   final String recentQuiz;
+
+  /// Timestamp when the class was created.
   final DateTime? createdAt;
+
+  /// Timestamp when the class record was last updated.
   final DateTime? updatedAt;
 
+  /// Serializes this [ClassModel] into a camelCase map for in-app domain usage.
   Map<String, dynamic> toMap() => {
         'name': name,
         'joinCode': joinCode.toUpperCase(),
@@ -41,6 +68,7 @@ class ClassModel {
           'createdAt': createdAt!.toUtc().toIso8601String(),
       };
 
+  /// Serializes this [ClassModel] into a snake_case map matching the Supabase `public.classes` table schema.
   Map<String, dynamic> toDatabaseMap() => {
         'name': name,
         'join_code': joinCode.toUpperCase(),
@@ -55,9 +83,12 @@ class ClassModel {
           'created_at': createdAt!.toUtc().toIso8601String(),
       };
 
+  /// Constructs a [ClassModel] from a raw database (snake_case) or domain (camelCase) map.
   factory ClassModel.fromMap(Map<String, dynamic> map, [String? id]) {
+    // Helper to safely parse ISO-8601 timestamp strings into local DateTime objects.
     DateTime? date(dynamic value) =>
         value is String ? DateTime.tryParse(value)?.toLocal() : null;
+    // Helper to read a typed field from either its snake_case or camelCase key.
     T? first<T>(String snake, String camel) {
       final value = map[snake] ?? map[camel];
       return value is T ? value : null;
@@ -82,6 +113,7 @@ class ClassModel {
     );
   }
 
+  /// Creates a new [ClassModel] copy with specified fields updated.
   ClassModel copyWith({
     String? name,
     String? joinCode,
@@ -111,7 +143,9 @@ class ClassModel {
       );
 }
 
+/// Represents a member (typically an enrolled student) belonging to a class roster.
 class ClassMember {
+  /// Creates a [ClassMember] record with user identity and enrollment timestamp.
   const ClassMember({
     required this.userId,
     required this.role,
@@ -120,12 +154,22 @@ class ClassMember {
     this.joinedAt,
   });
 
+  /// Unique user ID of the class member.
   final String userId;
+
+  /// Role of the member within the class (e.g., 'student' or 'teacher').
   final String role;
+
+  /// Snapshot of the user's display name captured when joining the class.
   final String displayName;
+
+  /// Snapshot of the user's email address captured when joining the class.
   final String email;
+
+  /// Timestamp indicating when the user joined the class.
   final DateTime? joinedAt;
 
+  /// Serializes this [ClassMember] into a camelCase map.
   Map<String, dynamic> toMap() => {
         'userId': userId,
         'role': role.toLowerCase(),
@@ -135,6 +179,7 @@ class ClassMember {
           'joinedAt': joinedAt!.toUtc().toIso8601String(),
       };
 
+  /// Serializes this [ClassMember] into a snake_case map for the `public.class_members` table.
   Map<String, dynamic> toDatabaseMap() => {
         'user_id': userId,
         'role': role.toLowerCase(),
@@ -144,6 +189,7 @@ class ClassMember {
           'joined_at': joinedAt!.toUtc().toIso8601String(),
       };
 
+  /// Constructs a [ClassMember] from a database or domain map.
   factory ClassMember.fromMap(Map<String, dynamic> map, [String? id]) {
     final joined = map['joined_at'] ?? map['joinedAt'];
     return ClassMember(

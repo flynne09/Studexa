@@ -43,6 +43,8 @@ class StudentClassDetailsScreen extends StatefulWidget {
       _StudentClassDetailsScreenState();
 }
 
+/// State for [StudentClassDetailsScreen] managing the 3-tab controller (Materials, Quizzes, Class Info)
+/// and real-time streams for class updates, materials, practice quizzes, and class roster.
 class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     with SingleTickerProviderStateMixin {
   static const _primaryNavy = AppTheme.primaryNavy;
@@ -70,6 +72,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     super.dispose();
   }
 
+  /// Formats a [DateTime] into a relative timestamp (e.g., "5m ago", "2d ago") or a short date string.
   String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final diff = now.difference(dt);
@@ -86,6 +89,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     }
   }
 
+  /// Displays a bottom sheet previewing a study material's metadata, extracted text notes,
+  /// and an action button to open the full document viewer.
   void _showStudentMaterialDetails(MaterialModel material) {
     showModalBottomSheet(
       context: context,
@@ -228,6 +233,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     );
   }
 
+  /// Builds a color-coded badge indicating the document file extension (PDF, PPTX, or DOCX).
   Widget _buildFileTypeBadge(String ext) {
     Color bg = Colors.blue;
     String label = ext.toUpperCase();
@@ -429,6 +435,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   }
 
   // ── Materials Tab View ─────────────────────────────────────────
+  /// Streams and renders the list of posted, ready study materials for [liveClass].
   Widget _buildMaterialsTab(ClassModel liveClass) {
     return StreamBuilder<List<MaterialModel>>(
       stream:
@@ -528,6 +535,8 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   }
 
   // ── Practice Quizzes Tab View ──────────────────────────────────
+  /// Streams and renders published practice quizzes for [liveClass], combining assignment deadlines/status
+  /// and the student's attempt history (up to 2 attempts max per practice quiz).
   Widget _buildQuizzesTab(ClassModel liveClass) {
     final currentUserId = AuthService().currentUser?.uid ?? '';
 
@@ -949,6 +958,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     );
   }
 
+  /// Opens a modal bottom sheet displaying the question-by-question score breakdown and feedback for a past quiz [attempt].
   void _showAttemptReview(QuizAttemptModel attempt, QuizModel quiz) {
     showModalBottomSheet(
       context: context,
@@ -1114,6 +1124,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     );
   }
 
+  /// Builds a compact status chip (e.g., score, remaining attempts, deadline, or closed status) on a quiz card.
   Widget _buildQuizStatusChip({required String label, required Color color}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1133,6 +1144,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
     );
   }
 
+  /// Formats a deadline [DateTime] into a readable month, day, and 12-hour time string (e.g., "Oct 27, 11:59 PM").
   String _formatDeadline(DateTime dt) {
     final months = [
       'Jan',
@@ -1155,6 +1167,7 @@ class _StudentClassDetailsScreenState extends State<StudentClassDetailsScreen>
   }
 
   // ── People & Class Info Tab View ───────────────────────────────
+  /// Streams and renders the class roster showing the instructor and all enrolled classmates.
   Widget _buildPeopleTab(ClassModel liveClass) {
     return StreamBuilder<List<ClassMember>>(
       stream:

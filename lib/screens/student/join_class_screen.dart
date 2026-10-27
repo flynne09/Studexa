@@ -14,6 +14,8 @@ class JoinClassScreen extends StatefulWidget {
   State<JoinClassScreen> createState() => _JoinClassScreenState();
 }
 
+/// State for [JoinClassScreen] managing the join code input, enrollment request,
+/// and transition between the code entry form and enrollment confirmation card.
 class _JoinClassScreenState extends State<JoinClassScreen> {
   final _codeController = TextEditingController();
 
@@ -38,6 +40,8 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
     super.dispose();
   }
 
+  /// Validates the entered join code, enrolls the signed-in student via [ClassService.joinClassByCode],
+  /// and transitions the UI to the confirmation state on success.
   Future<void> _handleJoin() async {
     final code = _codeController.text.trim();
     if (code.isEmpty) {
@@ -98,6 +102,7 @@ class _JoinClassScreenState extends State<JoinClassScreen> {
     }
   }
 
+  /// Resets the form state so the student can enter another class join code.
   void _resetForm() {
     setState(() {
       _isJoined = false;

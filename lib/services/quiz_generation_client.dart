@@ -9,10 +9,13 @@ import '../config/integration_config.dart';
 import '../config/supabase_config.dart';
 import '../models/quiz_model.dart';
 
+/// Exception thrown when AI quiz generation fails due to configuration, auth,
+/// network, or Gemini API key issues.
 class QuizGenerationException implements Exception {
   const QuizGenerationException(this.message, {this.code});
   final String message;
   final String? code;
+  /// Returns `true` if the error indicates the teacher must configure or fix their personal Gemini API key.
   bool get requiresApiKeySetup =>
       code == 'personal-key-required' || code == 'personal-key-invalid';
   @override
@@ -21,6 +24,8 @@ class QuizGenerationException implements Exception {
 
 /// Calls the Supabase Edge Function with the current Supabase access token.
 class QuizGenerationClient {
+  /// Creates a [QuizGenerationClient] with optional HTTP client, token provider,
+  /// endpoint URL, and request timeout overrides.
   QuizGenerationClient({
     this.client,
     Future<String?> Function()? tokenProvider,
@@ -35,6 +40,7 @@ class QuizGenerationClient {
   final String endpoint;
   final Duration timeout;
 
+  /// Generates a cryptographically random 32-character hex identifier for correlating batch requests.
   static String _requestId() {
     final random = Random.secure();
     return List.generate(
@@ -43,6 +49,8 @@ class QuizGenerationClient {
     ).join();
   }
 
+  /// Generates a quiz (or continues generating additional questions for a draft quiz)
+  /// in one or more batches via the `generate-quiz` Edge Function until [questionCount] is reached.
   Future<QuizModel> generate({
     required String teacherId,
     required String classId,
@@ -170,6 +178,8 @@ class QuizGenerationClient {
     }
   }
 
+  /// Sends a single batch generation request to the Edge Function, retrying once on transient
+  /// timeout or client connection errors, and validates the response contract before returning [QuizModel].
   Future<QuizModel> _sendBatch({
     required http.Client httpClient,
     required Uri uri,
